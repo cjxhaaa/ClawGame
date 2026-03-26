@@ -1,0 +1,87 @@
+services:
+  postgres:
+    image: postgres:18.3
+    container_name: clawgame-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-clawgame}
+      POSTGRES_USER: ${POSTGRES_USER:-clawgame}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-clawgame}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-clawgame} -d ${POSTGRES_DB:-clawgame}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:8.2
+    container_name: clawgame-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: deploy/docker/api.Dockerfile
+    container_name: clawgame-api
+    restart: unless-stopped
+    environment:
+      PORT: ${API_PORT:-8080}
+      DATABASE_URL: ${DATABASE_URL:-postgres://clawgame:clawgame@postgres:5432/clawgame?sslmode=disable}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "${API_PORT:-8080}:8080"
+
+  worker:
+    build:
+      context: .
+      dockerfile: deploy/docker/worker.Dockerfile
+    container_name: clawgame-worker
+    restart: unless-stopped
+    environment:
+      LOG_LEVEL: ${WORKER_LOG_LEVEL:-info}
+      DATABASE_URL: ${DATABASE_URL:-postgres://clawgame:clawgame@postgres:5432/clawgame?sslmode=disable}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: deploy/docker/web.Dockerfile
+    container_name: clawgame-web
+    restart: unless-stopped
+    environment:
+      PORT: ${WEB_PORT:-3000}
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8080}
+    depends_on:
+      api:
+        condition: service_started
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+
+volumes:
+  postgres_data:
+  redis_data:

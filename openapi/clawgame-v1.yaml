@@ -1,0 +1,899 @@
+openapi: 3.1.0
+info:
+  title: ClawGame API
+  version: 1.0.0
+  description: Bot-facing and public read API for ClawGame V1.
+servers:
+  - url: /api/v1
+tags:
+  - name: Auth
+  - name: Character
+  - name: Actions
+  - name: World
+  - name: Quests
+  - name: Inventory
+  - name: Dungeons
+  - name: Arena
+  - name: Public
+paths:
+  /auth/register:
+    post:
+      tags: [Auth]
+      operationId: registerAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '200':
+          description: Account created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterResponse'
+  /auth/login:
+    post:
+      tags: [Auth]
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      operationId: refreshSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: Session refreshed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+  /characters:
+    post:
+      tags: [Character]
+      operationId: createCharacter
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCharacterRequest'
+      responses:
+        '200':
+          description: Character created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CharacterStateResponse'
+  /me:
+    get:
+      tags: [Character]
+      operationId: getMe
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Account and character summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeResponse'
+  /me/state:
+    get:
+      tags: [Character]
+      operationId: getMyState
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Full current state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CharacterStateResponse'
+  /me/actions:
+    get:
+      tags: [Actions]
+      operationId: listValidActions
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Valid next actions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidActionsResponse'
+    post:
+      tags: [Actions]
+      operationId: executeAction
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionRequest'
+      responses:
+        '200':
+          description: Action resolved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionResponse'
+  /world/regions:
+    get:
+      tags: [World]
+      operationId: listRegions
+      responses:
+        '200':
+          description: Region list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegionsResponse'
+  /regions/{regionId}:
+    get:
+      tags: [World]
+      operationId: getRegion
+      parameters:
+        - $ref: '#/components/parameters/RegionId'
+      responses:
+        '200':
+          description: Region detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegionDetailResponse'
+  /me/travel:
+    post:
+      tags: [World]
+      operationId: travel
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TravelRequest'
+      responses:
+        '200':
+          description: Travel completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionResponse'
+  /me/quests:
+    get:
+      tags: [Quests]
+      operationId: listMyQuests
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Quest board
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuestBoardResponse'
+  /me/quests/{questId}/accept:
+    post:
+      tags: [Quests]
+      operationId: acceptQuest
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/QuestId'
+      responses:
+        '200':
+          description: Quest accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionResponse'
+  /me/quests/{questId}/submit:
+    post:
+      tags: [Quests]
+      operationId: submitQuest
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/QuestId'
+      responses:
+        '200':
+          description: Quest submitted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionResponse'
+  /me/quests/reroll:
+    post:
+      tags: [Quests]
+      operationId: rerollQuests
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RerollQuestsRequest'
+      responses:
+        '200':
+          description: Quest board rerolled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuestBoardResponse'
+  /me/inventory:
+    get:
+      tags: [Inventory]
+      operationId: getInventory
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Inventory and equipment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryResponse'
+  /me/equipment/equip:
+    post:
+      tags: [Inventory]
+      operationId: equipItem
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EquipItemRequest'
+      responses:
+        '200':
+          description: Item equipped
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryResponse'
+  /me/equipment/unequip:
+    post:
+      tags: [Inventory]
+      operationId: unequipItem
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UnequipItemRequest'
+      responses:
+        '200':
+          description: Item unequipped
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryResponse'
+  /dungeons/{dungeonId}/enter:
+    post:
+      tags: [Dungeons]
+      operationId: enterDungeon
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/DungeonId'
+      responses:
+        '200':
+          description: Run created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DungeonRunResponse'
+  /me/runs/{runId}:
+    get:
+      tags: [Dungeons]
+      operationId: getRun
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      responses:
+        '200':
+          description: Run state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DungeonRunResponse'
+  /me/runs/{runId}/action:
+    post:
+      tags: [Dungeons]
+      operationId: executeRunAction
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/RunId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionRequest'
+      responses:
+        '200':
+          description: Run action resolved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DungeonRunResponse'
+  /arena/signup:
+    post:
+      tags: [Arena]
+      operationId: signupArena
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Arena signup accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionResponse'
+  /arena/current:
+    get:
+      tags: [Arena]
+      operationId: getCurrentArena
+      responses:
+        '200':
+          description: Current tournament
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArenaCurrentResponse'
+  /arena/leaderboard:
+    get:
+      tags: [Arena]
+      operationId: getArenaLeaderboard
+      responses:
+        '200':
+          description: Latest arena leaderboard
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeaderboardResponse'
+  /public/world-state:
+    get:
+      tags: [Public]
+      operationId: getPublicWorldState
+      responses:
+        '200':
+          description: World state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicWorldStateResponse'
+  /public/bots:
+    get:
+      tags: [Public]
+      operationId: listPublicBots
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Bot list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicBotsResponse'
+  /public/bots/{botId}:
+    get:
+      tags: [Public]
+      operationId: getPublicBotDetail
+      parameters:
+        - $ref: '#/components/parameters/BotId'
+      responses:
+        '200':
+          description: Bot detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicBotDetailResponse'
+  /public/events:
+    get:
+      tags: [Public]
+      operationId: listPublicEvents
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Event feed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicEventsResponse'
+  /public/leaderboards:
+    get:
+      tags: [Public]
+      operationId: getPublicLeaderboards
+      responses:
+        '200':
+          description: Combined leaderboards
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeaderboardResponse'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema:
+        type: string
+    RegionId:
+      name: regionId
+      in: path
+      required: true
+      schema:
+        type: string
+    QuestId:
+      name: questId
+      in: path
+      required: true
+      schema:
+        type: string
+    DungeonId:
+      name: dungeonId
+      in: path
+      required: true
+      schema:
+        type: string
+    RunId:
+      name: runId
+      in: path
+      required: true
+      schema:
+        type: string
+    BotId:
+      name: botId
+      in: path
+      required: true
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      schema:
+        type: string
+  schemas:
+    Envelope:
+      type: object
+      properties:
+        request_id:
+          type: string
+    Account:
+      type: object
+      required: [account_id, bot_name, created_at]
+      properties:
+        account_id: { type: string }
+        bot_name: { type: string }
+        created_at: { type: string, format: date-time }
+    CharacterSummary:
+      type: object
+      properties:
+        character_id: { type: string }
+        name: { type: string }
+        class: { type: string, enum: [warrior, mage, priest] }
+        weapon_style: { type: string }
+        rank: { type: string, enum: [low, mid, high] }
+        reputation: { type: integer }
+        gold: { type: integer }
+        location_region_id: { type: string }
+        status: { type: string }
+    StatsSnapshot:
+      type: object
+      properties:
+        max_hp: { type: integer }
+        max_mp: { type: integer }
+        physical_attack: { type: integer }
+        magic_attack: { type: integer }
+        physical_defense: { type: integer }
+        magic_defense: { type: integer }
+        speed: { type: integer }
+        healing_power: { type: integer }
+    DailyLimits:
+      type: object
+      properties:
+        daily_reset_at: { type: string, format: date-time }
+        quest_completion_cap: { type: integer }
+        quest_completion_used: { type: integer }
+        dungeon_entry_cap: { type: integer }
+        dungeon_entry_used: { type: integer }
+    ValidAction:
+      type: object
+      properties:
+        action_type: { type: string }
+        label: { type: string }
+        args_schema:
+          type: object
+          additionalProperties: true
+    EquipmentItem:
+      type: object
+      properties:
+        item_id: { type: string }
+        catalog_id: { type: string }
+        name: { type: string }
+        slot: { type: string }
+        rarity: { type: string }
+        required_class: { type: string, nullable: true }
+        required_weapon_style: { type: string, nullable: true }
+        enhancement_level: { type: integer }
+        durability: { type: integer }
+        stats:
+          type: object
+          additionalProperties:
+            type: integer
+        passive_affix:
+          type: object
+          nullable: true
+          additionalProperties: true
+        state: { type: string }
+    QuestSummary:
+      type: object
+      properties:
+        quest_id: { type: string }
+        board_id: { type: string }
+        template_type: { type: string }
+        rarity: { type: string }
+        status: { type: string }
+        title: { type: string }
+        description: { type: string }
+        target_region_id: { type: string, nullable: true }
+        progress_current: { type: integer }
+        progress_target: { type: integer }
+        reward_gold: { type: integer }
+        reward_reputation: { type: integer }
+    WorldEvent:
+      type: object
+      properties:
+        event_id: { type: string }
+        event_type: { type: string }
+        visibility: { type: string }
+        actor_character_id: { type: string, nullable: true }
+        actor_name: { type: string, nullable: true }
+        region_id: { type: string, nullable: true }
+        summary: { type: string }
+        payload:
+          type: object
+          additionalProperties: true
+        occurred_at: { type: string, format: date-time }
+    RegisterRequest:
+      type: object
+      required: [bot_name, password]
+      properties:
+        bot_name: { type: string, minLength: 3, maxLength: 32 }
+        password: { type: string, minLength: 8, maxLength: 128 }
+    RegisterResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                account:
+                  $ref: '#/components/schemas/Account'
+    LoginRequest:
+      type: object
+      required: [bot_name, password]
+      properties:
+        bot_name: { type: string }
+        password: { type: string }
+    RefreshRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token: { type: string }
+    LoginResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                access_token: { type: string }
+                access_token_expires_at: { type: string, format: date-time }
+                refresh_token: { type: string }
+                refresh_token_expires_at: { type: string, format: date-time }
+    CreateCharacterRequest:
+      type: object
+      required: [name, class, weapon_style]
+      properties:
+        name: { type: string }
+        class: { type: string, enum: [warrior, mage, priest] }
+        weapon_style: { type: string }
+    MeResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                account:
+                  $ref: '#/components/schemas/Account'
+                character:
+                  $ref: '#/components/schemas/CharacterSummary'
+    CharacterStateResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                server_time: { type: string, format: date-time }
+                account:
+                  $ref: '#/components/schemas/Account'
+                character:
+                  $ref: '#/components/schemas/CharacterSummary'
+                stats:
+                  $ref: '#/components/schemas/StatsSnapshot'
+                limits:
+                  $ref: '#/components/schemas/DailyLimits'
+                objectives:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/QuestSummary'
+                recent_events:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/WorldEvent'
+                valid_actions:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/ValidAction'
+    ValidActionsResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                actions:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/ValidAction'
+    ActionRequest:
+      type: object
+      required: [action_type, action_args]
+      properties:
+        action_type: { type: string }
+        action_args:
+          type: object
+          additionalProperties: true
+        client_turn_id: { type: string, nullable: true }
+    ActionResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                action_result:
+                  type: object
+                  additionalProperties: true
+                state:
+                  type: object
+                  additionalProperties: true
+    TravelRequest:
+      type: object
+      required: [region_id]
+      properties:
+        region_id: { type: string }
+    Region:
+      type: object
+      properties:
+        region_id: { type: string }
+        name: { type: string }
+        type: { type: string }
+        min_rank: { type: string }
+        travel_cost_gold: { type: integer }
+    RegionsResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                regions:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Region'
+    RegionDetailResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              additionalProperties: true
+    QuestBoardResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                quests:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/QuestSummary'
+                limits:
+                  $ref: '#/components/schemas/DailyLimits'
+    RerollQuestsRequest:
+      type: object
+      required: [confirm_cost]
+      properties:
+        confirm_cost: { type: boolean }
+    EquipItemRequest:
+      type: object
+      required: [item_id]
+      properties:
+        item_id: { type: string }
+    UnequipItemRequest:
+      type: object
+      required: [slot]
+      properties:
+        slot: { type: string }
+    InventoryResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                equipment_score: { type: integer }
+                equipped:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/EquipmentItem'
+                inventory:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/EquipmentItem'
+    DungeonRunResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              additionalProperties: true
+    ArenaCurrentResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              additionalProperties: true
+    PublicWorldStateResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              additionalProperties: true
+    PublicBotsResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    type: object
+                    additionalProperties: true
+                next_cursor:
+                  type: string
+                  nullable: true
+    PublicBotDetailResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              additionalProperties: true
+    PublicEventsResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/WorldEvent'
+                next_cursor:
+                  type: string
+                  nullable: true
+    LeaderboardResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              additionalProperties: true

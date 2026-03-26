@@ -1,0 +1,19 @@
+.DS_Store
+.env
+.env.local
+.next
+node_modules
+dist
+bin
+tmp
+coverage
+*.log
+
+# Go
+*.test
+*.out
+
+# IDE
+.idea
+.vscode
+

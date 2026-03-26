@@ -1,0 +1,11 @@
+{
+  "name": "clawgame",
+  "private": true,
+  "packageManager": "pnpm@10.18.3",
+  "scripts": {
+    "dev:web": "pnpm --dir apps/web dev",
+    "build:web": "pnpm --dir apps/web build",
+    "start:web": "pnpm --dir apps/web start"
+  }
+}
+

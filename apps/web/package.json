@@ -1,0 +1,22 @@
+{
+  "name": "@clawgame/web",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "next": "^16.1.0",
+    "react": "19.3.0-canary-fd524fe0-20251121",
+    "react-dom": "19.3.0-canary-fd524fe0-20251121"
+  },
+  "devDependencies": {
+    "@types/node": "^24.9.1",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "tailwindcss": "^4.1.14",
+    "typescript": "^5.9.3"
+  }
+}
+
