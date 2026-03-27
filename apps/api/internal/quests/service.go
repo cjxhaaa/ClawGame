@@ -41,6 +41,20 @@ type QuestRewardResult struct {
 	Limits       characters.DailyLimits `json:"limits"`
 }
 
+type StoredBoard struct {
+	CharacterID string
+	BoardID     string
+	ResetDate   string
+	Status      string
+	RerollCount int
+	Quests      []characters.QuestSummary
+}
+
+type Repository interface {
+	LoadBoards() ([]StoredBoard, error)
+	SaveBoard(StoredBoard) error
+}
+
 type boardRecord struct {
 	boardID     string
 	resetDate   string
@@ -53,17 +67,51 @@ type Service struct {
 	mu               sync.RWMutex
 	clock            func() time.Time
 	loc              *time.Location
+	repo             Repository
 	boardByCharacter map[string]boardRecord
 }
 
 var questIDCounter uint64
 
 func NewService() *Service {
-	return &Service{
+	service, err := NewServiceWithRepository(nil)
+	if err != nil {
+		panic(err)
+	}
+
+	return service
+}
+
+func NewServiceWithRepository(repo Repository) (*Service, error) {
+	service := &Service{
 		clock:            time.Now,
 		loc:              mustLocation(businessTimezone),
+		repo:             repo,
 		boardByCharacter: make(map[string]boardRecord),
 	}
+
+	if repo == nil {
+		return service, nil
+	}
+
+	boards, err := repo.LoadBoards()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, stored := range boards {
+		quests := make([]characters.QuestSummary, len(stored.Quests))
+		copy(quests, stored.Quests)
+		service.boardByCharacter[stored.CharacterID] = boardRecord{
+			boardID:     stored.BoardID,
+			resetDate:   stored.ResetDate,
+			status:      stored.Status,
+			rerollCount: stored.RerollCount,
+			quests:      quests,
+		}
+	}
+
+	return service, nil
 }
 
 func RerollCostGold() int {
@@ -122,6 +170,9 @@ func (s *Service) AcceptQuest(character characters.Summary, questID string, limi
 
 	quest.Status = "accepted"
 	board.quests[index] = quest
+	if err := s.saveBoardLocked(character.CharacterID, board); err != nil {
+		return BoardView{}, characters.QuestSummary{}, err
+	}
 	s.boardByCharacter[character.CharacterID] = board
 
 	return buildBoardView(board, limits), quest, nil
@@ -147,6 +198,9 @@ func (s *Service) SubmitQuest(character characters.Summary, questID string, limi
 
 	quest.Status = "submitted"
 	board.quests[index] = quest
+	if err := s.saveBoardLocked(character.CharacterID, board); err != nil {
+		return characters.QuestSummary{}, err
+	}
 	s.boardByCharacter[character.CharacterID] = board
 
 	return quest, nil
@@ -176,6 +230,9 @@ func (s *Service) RerollQuestBoard(character characters.Summary, limits characte
 
 	replacements := generateQuestTemplates(character, board.boardID, board.rerollCount)
 	board.quests = mergeActiveBoard(kept, replacements)
+	if err := s.saveBoardLocked(character.CharacterID, board); err != nil {
+		return BoardView{}, err
+	}
 	s.boardByCharacter[character.CharacterID] = board
 
 	return buildBoardView(board, limits), nil
@@ -205,6 +262,7 @@ func (s *Service) ProgressTravelQuests(character characters.Summary, targetRegio
 		completed = append(completed, quest)
 	}
 
+	_ = s.saveBoardLocked(character.CharacterID, board)
 	s.boardByCharacter[character.CharacterID] = board
 	return buildBoardView(board, limits), completed
 }
@@ -248,8 +306,27 @@ func (s *Service) ensureBoardLocked(character characters.Summary) boardRecord {
 		board.quests[index].BoardID = board.boardID
 	}
 
+	_ = s.saveBoardLocked(character.CharacterID, board)
 	s.boardByCharacter[character.CharacterID] = board
 	return board
+}
+
+func (s *Service) saveBoardLocked(characterID string, board boardRecord) error {
+	if s.repo == nil {
+		return nil
+	}
+
+	quests := make([]characters.QuestSummary, len(board.quests))
+	copy(quests, board.quests)
+
+	return s.repo.SaveBoard(StoredBoard{
+		CharacterID: characterID,
+		BoardID:     board.boardID,
+		ResetDate:   board.resetDate,
+		Status:      board.status,
+		RerollCount: board.rerollCount,
+		Quests:      quests,
+	})
 }
 
 func (s *Service) businessDate() string {
@@ -409,5 +486,5 @@ func mustLocation(name string) *time.Location {
 }
 
 func nextID(prefix string) string {
-	return fmt.Sprintf("%s_%06d", prefix, atomic.AddUint64(&questIDCounter, 1))
+	return fmt.Sprintf("%s_%d_%06d", prefix, time.Now().UnixNano(), atomic.AddUint64(&questIDCounter, 1))
 }

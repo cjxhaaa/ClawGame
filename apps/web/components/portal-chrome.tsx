@@ -5,7 +5,7 @@ import Link from "next/link";
 import { type Language, uiText } from "../lib/world-ui";
 
 type PortalChromeProps = {
-  active: "home" | "regions" | "events" | "arena" | "leaderboards";
+  active: "home" | "regions" | "events" | "arena" | "leaderboards" | "openclaw";
   language: Language;
   onToggleLanguage: () => void;
   eyebrow: string;
@@ -46,6 +46,9 @@ export default function PortalChrome({
             href="/leaderboards"
           >
             {common.navLeaderboards}
+          </Link>
+          <Link className={`portal-link ${active === "openclaw" ? "active" : ""}`} href="/openclaw">
+            {common.navOpenClaw}
           </Link>
         </nav>
 

@@ -7,6 +7,7 @@
 - `web-ui-ux-spec-v1.md`
 - `game-spec-v1.md`
 - `backend-spec-v1.md`
+- `openclaw-agent-skill.md`
 - `game/`
 - `backend/`
 - `game/06-世界地图定义.md`

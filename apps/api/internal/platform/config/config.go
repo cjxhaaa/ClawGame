@@ -3,7 +3,8 @@ package config
 import "os"
 
 type API struct {
-	Port string
+	Port        string
+	DatabaseURL string
 }
 
 func LoadAPI() API {
@@ -13,11 +14,11 @@ func LoadAPI() API {
 	}
 
 	return API{
-		Port: port,
+		Port:        port,
+		DatabaseURL: os.Getenv("DATABASE_URL"),
 	}
 }
 
 func (c API) Addr() string {
 	return ":" + c.Port
 }
-

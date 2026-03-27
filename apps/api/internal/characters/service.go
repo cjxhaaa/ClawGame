@@ -100,18 +100,41 @@ type TravelResult struct {
 	State          StateView `json:"state"`
 }
 
+type StoredCharacter struct {
+	AccountID            string
+	Summary              Summary
+	Stats                StatsSnapshot
+	QuestCompletionUsed  int
+	DungeonEntryUsed     int
+	DailyLimitsResetDate string
+}
+
+type Repository interface {
+	LoadCharacters() ([]StoredCharacter, error)
+	LoadRecentEvents(limitPerCharacter int) ([]world.WorldEvent, error)
+	SaveCharacter(StoredCharacter) error
+	AppendWorldEvents(accountID string, characterID string, events []world.WorldEvent) error
+}
+
 type record struct {
-	summary             Summary
-	stats               StatsSnapshot
-	questCompletionUsed int
-	dungeonEntryUsed    int
-	recentEvents        []world.WorldEvent
+	summary              Summary
+	stats                StatsSnapshot
+	questCompletionUsed  int
+	dungeonEntryUsed     int
+	dailyLimitsResetDate string
+	recentEvents         []world.WorldEvent
+}
+
+type RuntimeSnapshot struct {
+	Characters []Summary
+	Events     []world.WorldEvent
 }
 
 type Service struct {
 	mu                   sync.RWMutex
 	clock                func() time.Time
 	loc                  *time.Location
+	repo                 Repository
 	characterByAccountID map[string]record
 	accountIDByName      map[string]string
 }
@@ -119,12 +142,62 @@ type Service struct {
 var characterIDCounter uint64
 
 func NewService() *Service {
-	return &Service{
+	service, err := NewServiceWithRepository(nil)
+	if err != nil {
+		panic(err)
+	}
+
+	return service
+}
+
+func NewServiceWithRepository(repo Repository) (*Service, error) {
+	service := &Service{
 		clock:                time.Now,
 		loc:                  mustLocation(businessTimezone),
+		repo:                 repo,
 		characterByAccountID: make(map[string]record),
 		accountIDByName:      make(map[string]string),
 	}
+
+	if repo == nil {
+		return service, nil
+	}
+
+	storedCharacters, err := repo.LoadCharacters()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, stored := range storedCharacters {
+		service.characterByAccountID[stored.AccountID] = record{
+			summary:              stored.Summary,
+			stats:                stored.Stats,
+			questCompletionUsed:  stored.QuestCompletionUsed,
+			dungeonEntryUsed:     stored.DungeonEntryUsed,
+			dailyLimitsResetDate: strings.TrimSpace(stored.DailyLimitsResetDate),
+			recentEvents:         []world.WorldEvent{},
+		}
+		service.accountIDByName[strings.ToLower(stored.Summary.Name)] = stored.AccountID
+	}
+
+	events, err := repo.LoadRecentEvents(10)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, event := range events {
+		accountID, entry, ok := service.lookupByCharacterIDLocked(event.ActorCharacterID)
+		if !ok {
+			continue
+		}
+
+		if len(entry.recentEvents) < 10 {
+			entry.recentEvents = append(entry.recentEvents, event)
+		}
+		service.characterByAccountID[accountID] = entry
+	}
+
+	return service, nil
 }
 
 func (s *Service) CreateCharacter(account auth.Account, name, class, weaponStyle string, worldService *world.Service) (StateView, error) {
@@ -165,9 +238,19 @@ func (s *Service) CreateCharacter(account auth.Account, name, class, weaponStyle
 	}
 
 	entry := record{
-		summary:      summary,
-		stats:        baseStatsByStyle[weaponStyle],
-		recentEvents: []world.WorldEvent{s.newEvent(summary, "character.created", "main_city", fmt.Sprintf("%s completed character creation and entered Main City.", name), map[string]any{"class": class, "weapon_style": weaponStyle})},
+		summary:              summary,
+		stats:                baseStatsByStyle[weaponStyle],
+		dailyLimitsResetDate: s.businessDate(),
+		recentEvents:         []world.WorldEvent{s.newEvent(summary, "character.created", "main_city", fmt.Sprintf("%s completed character creation and entered Main City.", name), map[string]any{"class": class, "weapon_style": weaponStyle})},
+	}
+
+	if err := s.saveRecordLocked(account.AccountID, entry); err != nil {
+		s.mu.Unlock()
+		return StateView{}, err
+	}
+	if err := s.appendEventsLocked(account.AccountID, entry.summary.CharacterID, entry.recentEvents); err != nil {
+		s.mu.Unlock()
+		return StateView{}, err
 	}
 
 	s.characterByAccountID[account.AccountID] = entry
@@ -178,13 +261,15 @@ func (s *Service) CreateCharacter(account auth.Account, name, class, weaponStyle
 }
 
 func (s *Service) GetSummary(accountID string) (Summary, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	entry, ok := s.characterByAccountID[accountID]
 	if !ok {
 		return Summary{}, false
 	}
+
+	entry, _, _ = s.normalizeDailyLimitsLocked(accountID, entry)
 
 	return entry.summary, true
 }
@@ -205,9 +290,17 @@ func (s *Service) GetMe(account auth.Account) map[string]any {
 }
 
 func (s *Service) GetState(account auth.Account, worldService *world.Service) (StateView, error) {
-	s.mu.RLock()
+	s.mu.Lock()
 	entry, ok := s.characterByAccountID[account.AccountID]
-	s.mu.RUnlock()
+	if ok {
+		var err error
+		entry, _, err = s.normalizeDailyLimitsLocked(account.AccountID, entry)
+		if err != nil {
+			s.mu.Unlock()
+			return StateView{}, err
+		}
+	}
+	s.mu.Unlock()
 	if !ok {
 		return StateView{}, ErrCharacterNotFound
 	}
@@ -256,6 +349,11 @@ func (s *Service) Travel(account auth.Account, targetRegionID string, worldServi
 		s.mu.Unlock()
 		return TravelResult{}, ErrCharacterNotFound
 	}
+	entry, _, err := s.normalizeDailyLimitsLocked(account.AccountID, entry)
+	if err != nil {
+		s.mu.Unlock()
+		return TravelResult{}, err
+	}
 	if !rankAllows(entry.summary.Rank, region.Region.MinRank) {
 		s.mu.Unlock()
 		return TravelResult{}, ErrTravelRankLocked
@@ -273,6 +371,14 @@ func (s *Service) Travel(account auth.Account, targetRegionID string, worldServi
 		"to_region_id":     targetRegionID,
 		"travel_cost_gold": region.Region.TravelCostGold,
 	}))
+	if err := s.saveRecordLocked(account.AccountID, entry); err != nil {
+		s.mu.Unlock()
+		return TravelResult{}, err
+	}
+	if err := s.appendEventsLocked(account.AccountID, entry.summary.CharacterID, entry.recentEvents[:1]); err != nil {
+		s.mu.Unlock()
+		return TravelResult{}, err
+	}
 	s.characterByAccountID[account.AccountID] = entry
 	s.mu.Unlock()
 
@@ -352,6 +458,59 @@ func (s *Service) newEvent(summary Summary, eventType, regionID, message string,
 	}
 }
 
+func (s *Service) businessDate() string {
+	now := s.clock().In(s.loc)
+	if now.Hour() < 4 {
+		now = now.Add(-24 * time.Hour)
+	}
+
+	return now.Format("2006-01-02")
+}
+
+func (s *Service) normalizeDailyLimitsLocked(accountID string, entry record) (record, bool, error) {
+	currentDate := s.businessDate()
+	if strings.TrimSpace(entry.dailyLimitsResetDate) == "" {
+		entry.dailyLimitsResetDate = currentDate
+	}
+	if entry.dailyLimitsResetDate == currentDate {
+		return entry, false, nil
+	}
+
+	entry.questCompletionUsed = 0
+	entry.dungeonEntryUsed = 0
+	entry.dailyLimitsResetDate = currentDate
+
+	if err := s.saveRecordLocked(accountID, entry); err != nil {
+		return record{}, false, err
+	}
+
+	s.characterByAccountID[accountID] = entry
+	return entry, true, nil
+}
+
+func (s *Service) saveRecordLocked(accountID string, entry record) error {
+	if s.repo == nil {
+		return nil
+	}
+
+	return s.repo.SaveCharacter(StoredCharacter{
+		AccountID:            accountID,
+		Summary:              entry.summary,
+		Stats:                entry.stats,
+		QuestCompletionUsed:  entry.questCompletionUsed,
+		DungeonEntryUsed:     entry.dungeonEntryUsed,
+		DailyLimitsResetDate: entry.dailyLimitsResetDate,
+	})
+}
+
+func (s *Service) appendEventsLocked(accountID string, characterID string, events []world.WorldEvent) error {
+	if s.repo == nil || len(events) == 0 {
+		return nil
+	}
+
+	return s.repo.AppendWorldEvents(accountID, characterID, events)
+}
+
 func prependEvent(events []world.WorldEvent, event world.WorldEvent) []world.WorldEvent {
 	items := make([]world.WorldEvent, 0, len(events)+1)
 	items = append(items, event)
@@ -400,11 +559,18 @@ func (s *Service) SpendGold(characterID string, amount int) (Summary, error) {
 	if !ok {
 		return Summary{}, ErrCharacterNotFound
 	}
+	entry, _, err := s.normalizeDailyLimitsLocked(accountID, entry)
+	if err != nil {
+		return Summary{}, err
+	}
 	if amount < 0 || entry.summary.Gold < amount {
 		return Summary{}, ErrGoldInsufficient
 	}
 
 	entry.summary.Gold -= amount
+	if err := s.saveRecordLocked(accountID, entry); err != nil {
+		return Summary{}, err
+	}
 	s.characterByAccountID[accountID] = entry
 	return entry.summary, nil
 }
@@ -416,6 +582,10 @@ func (s *Service) ApplyQuestSubmission(characterID string, quest QuestSummary) (
 	accountID, entry, ok := s.lookupByCharacterIDLocked(characterID)
 	if !ok {
 		return Summary{}, DailyLimits{}, nil, false, ErrCharacterNotFound
+	}
+	entry, _, err := s.normalizeDailyLimitsLocked(accountID, entry)
+	if err != nil {
+		return Summary{}, DailyLimits{}, nil, false, err
 	}
 
 	resetAt := nextDailyReset(s.clock().In(s.loc))
@@ -469,6 +639,12 @@ func (s *Service) ApplyQuestSubmission(characterID string, quest QuestSummary) (
 		entry.recentEvents = prependEvent(entry.recentEvents, event)
 	}
 
+	if err := s.saveRecordLocked(accountID, entry); err != nil {
+		return Summary{}, DailyLimits{}, nil, false, err
+	}
+	if err := s.appendEventsLocked(accountID, entry.summary.CharacterID, events); err != nil {
+		return Summary{}, DailyLimits{}, nil, false, err
+	}
 	s.characterByAccountID[accountID] = entry
 	updatedLimits := LimitsForRank(entry.summary.Rank, resetAt, entry.questCompletionUsed, entry.dungeonEntryUsed)
 	return entry.summary, updatedLimits, events, entry.summary.Rank != previousRank, nil
@@ -487,12 +663,33 @@ func (s *Service) AppendEvents(characterID string, events ...world.WorldEvent) e
 		entry.recentEvents = prependEvent(entry.recentEvents, event)
 	}
 
+	if err := s.appendEventsLocked(accountID, characterID, events); err != nil {
+		return err
+	}
 	s.characterByAccountID[accountID] = entry
 	return nil
 }
 
 func (s *Service) GetCharacterByAccount(account auth.Account) (Summary, bool) {
 	return s.GetSummary(account.AccountID)
+}
+
+func (s *Service) SnapshotRuntime() RuntimeSnapshot {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	characters := make([]Summary, 0, len(s.characterByAccountID))
+	events := make([]world.WorldEvent, 0, len(s.characterByAccountID)*4)
+
+	for _, entry := range s.characterByAccountID {
+		characters = append(characters, entry.summary)
+		events = append(events, entry.recentEvents...)
+	}
+
+	return RuntimeSnapshot{
+		Characters: characters,
+		Events:     events,
+	}
 }
 
 func (s *Service) lookupByCharacterIDLocked(characterID string) (string, record, bool) {
@@ -554,7 +751,7 @@ func mustLocation(name string) *time.Location {
 }
 
 func nextID(prefix string) string {
-	return fmt.Sprintf("%s_%06d", prefix, atomic.AddUint64(&characterIDCounter, 1))
+	return fmt.Sprintf("%s_%d_%06d", prefix, time.Now().UnixNano(), atomic.AddUint64(&characterIDCounter, 1))
 }
 
 var rankOrder = map[string]int{

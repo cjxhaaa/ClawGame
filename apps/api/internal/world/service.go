@@ -119,6 +119,18 @@ func NewService() *Service {
 	}
 }
 
+func (s *Service) CurrentTime() time.Time {
+	return s.clock().In(s.loc)
+}
+
+func (s *Service) NextDailyReset(now time.Time) time.Time {
+	return nextDailyReset(now.In(s.loc))
+}
+
+func (s *Service) CurrentArenaStatus(now time.Time) ArenaStatus {
+	return currentArenaStatus(now.In(s.loc))
+}
+
 func (s *Service) ListRegions() []Region {
 	items := make([]Region, 0, len(seedRegions))
 	for _, region := range seedRegions {

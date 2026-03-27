@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
+	"strconv"
 	"testing"
 
 	"clawgame/apps/api/internal/platform/config"
@@ -108,10 +110,10 @@ func TestAuthCharacterFlow(t *testing.T) {
 			} `json:"account"`
 		} `json:"data"`
 	}
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", map[string]any{
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
 		"bot_name": "bot-alpha",
 		"password": "verysecure",
-	}, "", http.StatusOK, &registerResponse)
+	}), "", http.StatusOK, &registerResponse)
 
 	if registerResponse.Data.Account.AccountID == "" {
 		t.Fatal("expected account_id to be returned")
@@ -126,10 +128,10 @@ func TestAuthCharacterFlow(t *testing.T) {
 			RefreshToken string `json:"refresh_token"`
 		} `json:"data"`
 	}
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", map[string]any{
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
 		"bot_name": "bot-alpha",
 		"password": "verysecure",
-	}, "", http.StatusOK, &loginResponse)
+	}), "", http.StatusOK, &loginResponse)
 
 	if loginResponse.Data.AccessToken == "" || loginResponse.Data.RefreshToken == "" {
 		t.Fatal("expected both access and refresh tokens")
@@ -273,14 +275,14 @@ func TestCharacterValidationAndAuthErrors(t *testing.T) {
 			AccessToken string `json:"access_token"`
 		} `json:"data"`
 	}
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", map[string]any{
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
 		"bot_name": "bot-beta",
 		"password": "verysecure",
-	}, "", http.StatusOK, nil)
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", map[string]any{
+	}), "", http.StatusOK, nil)
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
 		"bot_name": "bot-beta",
 		"password": "verysecure",
-	}, "", http.StatusOK, &loginResponse)
+	}), "", http.StatusOK, &loginResponse)
 
 	var errorResponse struct {
 		Error struct {
@@ -298,23 +300,59 @@ func TestCharacterValidationAndAuthErrors(t *testing.T) {
 	}
 }
 
+func TestAuthChallengeRequiredAndInvalid(t *testing.T) {
+	server := NewServer(config.API{Port: "8080"})
+
+	var requiredResponse struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", map[string]any{
+		"bot_name": "bot-missing-challenge",
+		"password": "verysecure",
+	}, "", http.StatusBadRequest, &requiredResponse)
+
+	if requiredResponse.Error.Code != "AUTH_CHALLENGE_REQUIRED" {
+		t.Fatalf("expected AUTH_CHALLENGE_REQUIRED, got %q", requiredResponse.Error.Code)
+	}
+
+	challenge := issueAuthChallenge(t, server)
+
+	var invalidResponse struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", map[string]any{
+		"bot_name":         "bot-invalid-challenge",
+		"password":         "verysecure",
+		"challenge_id":     challenge.ChallengeID,
+		"challenge_answer": "999999",
+	}, "", http.StatusUnauthorized, &invalidResponse)
+
+	if invalidResponse.Error.Code != "AUTH_CHALLENGE_INVALID" {
+		t.Fatalf("expected AUTH_CHALLENGE_INVALID, got %q", invalidResponse.Error.Code)
+	}
+}
+
 func TestQuestBoardAndSubmissionFlow(t *testing.T) {
 	server := NewServer(config.API{Port: "8080"})
 
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", map[string]any{
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
 		"bot_name": "bot-quester",
 		"password": "verysecure",
-	}, "", http.StatusOK, nil)
+	}), "", http.StatusOK, nil)
 
 	var loginResponse struct {
 		Data struct {
 			AccessToken string `json:"access_token"`
 		} `json:"data"`
 	}
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", map[string]any{
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
 		"bot_name": "bot-quester",
 		"password": "verysecure",
-	}, "", http.StatusOK, &loginResponse)
+	}), "", http.StatusOK, &loginResponse)
 
 	doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
 		"name":         "Courier",
@@ -436,6 +474,111 @@ func TestQuestBoardAndSubmissionFlow(t *testing.T) {
 	}
 }
 
+func TestPublicRoutesReflectRuntimeData(t *testing.T) {
+	server := NewServer(config.API{Port: "8080"})
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "bot-public",
+		"password": "verysecure",
+	}), "", http.StatusOK, nil)
+
+	var loginResponse struct {
+		Data struct {
+			AccessToken string `json:"access_token"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "bot-public",
+		"password": "verysecure",
+	}), "", http.StatusOK, &loginResponse)
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
+		"name":         "PublicRunner",
+		"class":        "priest",
+		"weapon_style": "holy_tome",
+	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+
+	var boardResponse struct {
+		Data struct {
+			Quests []struct {
+				QuestID        string `json:"quest_id"`
+				TemplateType   string `json:"template_type"`
+				TargetRegionID string `json:"target_region_id"`
+			} `json:"quests"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests", nil, loginResponse.Data.AccessToken, http.StatusOK, &boardResponse)
+
+	deliveryQuestID := ""
+	for _, quest := range boardResponse.Data.Quests {
+		if quest.TemplateType == "deliver_supplies" && quest.TargetRegionID == "greenfield_village" {
+			deliveryQuestID = quest.QuestID
+			break
+		}
+	}
+	if deliveryQuestID == "" {
+		t.Fatal("expected a greenfield delivery quest for runtime public data test")
+	}
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/quests/"+deliveryQuestID+"/accept", nil, loginResponse.Data.AccessToken, http.StatusOK, nil)
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/travel", map[string]any{
+		"region_id": "greenfield_village",
+	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/quests/"+deliveryQuestID+"/submit", nil, loginResponse.Data.AccessToken, http.StatusOK, nil)
+
+	var worldStateResponse struct {
+		Data struct {
+			ActiveBotCount       int `json:"active_bot_count"`
+			QuestsCompletedToday int `json:"quests_completed_today"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/public/world-state", nil, "", http.StatusOK, &worldStateResponse)
+
+	if worldStateResponse.Data.ActiveBotCount != 1 {
+		t.Fatalf("expected active bot count 1, got %d", worldStateResponse.Data.ActiveBotCount)
+	}
+	if worldStateResponse.Data.QuestsCompletedToday != 1 {
+		t.Fatalf("expected quests completed today 1, got %d", worldStateResponse.Data.QuestsCompletedToday)
+	}
+
+	var eventsResponse struct {
+		Data struct {
+			Items []struct {
+				EventType string `json:"event_type"`
+				ActorName string `json:"actor_name"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/public/events?limit=10", nil, "", http.StatusOK, &eventsResponse)
+
+	if len(eventsResponse.Data.Items) == 0 {
+		t.Fatal("expected runtime public events to be present")
+	}
+	if eventsResponse.Data.Items[0].ActorName != "PublicRunner" {
+		t.Fatalf("expected PublicRunner as latest public actor, got %q", eventsResponse.Data.Items[0].ActorName)
+	}
+
+	var leaderboardsResponse struct {
+		Data struct {
+			Reputation []struct {
+				Name  string `json:"name"`
+				Score int    `json:"score"`
+			} `json:"reputation"`
+			Gold []struct {
+				Name string `json:"name"`
+			} `json:"gold"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/public/leaderboards", nil, "", http.StatusOK, &leaderboardsResponse)
+
+	if len(leaderboardsResponse.Data.Reputation) == 0 || leaderboardsResponse.Data.Reputation[0].Name != "PublicRunner" {
+		t.Fatal("expected runtime reputation leaderboard to include PublicRunner")
+	}
+	if len(leaderboardsResponse.Data.Gold) == 0 || leaderboardsResponse.Data.Gold[0].Name != "PublicRunner" {
+		t.Fatal("expected runtime gold leaderboard to include PublicRunner")
+	}
+}
+
 func decodeJSON(t *testing.T, recorder *httptest.ResponseRecorder, target any) {
 	t.Helper()
 
@@ -474,4 +617,53 @@ func doJSONRequest(t *testing.T, server *Server, method, path string, body any, 
 	if target != nil {
 		decodeJSON(t, recorder, target)
 	}
+}
+
+func withAuthChallenge(t *testing.T, server *Server, payload map[string]any) map[string]any {
+	t.Helper()
+
+	challenge := issueAuthChallenge(t, server)
+	enriched := make(map[string]any, len(payload)+2)
+	for key, value := range payload {
+		enriched[key] = value
+	}
+	enriched["challenge_id"] = challenge.ChallengeID
+	enriched["challenge_answer"] = solveChallengePrompt(t, challenge.PromptText)
+	return enriched
+}
+
+func issueAuthChallenge(t *testing.T, server *Server) struct {
+	ChallengeID string `json:"challenge_id"`
+	PromptText  string `json:"prompt_text"`
+} {
+	t.Helper()
+
+	var challengeResponse struct {
+		Data struct {
+			Challenge struct {
+				ChallengeID string `json:"challenge_id"`
+				PromptText  string `json:"prompt_text"`
+			} `json:"challenge"`
+		} `json:"data"`
+	}
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/challenge", map[string]any{}, "", http.StatusOK, &challengeResponse)
+	return challengeResponse.Data.Challenge
+}
+
+func solveChallengePrompt(t *testing.T, prompt string) string {
+	t.Helper()
+
+	matcher := regexp.MustCompile(`ember=(\d+).+frost=(\d+).+moss=(\d+).+factor=(\d+)`)
+	matches := matcher.FindStringSubmatch(prompt)
+	if len(matches) != 5 {
+		t.Fatalf("unexpected challenge prompt format: %q", prompt)
+	}
+
+	ember, _ := strconv.Atoi(matches[1])
+	frost, _ := strconv.Atoi(matches[2])
+	moss, _ := strconv.Atoi(matches[3])
+	factor, _ := strconv.Atoi(matches[4])
+
+	return strconv.Itoa(((ember + frost) - moss) * factor)
 }

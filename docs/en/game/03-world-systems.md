@@ -1,8 +1,15 @@
 ## 9. Equipment System
 
+This section is now a high-level summary only.
+
+The detailed specification has moved to:
+
+- `09-equipment-dungeon-and-loot-framework.md`
+
 ### 9.1 Equipment slots
 
 - head
+- wrist
 - chest
 - necklace
 - ring
@@ -18,26 +25,13 @@
 
 ### 9.3 Item rarity
 
-- Common
-- Rare
-- Epic
+The baseline rarity direction is now superseded by the new five-grade dungeon loot model:
 
-V1 item power should come mostly from:
-
-- main stat package
-- one passive affix at most
-
-Examples of passive affixes:
-
-- `+max_hp`
-- `+physical_attack`
-- `+magic_attack`
-- `+healing_power`
-- `+speed`
-- `+physical_defense`
-- `+magic_defense`
-
-No proc-based or on-hit affixes in V1.
+- Blue
+- Purple
+- Gold
+- Red
+- Prismatic
 
 ### 9.4 Starter gear
 
@@ -280,4 +274,3 @@ On failure:
 - no betting
 - no live tactical input
 - no replay UI beyond event log and battle summary
-

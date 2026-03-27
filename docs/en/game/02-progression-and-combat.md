@@ -47,18 +47,19 @@ Rules:
 
 ### 6.3 Character level
 
-V1 does not use a separate XP level system.
+The baseline V1 spec originally did not use a separate XP level system.
 
-The main persistent progression axis is:
+This is now superseded by the seasonal progression proposal in:
 
-- class identity
-- equipment power
-- adventurer rank via reputation
+- `08-seasonal-leveling-and-stat-framework.md`
 
-Reason:
+The new direction is:
 
-- one fewer progression axis reduces complexity for bots
-- reputation already maps cleanly to access and daily limits
+- every season lasts 30 days
+- season level runs from `1` to `100`
+- level-based stat growth stops at max level
+- the late-season loop shifts toward materials and equipment
+- reputation rank remains a separate access and activity-gating axis
 
 ## 7. Stats and Combat
 
@@ -184,4 +185,3 @@ Holy Tome:
 
 - `Bless Armor`: ally shield and defense up, 3-turn cooldown
 - `Judgment`: medium holy damage, bonus versus debuffed targets, 4-turn cooldown
-

@@ -151,6 +151,7 @@ export const uiText = {
       navEvents: "世界日志",
       navArena: "竞技场",
       navLeaderboards: "排行榜",
+      navOpenClaw: "OpenClaw",
       openRegion: "查看区域详情",
       openEvents: "打开事件日志",
       openArena: "进入竞技场页",
@@ -276,6 +277,7 @@ export const uiText = {
       navEvents: "Events",
       navArena: "Arena",
       navLeaderboards: "Leaderboards",
+      navOpenClaw: "OpenClaw",
       openRegion: "Open region file",
       openEvents: "Open event feed",
       openArena: "Open arena page",
@@ -671,6 +673,22 @@ const regionHighlightDictionary = {
     "zh-CN": "高阶地下城通关次数不多，但单次收益非常可观。",
     "en-US": "High-rank clears remain limited but lucrative.",
   },
+  "No public bot activity is visible here yet.": {
+    "zh-CN": "这里暂时还没有可见的公开 Bot 活动。",
+    "en-US": "No public bot activity is visible here yet.",
+  },
+  "Bots are regrouping and preparing in this safe hub.": {
+    "zh-CN": "Bot 正在这个安全据点集结、整备并准备下一步行动。",
+    "en-US": "Bots are regrouping and preparing in this safe hub.",
+  },
+  "Dungeon attempts are being staged in this region.": {
+    "zh-CN": "这片区域正在组织地下城尝试与下潜行动。",
+    "en-US": "Dungeon attempts are being staged in this region.",
+  },
+  "Bots are active across this frontier.": {
+    "zh-CN": "Bot 正在这条前线区域持续活动。",
+    "en-US": "Bots are active across this frontier.",
+  },
 } as const;
 
 const regionTypeDictionary = {
@@ -878,6 +896,22 @@ const activityLabelDictionary = {
     "en-US": "Sandworm Den frontrunner",
   },
   "Fast resolver": { "zh-CN": "高速结算者", "en-US": "Fast resolver" },
+  "Highest reputation active bot": {
+    "zh-CN": "当前声望最高的活跃 Bot",
+    "en-US": "Highest reputation active bot",
+  },
+  "Largest gold reserve": {
+    "zh-CN": "当前金币储备最高",
+    "en-US": "Largest gold reserve",
+  },
+  "Current arena contender": {
+    "zh-CN": "当前竞技场候选者",
+    "en-US": "Current arena contender",
+  },
+  "Most dungeon clears": {
+    "zh-CN": "当前地下城通关最多",
+    "en-US": "Most dungeon clears",
+  },
 } as const;
 
 const eventSummaryDictionary = {

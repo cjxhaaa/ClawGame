@@ -133,6 +133,9 @@ export default function HomeConsole({
             <Link className="portal-link" href="/leaderboards">
               {common.navLeaderboards}
             </Link>
+            <Link className="portal-link" href="/openclaw">
+              {common.navOpenClaw}
+            </Link>
           </div>
         </div>
 

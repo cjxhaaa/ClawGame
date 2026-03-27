@@ -1,10 +1,13 @@
 package app
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -13,6 +16,7 @@ import (
 	"clawgame/apps/api/internal/auth"
 	"clawgame/apps/api/internal/characters"
 	"clawgame/apps/api/internal/platform/config"
+	"clawgame/apps/api/internal/platform/store"
 	"clawgame/apps/api/internal/quests"
 	"clawgame/apps/api/internal/world"
 	"github.com/go-chi/chi/v5"
@@ -35,6 +39,33 @@ func NewServer(cfg config.API) *Server {
 	questService := quests.NewService()
 	worldService := world.NewService()
 
+	if strings.TrimSpace(cfg.DatabaseURL) != "" {
+		postgresStore, err := store.NewPostgresStore(cfg.DatabaseURL)
+		if err != nil {
+			log.Printf("api persistence disabled: failed to connect postgres: %v", err)
+		} else {
+			persistentAuth, err := auth.NewServiceWithRepository(postgresStore)
+			if err != nil {
+				log.Printf("api persistence disabled: failed to load accounts: %v", err)
+			} else {
+				persistentCharacters, err := characters.NewServiceWithRepository(postgresStore)
+				if err != nil {
+					log.Printf("api persistence disabled: failed to load characters: %v", err)
+				} else {
+					persistentQuests, err := quests.NewServiceWithRepository(postgresStore)
+					if err != nil {
+						log.Printf("api persistence disabled: failed to load quest boards: %v", err)
+					} else {
+						authService = persistentAuth
+						characterService = persistentCharacters
+						questService = persistentQuests
+						log.Printf("api persistence enabled with postgres runtime storage")
+					}
+				}
+			}
+		}
+	}
+
 	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		writeEnvelope(w, r, http.StatusOK, map[string]any{
 			"service": "clawgame-api",
@@ -51,18 +82,47 @@ func NewServer(cfg config.API) *Server {
 	})
 
 	router.Route("/api/v1", func(r chi.Router) {
+		r.Post("/auth/challenge", func(w http.ResponseWriter, r *http.Request) {
+			challenge, err := authService.IssueChallenge()
+			if err != nil {
+				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to issue auth challenge")
+				return
+			}
+
+			writeEnvelope(w, r, http.StatusOK, map[string]any{
+				"challenge": challenge,
+			})
+		})
+
 		r.Post("/auth/register", func(w http.ResponseWriter, r *http.Request) {
 			var request struct {
-				BotName  string `json:"bot_name"`
-				Password string `json:"password"`
+				BotName         string `json:"bot_name"`
+				Password        string `json:"password"`
+				ChallengeID     string `json:"challenge_id"`
+				ChallengeAnswer string `json:"challenge_answer"`
 			}
 			if !decodeJSONBody(w, r, &request) {
 				return
 			}
 
-			account, err := authService.RegisterAccount(request.BotName, request.Password)
+			account, err := authService.RegisterAccount(
+				request.BotName,
+				request.Password,
+				request.ChallengeID,
+				request.ChallengeAnswer,
+			)
 			if err != nil {
 				switch {
+				case errors.Is(err, auth.ErrChallengeRequired):
+					writeError(w, r, http.StatusBadRequest, "AUTH_CHALLENGE_REQUIRED", "register requests must answer a fresh auth challenge")
+				case errors.Is(err, auth.ErrChallengeNotFound):
+					writeError(w, r, http.StatusUnauthorized, "AUTH_CHALLENGE_NOT_FOUND", "auth challenge does not exist")
+				case errors.Is(err, auth.ErrChallengeExpired):
+					writeError(w, r, http.StatusUnauthorized, "AUTH_CHALLENGE_EXPIRED", "auth challenge has expired")
+				case errors.Is(err, auth.ErrChallengeUsed):
+					writeError(w, r, http.StatusUnauthorized, "AUTH_CHALLENGE_USED", "auth challenge has already been consumed")
+				case errors.Is(err, auth.ErrChallengeInvalid):
+					writeError(w, r, http.StatusUnauthorized, "AUTH_CHALLENGE_INVALID", "auth challenge answer is incorrect")
 				case errors.Is(err, auth.ErrBotNameTaken):
 					writeError(w, r, http.StatusConflict, "ACCOUNT_BOT_NAME_TAKEN", "bot name is already registered")
 				case errors.Is(err, auth.ErrInvalidRegisterInput):
@@ -80,21 +140,38 @@ func NewServer(cfg config.API) *Server {
 
 		r.Post("/auth/login", func(w http.ResponseWriter, r *http.Request) {
 			var request struct {
-				BotName  string `json:"bot_name"`
-				Password string `json:"password"`
+				BotName         string `json:"bot_name"`
+				Password        string `json:"password"`
+				ChallengeID     string `json:"challenge_id"`
+				ChallengeAnswer string `json:"challenge_answer"`
 			}
 			if !decodeJSONBody(w, r, &request) {
 				return
 			}
 
-			tokens, err := authService.Login(request.BotName, request.Password)
+			tokens, err := authService.Login(
+				request.BotName,
+				request.Password,
+				request.ChallengeID,
+				request.ChallengeAnswer,
+			)
 			if err != nil {
-				if errors.Is(err, auth.ErrInvalidCredentials) {
+				switch {
+				case errors.Is(err, auth.ErrChallengeRequired):
+					writeError(w, r, http.StatusBadRequest, "AUTH_CHALLENGE_REQUIRED", "login requests must answer a fresh auth challenge")
+				case errors.Is(err, auth.ErrChallengeNotFound):
+					writeError(w, r, http.StatusUnauthorized, "AUTH_CHALLENGE_NOT_FOUND", "auth challenge does not exist")
+				case errors.Is(err, auth.ErrChallengeExpired):
+					writeError(w, r, http.StatusUnauthorized, "AUTH_CHALLENGE_EXPIRED", "auth challenge has expired")
+				case errors.Is(err, auth.ErrChallengeUsed):
+					writeError(w, r, http.StatusUnauthorized, "AUTH_CHALLENGE_USED", "auth challenge has already been consumed")
+				case errors.Is(err, auth.ErrChallengeInvalid):
+					writeError(w, r, http.StatusUnauthorized, "AUTH_CHALLENGE_INVALID", "auth challenge answer is incorrect")
+				case errors.Is(err, auth.ErrInvalidCredentials):
 					writeError(w, r, http.StatusUnauthorized, "AUTH_INVALID_CREDENTIALS", "bot name or password is incorrect")
-					return
+				default:
+					writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to create session")
 				}
-
-				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to create session")
 				return
 			}
 
@@ -543,19 +620,22 @@ func NewServer(cfg config.API) *Server {
 
 		r.Route("/public", func(r chi.Router) {
 			r.Get("/world-state", func(w http.ResponseWriter, r *http.Request) {
-				writeEnvelope(w, r, http.StatusOK, worldService.GetPublicWorldState())
+				snapshot := characterService.SnapshotRuntime()
+				writeEnvelope(w, r, http.StatusOK, buildPublicWorldState(worldService, snapshot))
 			})
 
 			r.Get("/events", func(w http.ResponseWriter, r *http.Request) {
 				limit := parseLimit(r, 20, 100)
+				snapshot := characterService.SnapshotRuntime()
 				writeEnvelope(w, r, http.StatusOK, map[string]any{
-					"items":       worldService.ListPublicEvents(limit),
+					"items":       buildPublicEvents(snapshot.Events, limit),
 					"next_cursor": nil,
 				})
 			})
 
 			r.Get("/leaderboards", func(w http.ResponseWriter, r *http.Request) {
-				writeEnvelope(w, r, http.StatusOK, worldService.GetPublicLeaderboards())
+				snapshot := characterService.SnapshotRuntime()
+				writeEnvelope(w, r, http.StatusOK, buildPublicLeaderboards(snapshot))
 			})
 		})
 	})
@@ -669,6 +749,280 @@ func buildCharacterState(account auth.Account, characterService *characters.Serv
 
 	state.Objectives = questService.ActiveObjectives(state.Character.CharacterID)
 	return state, nil
+}
+
+func buildPublicWorldState(worldService *world.Service, snapshot characters.RuntimeSnapshot) world.PublicWorldState {
+	now := worldService.CurrentTime()
+	resetAt := worldService.NextDailyReset(now)
+	resetWindowStart := resetAt.Add(-24 * time.Hour)
+	arenaStatus := worldService.CurrentArenaStatus(now)
+	events := buildPublicEvents(snapshot.Events, 500)
+	regions := worldService.ListRegions()
+	regionsByID := make(map[string]world.RegionDetail, len(regions))
+	populationByRegion := make(map[string]int, len(regions))
+	eventCountByRegion := make(map[string]int, len(regions))
+	latestEventByRegion := make(map[string]world.WorldEvent, len(regions))
+	questsCompletedToday := 0
+	dungeonClearsToday := 0
+	goldMintedToday := 0
+	botsInDungeon := 0
+	arenaActors := make(map[string]struct{})
+
+	for _, region := range regions {
+		detail, ok := worldService.GetRegion(region.ID)
+		if ok {
+			regionsByID[region.ID] = detail
+		}
+	}
+
+	for _, character := range snapshot.Characters {
+		if strings.TrimSpace(character.Status) == "" || character.Status == "active" {
+			populationByRegion[character.LocationRegionID]++
+		}
+
+		if region, ok := regionsByID[character.LocationRegionID]; ok && region.Region.Type == "dungeon" {
+			botsInDungeon++
+		}
+	}
+
+	for _, event := range events {
+		if event.RegionID != "" {
+			eventCountByRegion[event.RegionID]++
+			if _, exists := latestEventByRegion[event.RegionID]; !exists {
+				latestEventByRegion[event.RegionID] = event
+			}
+		}
+
+		occurredAt, err := time.Parse(time.RFC3339, event.OccurredAt)
+		if err != nil || occurredAt.Before(resetWindowStart) {
+			continue
+		}
+
+		switch {
+		case event.EventType == "quest.submitted":
+			questsCompletedToday++
+		case event.EventType == "dungeon.cleared":
+			dungeonClearsToday++
+		}
+
+		if strings.HasPrefix(event.EventType, "arena.") {
+			arenaActors[event.ActorCharacterID] = struct{}{}
+		}
+
+		goldMintedToday += intPayload(event.Payload, "reward_gold")
+	}
+
+	regionActivities := make([]world.RegionActivity, 0, len(regions))
+	for _, region := range regions {
+		detail := regionsByID[region.ID]
+		highlight := fallbackRegionHighlight(detail.Region.Type, populationByRegion[region.ID])
+		if latestEvent, ok := latestEventByRegion[region.ID]; ok {
+			highlight = latestEvent.Summary
+		}
+
+		regionActivities = append(regionActivities, world.RegionActivity{
+			RegionID:         region.ID,
+			Name:             region.Name,
+			Type:             region.Type,
+			MinRank:          region.MinRank,
+			TravelCostGold:   region.TravelCostGold,
+			Population:       populationByRegion[region.ID],
+			RecentEventCount: eventCountByRegion[region.ID],
+			Highlight:        highlight,
+			BuildingCount:    len(detail.Buildings),
+		})
+	}
+
+	return world.PublicWorldState{
+		ServerTime:           now.Format(time.RFC3339),
+		DailyResetAt:         resetAt.Format(time.RFC3339),
+		ActiveBotCount:       len(snapshot.Characters),
+		BotsInDungeonCount:   botsInDungeon,
+		BotsInArenaCount:     len(arenaActors),
+		QuestsCompletedToday: questsCompletedToday,
+		DungeonClearsToday:   dungeonClearsToday,
+		GoldMintedToday:      goldMintedToday,
+		Regions:              regionActivities,
+		CurrentArenaStatus:   arenaStatus,
+	}
+}
+
+func buildPublicEvents(events []world.WorldEvent, limit int) []world.WorldEvent {
+	if limit <= 0 {
+		limit = 20
+	}
+
+	publicEvents := make([]world.WorldEvent, 0, len(events))
+	seen := make(map[string]struct{}, len(events))
+
+	for _, event := range events {
+		if event.Visibility != "public" {
+			continue
+		}
+		if _, exists := seen[event.EventID]; exists {
+			continue
+		}
+
+		seen[event.EventID] = struct{}{}
+		publicEvents = append(publicEvents, event)
+	}
+
+	slices.SortFunc(publicEvents, func(left, right world.WorldEvent) int {
+		return cmp.Compare(right.OccurredAt, left.OccurredAt)
+	})
+
+	if limit > len(publicEvents) {
+		limit = len(publicEvents)
+	}
+
+	return publicEvents[:limit]
+}
+
+func buildPublicLeaderboards(snapshot characters.RuntimeSnapshot) world.Leaderboards {
+	reputationEntries := make([]world.LeaderboardEntry, 0, len(snapshot.Characters))
+	goldEntries := make([]world.LeaderboardEntry, 0, len(snapshot.Characters))
+	dungeonClearsByCharacter := make(map[string]int)
+	arenaEntriesByCharacter := make(map[string]int)
+	characterByID := make(map[string]characters.Summary, len(snapshot.Characters))
+
+	for _, character := range snapshot.Characters {
+		characterByID[character.CharacterID] = character
+		reputationEntries = append(reputationEntries, world.LeaderboardEntry{
+			CharacterID:   character.CharacterID,
+			Name:          character.Name,
+			Class:         character.Class,
+			WeaponStyle:   character.WeaponStyle,
+			RegionID:      character.LocationRegionID,
+			Score:         character.Reputation,
+			ScoreLabel:    "reputation",
+			ActivityLabel: "Highest reputation active bot",
+		})
+		goldEntries = append(goldEntries, world.LeaderboardEntry{
+			CharacterID:   character.CharacterID,
+			Name:          character.Name,
+			Class:         character.Class,
+			WeaponStyle:   character.WeaponStyle,
+			RegionID:      character.LocationRegionID,
+			Score:         character.Gold,
+			ScoreLabel:    "gold",
+			ActivityLabel: "Largest gold reserve",
+		})
+	}
+
+	for _, event := range buildPublicEvents(snapshot.Events, 500) {
+		switch {
+		case event.EventType == "dungeon.cleared":
+			dungeonClearsByCharacter[event.ActorCharacterID]++
+		case strings.HasPrefix(event.EventType, "arena."):
+			arenaEntriesByCharacter[event.ActorCharacterID]++
+		}
+	}
+
+	dungeonEntries := make([]world.LeaderboardEntry, 0, len(dungeonClearsByCharacter))
+	for characterID, clears := range dungeonClearsByCharacter {
+		character, ok := characterByID[characterID]
+		if !ok {
+			continue
+		}
+
+		dungeonEntries = append(dungeonEntries, world.LeaderboardEntry{
+			CharacterID:   character.CharacterID,
+			Name:          character.Name,
+			Class:         character.Class,
+			WeaponStyle:   character.WeaponStyle,
+			RegionID:      character.LocationRegionID,
+			Score:         clears,
+			ScoreLabel:    "clears",
+			ActivityLabel: "Most dungeon clears",
+		})
+	}
+
+	arenaEntries := make([]world.LeaderboardEntry, 0, len(arenaEntriesByCharacter))
+	for characterID, count := range arenaEntriesByCharacter {
+		character, ok := characterByID[characterID]
+		if !ok {
+			continue
+		}
+
+		arenaEntries = append(arenaEntries, world.LeaderboardEntry{
+			CharacterID:   character.CharacterID,
+			Name:          character.Name,
+			Class:         character.Class,
+			WeaponStyle:   character.WeaponStyle,
+			RegionID:      character.LocationRegionID,
+			Score:         count,
+			ScoreLabel:    "seed",
+			ActivityLabel: "Current arena contender",
+		})
+	}
+
+	sortLeaderboardEntries(reputationEntries)
+	sortLeaderboardEntries(goldEntries)
+	sortLeaderboardEntries(dungeonEntries)
+	sortLeaderboardEntries(arenaEntries)
+
+	return world.Leaderboards{
+		Reputation:    topLeaderboardEntries(reputationEntries, 10),
+		Gold:          topLeaderboardEntries(goldEntries, 10),
+		WeeklyArena:   topLeaderboardEntries(arenaEntries, 10),
+		DungeonClears: topLeaderboardEntries(dungeonEntries, 10),
+	}
+}
+
+func sortLeaderboardEntries(entries []world.LeaderboardEntry) {
+	slices.SortFunc(entries, func(left, right world.LeaderboardEntry) int {
+		if left.Score != right.Score {
+			return cmp.Compare(right.Score, left.Score)
+		}
+
+		return cmp.Compare(left.Name, right.Name)
+	})
+
+	for index := range entries {
+		entries[index].Rank = index + 1
+	}
+}
+
+func topLeaderboardEntries(entries []world.LeaderboardEntry, limit int) []world.LeaderboardEntry {
+	if limit > len(entries) {
+		limit = len(entries)
+	}
+
+	return entries[:limit]
+}
+
+func intPayload(payload map[string]any, key string) int {
+	if payload == nil {
+		return 0
+	}
+
+	switch value := payload[key].(type) {
+	case int:
+		return value
+	case int32:
+		return int(value)
+	case int64:
+		return int(value)
+	case float64:
+		return int(value)
+	default:
+		return 0
+	}
+}
+
+func fallbackRegionHighlight(regionType string, population int) string {
+	if population == 0 {
+		return "No public bot activity is visible here yet."
+	}
+
+	switch regionType {
+	case "safe_hub":
+		return "Bots are regrouping and preparing in this safe hub."
+	case "dungeon":
+		return "Dungeon attempts are being staged in this region."
+	default:
+		return "Bots are active across this frontier."
+	}
 }
 
 func currentCharacterWithLimits(account auth.Account, characterService *characters.Service, worldService *world.Service) (characters.Summary, characters.DailyLimits, error) {
