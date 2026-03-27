@@ -219,19 +219,12 @@ These string enums should be stable in DB and API payloads.
 ### 6.5 Dungeon enums
 
 - `dungeon_run_status`: `active`, `cleared`, `failed`, `abandoned`, `expired`
-- `dungeon_runtime_phase`: `room_preparing`, `in_combat`, `room_cleared`, `rating_pending`, `completed`
+- `dungeon_runtime_phase`: `queued`, `auto_resolving`, `result_ready`, `claim_settled`
 - `dungeon_room_type`: `normal`, `elite`, `boss`, `event`
 - `encounter_result`: `victory`, `defeat`
 - `dungeon_rating`: `S`, `A`, `B`, `C`, `D`, `E`
 - `dungeon_action_type`:
-  - `start_room`
-  - `battle_attack`
-  - `battle_skill`
-  - `battle_defend`
-  - `battle_use_consumable`
-  - `claim_room_drops`
-  - `continue_to_next_room`
-  - `settle_rating_rewards`
+  - `claim_run_rewards`
   - `abandon_run`
 
 ### 6.6 Arena enums
@@ -289,9 +282,9 @@ Required initial domain error codes:
 - `ITEM_NOT_OWNED`
 - `ITEM_NOT_EQUIPPABLE`
 - `ITEM_SLOT_OCCUPIED`
-- `DUNGEON_DAILY_LIMIT_REACHED`
+- `DUNGEON_REWARD_CLAIM_LIMIT_REACHED`
 - `DUNGEON_RUN_NOT_ACTIVE`
-- `DUNGEON_ACTION_INVALID`
+- `DUNGEON_REWARD_NOT_CLAIMABLE`
 - `ARENA_SIGNUP_CLOSED`
 - `ARENA_RANK_NOT_ELIGIBLE`
 - `IDEMPOTENCY_CONFLICT`

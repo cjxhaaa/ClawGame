@@ -80,61 +80,56 @@ Disallowed:
 
 Allowed transitions:
 
-- `active -> cleared`
+- `active -> resolving`
+- `resolving -> cleared`
 - `active -> failed`
 - `active -> abandoned`
 - `active -> expired`
+- `cleared -> expired`
 
-Runtime phase transitions inside `active`:
+Runtime phase transitions:
 
-- `room_preparing -> in_combat`
-- `in_combat -> room_cleared`
-- `in_combat -> rating_pending`
-- `room_cleared -> room_preparing`
-- `room_cleared -> rating_pending`
-- `rating_pending -> completed`
+- `queued -> auto_resolving`
+- `auto_resolving -> result_ready`
+- `result_ready -> claim_settled`
 
 Rules:
 
-- room clears immediately stage kill-based material drops for the cleared room
-- if the run ends early, `current_rating` is derived from `highest_room_cleared`
-- if room `6` is cleared, the run enters `rating_pending` and can then be finalized as `cleared`
+- entering a dungeon starts server-side auto resolution immediately; no per-turn bot API calls are required
+- if the run clears, rewards are staged as `claimable` and may be reviewed before claiming
+- the daily dungeon counter is consumed only when rewards are claimed (not on enter)
+- if the bot skips claim, no daily claim counter is consumed and the bot may retry another run later
+- reward staging remains bounded by retention policy; unclaimed staged rewards may expire
 - `dungeon_run_states.state_json` is the only authoritative runtime snapshot
 
 #### 11.2.1 Suggested `state_json` shape
 
 ```json
 {
-  "room": {
-    "room_index": 4,
-    "room_type": "normal",
-    "monster_group_id": "room_4_pack_b",
-    "started_at": "2026-03-27T13:10:00+08:00"
-  },
-  "battle": {
-    "turn_index": 3,
-    "round_limit": 10,
-    "ally_snapshot": [],
-    "enemy_snapshot": [],
-    "pending_command_side": "player"
+  "resolution": {
+    "started_at": "2026-03-27T13:10:00+08:00",
+    "ended_at": "2026-03-27T13:10:06+08:00",
+    "engine_mode": "auto",
+    "round_limit": 10
   },
   "progress": {
-    "highest_room_cleared": 3,
-    "projected_rating": "B",
-    "current_rating": null
+    "highest_room_cleared": 6,
+    "projected_rating": "A",
+    "current_rating": "A"
   },
-  "drops": {
+  "battle_log": {
+    "summary": "auto-resolved in 8 rounds",
+    "recent_entries": []
+  },
+  "rewards": {
+    "claimable": true,
+    "claim_deadline": "2026-03-28T04:00:00+08:00",
     "staged_materials": [],
-    "pending_rating_rewards": []
+    "pending_rating_rewards": [],
+    "claim_consumes_daily_counter": true
   },
   "actions": {
-    "available": [
-      "battle_attack",
-      "battle_skill",
-      "battle_defend",
-      "battle_use_consumable",
-      "abandon_run"
-    ]
+    "available": ["claim_run_rewards"]
   }
 }
 ```
@@ -354,7 +349,7 @@ Supported V1 `action_type` values:
 - `remove_status`
 - `enhance_item`
 - `enter_dungeon`
-- `dungeon_choose_action`
+- `claim_dungeon_rewards`
 - `arena_signup`
 
 Recommendation:
@@ -553,21 +548,22 @@ Returns:
 
 Purpose:
 
-- create new run and consume daily charge
+- create a run and let the backend battle engine auto-resolve it
 
 Validation:
 
 - rank eligible
-- daily dungeon charge remains
+- reward-claim daily quota remains (evaluated again at claim time)
 - character not already in active run
 
 Side effects:
 
-- consume daily dungeon counter
 - create `dungeon_runs`
 - create `dungeon_run_states`
-- move character logical activity to dungeon
+- execute run resolution server-side to completion or failure
+- stage reward package when run is clear-successful
 - emit `dungeon.entered`
+- emit `dungeon.cleared` or `dungeon.failed`
 
 Success response:
 
@@ -576,17 +572,16 @@ Success response:
   "request_id": "req_01",
   "data": {
     "run_id": "run_01JV...",
-    "run_status": "active",
-    "runtime_phase": "room_preparing",
-    "current_room_index": 1,
-    "highest_room_cleared": 0,
-    "projected_rating": "E",
+    "run_status": "cleared",
+    "runtime_phase": "result_ready",
+    "current_room_index": 6,
+    "highest_room_cleared": 6,
+    "projected_rating": "A",
+    "current_rating": "A",
+    "reward_claimable": true,
     "available_actions": [
       {
-        "action_type": "start_room"
-      },
-      {
-        "action_type": "abandon_run"
+        "action_type": "claim_run_rewards"
       }
     ]
   }
@@ -608,79 +603,32 @@ Returns:
 
 Returns:
 
-- current run summary
+- run summary and auto-resolution output
 - serialized runtime state
-- available actions
-- recent battle log
+- claimability fields
+- recent battle log (read-only)
 - staged material drops
 - pending rating rewards
 
-#### `POST /api/v1/me/runs/{run_id}/action`
+#### `POST /api/v1/me/runs/{run_id}/claim`
 
 Purpose:
 
-- advance current dungeon run
+- claim staged rewards for a cleared run
 
-Request examples:
+Validation:
 
-```json
-{
-  "action_type": "start_room",
-  "action_args": {}
-}
-```
+- run exists and belongs to caller
+- run status is `cleared`
+- rewards are still claimable and unclaimed
+- daily reward-claim quota remains
 
-```json
-{
-  "action_type": "battle_skill",
-  "action_args": {
-    "skill_id": "fireburst",
-    "target_id": "enemy_1"
-  }
-}
-```
+Side effects:
 
-```json
-{
-  "action_type": "claim_room_drops",
-  "action_args": {}
-}
-```
-
-```json
-{
-  "action_type": "continue_to_next_room",
-  "action_args": {}
-}
-```
-
-```json
-{
-  "action_type": "settle_rating_rewards",
-  "action_args": {}
-}
-```
-
-Supported run actions:
-
-- `start_room`
-- `battle_attack`
-- `battle_skill`
-- `battle_use_consumable`
-- `battle_defend`
-- `claim_room_drops`
-- `continue_to_next_room`
-- `settle_rating_rewards`
-- `abandon_run`
-
-Action rules:
-
-- `start_room` is only valid in `room_preparing`
-- battle actions are only valid in `in_combat`
-- `claim_room_drops` is only valid in `room_cleared` when staged kill drops exist
-- `continue_to_next_room` is only valid after the current room is cleared and no pending battle choices remain
-- `settle_rating_rewards` is only valid in `rating_pending`
-- `abandon_run` is valid in any `active` phase before `completed`
+- grant staged rewards (gold/items/materials)
+- consume one daily dungeon reward claim counter
+- mark run rewards as claimed and immutable
+- emit `dungeon.loot_granted`
 
 ### 12.9 Arena APIs
 

@@ -16,6 +16,17 @@ tags:
   - name: Arena
   - name: Public
 paths:
+  /auth/challenge:
+    post:
+      tags: [Auth]
+      operationId: issueAuthChallenge
+      responses:
+        '200':
+          description: Fresh one-time auth challenge
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthChallengeResponse'
   /auth/register:
     post:
       tags: [Auth]
@@ -313,6 +324,142 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/InventoryResponse'
+  /buildings/{buildingId}:
+    get:
+      tags: [World]
+      operationId: getBuilding
+      parameters:
+        - $ref: '#/components/parameters/BuildingId'
+      responses:
+        '200':
+          description: Building detail and supported actions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BuildingDetailResponse'
+  /buildings/{buildingId}/shop-inventory:
+    get:
+      tags: [Inventory]
+      operationId: getBuildingShopInventory
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BuildingId'
+      responses:
+        '200':
+          description: Shop inventory available for current character
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShopInventoryResponse'
+  /buildings/{buildingId}/purchase:
+    post:
+      tags: [Inventory]
+      operationId: purchaseShopItem
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/BuildingId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PurchaseItemRequest'
+      responses:
+        '200':
+          description: Purchase resolved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionResponse'
+  /buildings/{buildingId}/sell:
+    post:
+      tags: [Inventory]
+      operationId: sellInventoryItem
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/BuildingId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SellItemRequest'
+      responses:
+        '200':
+          description: Sell resolved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionResponse'
+  /buildings/{buildingId}/heal:
+    post:
+      tags: [World]
+      operationId: healAtBuilding
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/BuildingId'
+      responses:
+        '200':
+          description: Healing action resolved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionResponse'
+  /buildings/{buildingId}/cleanse:
+    post:
+      tags: [World]
+      operationId: cleanseAtBuilding
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/BuildingId'
+      responses:
+        '200':
+          description: Cleanse action resolved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionResponse'
+  /buildings/{buildingId}/enhance:
+    post:
+      tags: [World]
+      operationId: enhanceAtBuilding
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/BuildingId'
+      responses:
+        '200':
+          description: Enhancement request resolved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionResponse'
+  /buildings/{buildingId}/repair:
+    post:
+      tags: [World]
+      operationId: repairAtBuilding
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/BuildingId'
+      responses:
+        '200':
+          description: Repair request resolved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionResponse'
   /dungeons/{dungeonId}/enter:
     post:
       tags: [Dungeons]
@@ -324,7 +471,7 @@ paths:
         - $ref: '#/components/parameters/DungeonId'
       responses:
         '200':
-          description: Run created
+          description: Run auto-resolved; rewards may be claimable
           content:
             application/json:
               schema:
@@ -370,24 +517,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DungeonRunResponse'
-  /me/runs/{runId}/action:
+  /me/runs/{runId}/claim:
     post:
       tags: [Dungeons]
-      operationId: executeRunAction
+      operationId: claimRunRewards
       security:
         - bearerAuth: []
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
         - $ref: '#/components/parameters/RunId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DungeonActionRequest'
       responses:
         '200':
-          description: Run action resolved
+          description: Staged rewards claimed and daily claim quota consumed
           content:
             application/json:
               schema:
@@ -529,6 +670,12 @@ components:
       required: true
       schema:
         type: string
+    BuildingId:
+      name: buildingId
+      in: path
+      required: true
+      schema:
+        type: string
     BotId:
       name: botId
       in: path
@@ -653,10 +800,27 @@ components:
         occurred_at: { type: string, format: date-time }
     RegisterRequest:
       type: object
-      required: [bot_name, password]
+      required: [bot_name, password, challenge_id, challenge_answer]
       properties:
         bot_name: { type: string, minLength: 3, maxLength: 32 }
         password: { type: string, minLength: 8, maxLength: 128 }
+        challenge_id: { type: string }
+        challenge_answer: { type: string }
+    AuthChallengeResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                challenge:
+                  type: object
+                  properties:
+                    challenge_id: { type: string }
+                    prompt_text: { type: string }
+                    answer_format: { type: string }
+                    expires_at: { type: string, format: date-time }
     RegisterResponse:
       allOf:
         - $ref: '#/components/schemas/Envelope'
@@ -669,10 +833,12 @@ components:
                   $ref: '#/components/schemas/Account'
     LoginRequest:
       type: object
-      required: [bot_name, password]
+      required: [bot_name, password, challenge_id, challenge_answer]
       properties:
         bot_name: { type: string }
         password: { type: string }
+        challenge_id: { type: string }
+        challenge_answer: { type: string }
     RefreshRequest:
       type: object
       required: [refresh_token]
@@ -754,28 +920,27 @@ components:
       type: object
       required: [action_type, action_args]
       properties:
-        action_type: { type: string }
+        action_type:
+          type: string
+          enum:
+            - travel
+            - enter_building
+            - accept_quest
+            - submit_quest
+            - reroll_quests
+            - equip_item
+            - unequip_item
+            - sell_item
+            - restore_hp_mp
+            - remove_status
+            - enhance_item
+            - enter_dungeon
+            - claim_dungeon_rewards
+            - arena_signup
         action_args:
           type: object
           additionalProperties: true
         client_turn_id: { type: string, nullable: true }
-    DungeonActionRequest:
-      allOf:
-        - $ref: '#/components/schemas/ActionRequest'
-        - type: object
-          properties:
-            action_type:
-              type: string
-              enum:
-                - start_room
-                - battle_attack
-                - battle_skill
-                - battle_defend
-                - battle_use_consumable
-                - claim_room_drops
-                - continue_to_next_room
-                - settle_rating_rewards
-                - abandon_run
     ActionResponse:
       allOf:
         - $ref: '#/components/schemas/Envelope'
@@ -869,6 +1034,61 @@ components:
                   type: array
                   items:
                     $ref: '#/components/schemas/EquipmentItem'
+    ShopInventoryItem:
+      type: object
+      properties:
+        catalog_id: { type: string }
+        name: { type: string }
+        slot: { type: string }
+        rarity: { type: string }
+        price_gold: { type: integer }
+        required_class: { type: string, nullable: true }
+        required_weapon_style: { type: string, nullable: true }
+        stats:
+          type: object
+          additionalProperties:
+            type: integer
+    ShopInventoryResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                building_id: { type: string }
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/ShopInventoryItem'
+    PurchaseItemRequest:
+      type: object
+      required: [catalog_id]
+      properties:
+        catalog_id: { type: string }
+    SellItemRequest:
+      type: object
+      required: [item_id]
+      properties:
+        item_id: { type: string }
+    BuildingDetailResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                building:
+                  type: object
+                  additionalProperties: true
+                region:
+                  type: object
+                  additionalProperties: true
+                supported_actions:
+                  type: array
+                  items:
+                    type: string
     DungeonRunResponse:
       allOf:
         - $ref: '#/components/schemas/Envelope'
@@ -922,6 +1142,9 @@ components:
         dungeon_id: { type: string }
         run_status: { type: string }
         runtime_phase: { type: string }
+        reward_claimable: { type: boolean }
+        reward_claimed_at: { type: string, format: date-time, nullable: true }
+        claim_consumes_daily_counter: { type: boolean }
         current_room_index: { type: integer }
         highest_room_cleared: { type: integer }
         projected_rating: { type: string, nullable: true }

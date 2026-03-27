@@ -26,6 +26,7 @@ var (
 	ErrTravelInsufficientGold = errors.New("travel insufficient gold")
 	ErrTravelRegionNotFound   = errors.New("travel region not found")
 	ErrQuestCompletionCap     = errors.New("quest completion cap reached")
+	ErrDungeonRewardClaimCap  = errors.New("dungeon reward claim cap reached")
 	ErrActionNotSupported     = errors.New("action not supported")
 )
 
@@ -426,6 +427,13 @@ func (s *Service) listValidActions(regionID string, worldService *world.Service)
 	}
 
 	actions := make([]ValidAction, 0, len(region.TravelOptions)+len(region.Buildings))
+	if region.Region.Type == "dungeon" {
+		actions = append(actions, ValidAction{
+			ActionType: "enter_dungeon",
+			Label:      fmt.Sprintf("Enter %s", region.Region.Name),
+			ArgsSchema: map[string]any{"dungeon_id": "string"},
+		})
+	}
 	for _, option := range region.TravelOptions {
 		actions = append(actions, ValidAction{
 			ActionType: "travel",
@@ -575,6 +583,87 @@ func (s *Service) SpendGold(characterID string, amount int) (Summary, error) {
 	return entry.summary, nil
 }
 
+func (s *Service) GrantGold(characterID string, amount int) (Summary, error) {
+	if amount < 0 {
+		return Summary{}, ErrGoldInsufficient
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	accountID, entry, ok := s.lookupByCharacterIDLocked(characterID)
+	if !ok {
+		return Summary{}, ErrCharacterNotFound
+	}
+	entry, _, err := s.normalizeDailyLimitsLocked(accountID, entry)
+	if err != nil {
+		return Summary{}, err
+	}
+
+	entry.summary.Gold += amount
+	if err := s.saveRecordLocked(accountID, entry); err != nil {
+		return Summary{}, err
+	}
+	s.characterByAccountID[accountID] = entry
+	return entry.summary, nil
+}
+
+func (s *Service) ApplyDungeonRewardClaim(characterID, runID, dungeonID string, rewardGold int, rating string) (Summary, DailyLimits, world.WorldEvent, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	accountID, entry, ok := s.lookupByCharacterIDLocked(characterID)
+	if !ok {
+		return Summary{}, DailyLimits{}, world.WorldEvent{}, ErrCharacterNotFound
+	}
+
+	entry, _, err := s.normalizeDailyLimitsLocked(accountID, entry)
+	if err != nil {
+		return Summary{}, DailyLimits{}, world.WorldEvent{}, err
+	}
+
+	resetAt := nextDailyReset(s.clock().In(s.loc))
+	limits := LimitsForRank(entry.summary.Rank, resetAt, entry.questCompletionUsed, entry.dungeonEntryUsed)
+	if entry.dungeonEntryUsed >= limits.DungeonEntryCap {
+		return Summary{}, DailyLimits{}, world.WorldEvent{}, ErrDungeonRewardClaimCap
+	}
+
+	if rewardGold > 0 {
+		entry.summary.Gold += rewardGold
+	}
+	entry.dungeonEntryUsed++
+
+	event := world.WorldEvent{
+		EventID:          nextID("evt"),
+		EventType:        "dungeon.loot_granted",
+		Visibility:       "public",
+		ActorCharacterID: entry.summary.CharacterID,
+		ActorName:        entry.summary.Name,
+		RegionID:         entry.summary.LocationRegionID,
+		Summary:          fmt.Sprintf("%s claimed dungeon rewards from %s.", entry.summary.Name, dungeonID),
+		Payload: map[string]any{
+			"run_id":      runID,
+			"dungeon_id":  dungeonID,
+			"reward_gold": rewardGold,
+			"rating":      rating,
+		},
+		OccurredAt: s.clock().In(s.loc).Format(time.RFC3339),
+	}
+
+	entry.recentEvents = prependEvent(entry.recentEvents, event)
+
+	if err := s.saveRecordLocked(accountID, entry); err != nil {
+		return Summary{}, DailyLimits{}, world.WorldEvent{}, err
+	}
+	if err := s.appendEventsLocked(accountID, entry.summary.CharacterID, []world.WorldEvent{event}); err != nil {
+		return Summary{}, DailyLimits{}, world.WorldEvent{}, err
+	}
+
+	s.characterByAccountID[accountID] = entry
+	updatedLimits := LimitsForRank(entry.summary.Rank, resetAt, entry.questCompletionUsed, entry.dungeonEntryUsed)
+	return entry.summary, updatedLimits, event, nil
+}
+
 func (s *Service) ApplyQuestSubmission(characterID string, quest QuestSummary) (Summary, DailyLimits, []world.WorldEvent, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -672,6 +761,28 @@ func (s *Service) AppendEvents(characterID string, events ...world.WorldEvent) e
 
 func (s *Service) GetCharacterByAccount(account auth.Account) (Summary, bool) {
 	return s.GetSummary(account.AccountID)
+}
+
+func (s *Service) GetRuntimeDetailByCharacterID(characterID string) (Summary, StatsSnapshot, DailyLimits, []world.WorldEvent, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	accountID, entry, ok := s.lookupByCharacterIDLocked(characterID)
+	if !ok {
+		return Summary{}, StatsSnapshot{}, DailyLimits{}, nil, false
+	}
+
+	entry, _, err := s.normalizeDailyLimitsLocked(accountID, entry)
+	if err != nil {
+		return Summary{}, StatsSnapshot{}, DailyLimits{}, nil, false
+	}
+
+	resetAt := nextDailyReset(s.clock().In(s.loc))
+	limits := LimitsForRank(entry.summary.Rank, resetAt, entry.questCompletionUsed, entry.dungeonEntryUsed)
+	events := make([]world.WorldEvent, len(entry.recentEvents))
+	copy(events, entry.recentEvents)
+
+	return entry.summary, entry.stats, limits, events, true
 }
 
 func (s *Service) SnapshotRuntime() RuntimeSnapshot {

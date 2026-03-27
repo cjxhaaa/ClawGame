@@ -74,25 +74,25 @@
 允许状态：
 
 - `active`
+- `resolving`
 - `cleared`
 - `failed`
 - `abandoned`
 - `expired`
 
-`active` 内部的运行态阶段流转：
+运行阶段流转：
 
-- `room_preparing -> in_combat`
-- `in_combat -> room_cleared`
-- `in_combat -> rating_pending`
-- `room_cleared -> room_preparing`
-- `room_cleared -> rating_pending`
-- `rating_pending -> completed`
+- `queued -> auto_resolving`
+- `auto_resolving -> result_ready`
+- `result_ready -> claim_settled`
 
 规则：
 
-- 房间胜利后应立即暂存该房间的击杀材料掉落
-- 运行提前结束时，`current_rating` 由 `highest_room_cleared` 推导
-- 通关第 `6` 房后进入 `rating_pending`，再结算成 `cleared`
+- 进入副本后由后端战斗引擎自动结算，不再要求 Bot 逐步调用房间/战斗动作接口
+- 若通关成功，奖励进入可领取状态（claimable），Bot 可先查看再决定是否领取
+- 每日“副本次数”语义调整为“每日领奖次数”；仅在领取奖励时扣减
+- 若 Bot 对本次掉落不满意可不领取，此次不会消耗每日领奖次数，后续可再次挑战
+- 未领取奖励受保留期约束，超过保留期可过期失效
 - `dungeon_run_states.state_json` 是唯一可信的副本运行态快照
 
 ### 11.3 竞技场赛事状态机
@@ -207,7 +207,7 @@
 - `remove_status`
 - `enhance_item`
 - `enter_dungeon`
-- `dungeon_choose_action`
+- `claim_dungeon_rewards`
 - `arena_signup`
 
 ## 12.4 Region APIs
@@ -354,12 +354,12 @@
 
 - 地下城存在且激活
 - 阶位满足要求
-- 地下城进入次数未耗尽
+- 每日领奖次数仍有额度（领取时会再次校验）
 - 当前没有冲突中的 active run
 
 返回：
 
-- 新创建的 run 状态
+- 自动结算后的 run 状态
 
 推荐返回字段：
 
@@ -369,6 +369,8 @@
 - `current_room_index`
 - `highest_room_cleared`
 - `projected_rating`
+- `current_rating`
+- `reward_claimable`
 - `available_actions`
 
 #### `GET /api/v1/me/runs/active`
@@ -391,39 +393,32 @@
 返回应包含：
 
 - 运行摘要
-- 当前房间摘要
-- 战斗快照
+- 自动结算摘要
 - 已暂存的击杀材料掉落
 - 待结算的评级装备奖励
-- 可执行动作
-- 最近战斗日志
+- 领取状态字段
+- 可执行动作（通常仅领奖动作）
+- 最近战斗日志（只读）
 
-#### `POST /api/v1/me/runs/{run_id}/action`
+#### `POST /api/v1/me/runs/{run_id}/claim`
 
 用途：
 
-- 执行地下城内动作
+- 领取该 run 已暂存的奖励
 
-支持动作：
+校验：
 
-- `start_room`
-- `battle_attack`
-- `battle_skill`
-- `battle_use_consumable`
-- `battle_defend`
-- `claim_room_drops`
-- `continue_to_next_room`
-- `settle_rating_rewards`
-- `abandon_run`
+- run 属于当前调用者
+- run 状态为 `cleared`
+- 奖励仍处于可领取且未领取状态
+- 每日领奖次数有剩余
 
-动作规则：
+副作用：
 
-- `start_room` 仅可在 `room_preparing` 使用
-- 战斗类动作仅可在 `in_combat` 使用
-- `claim_room_drops` 仅可在 `room_cleared` 且存在暂存掉落时使用
-- `continue_to_next_room` 仅可在当前房间完成后使用
-- `settle_rating_rewards` 仅可在 `rating_pending` 使用
-- `abandon_run` 可在任意 active 运行阶段使用
+- 发放金币/材料/装备等奖励
+- 扣减一次每日地下城领奖次数
+- 将 run 标记为已领取且不可重复领取
+- 产生 `dungeon.loot_granted`
 
 ## 12.9 Arena APIs
 

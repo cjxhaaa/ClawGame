@@ -13,19 +13,26 @@ import (
 	"sync/atomic"
 	"time"
 
+	"clawgame/apps/api/internal/arena"
 	"clawgame/apps/api/internal/auth"
 	"clawgame/apps/api/internal/characters"
+	"clawgame/apps/api/internal/dungeons"
+	"clawgame/apps/api/internal/inventory"
 	"clawgame/apps/api/internal/platform/config"
 	"clawgame/apps/api/internal/platform/store"
 	"clawgame/apps/api/internal/quests"
 	"clawgame/apps/api/internal/world"
+
 	"github.com/go-chi/chi/v5"
 )
 
 type Server struct {
 	httpServer       *http.Server
 	authService      *auth.Service
+	arenaService     *arena.Service
 	characterService *characters.Service
+	dungeonService   *dungeons.Service
+	inventoryService *inventory.Service
 	questService     *quests.Service
 	worldService     *world.Service
 }
@@ -35,7 +42,10 @@ var requestCounter uint64
 func NewServer(cfg config.API) *Server {
 	router := chi.NewRouter()
 	authService := auth.NewService()
+	arenaService := arena.NewService()
 	characterService := characters.NewService()
+	dungeonService := dungeons.NewService()
+	inventoryService := inventory.NewService()
 	questService := quests.NewService()
 	worldService := world.NewService()
 
@@ -340,7 +350,7 @@ func NewServer(cfg config.API) *Server {
 				return
 			}
 
-			result, err := executeAction(account, request.ActionType, request.ActionArgs, characterService, questService, worldService)
+			result, err := executeAction(account, request.ActionType, request.ActionArgs, characterService, questService, dungeonService, inventoryService, arenaService, worldService)
 			if err != nil {
 				switch {
 				case errors.Is(err, characters.ErrCharacterNotFound):
@@ -363,6 +373,32 @@ func NewServer(cfg config.API) *Server {
 					writeError(w, r, http.StatusBadRequest, "TRAVEL_INSUFFICIENT_GOLD", "character does not have enough gold to travel")
 				case errors.Is(err, characters.ErrActionNotSupported):
 					writeError(w, r, http.StatusBadRequest, "ACTION_NOT_SUPPORTED", "action type is not currently supported")
+				case errors.Is(err, dungeons.ErrDungeonNotFound):
+					writeError(w, r, http.StatusNotFound, "DUNGEON_NOT_FOUND", "dungeon definition does not exist")
+				case errors.Is(err, dungeons.ErrDungeonRankNotEligible):
+					writeError(w, r, http.StatusBadRequest, "DUNGEON_RANK_NOT_ELIGIBLE", "character rank does not unlock this dungeon")
+				case errors.Is(err, dungeons.ErrDungeonRunAlreadyActive):
+					writeError(w, r, http.StatusConflict, "DUNGEON_RUN_ALREADY_ACTIVE", "character already has an active dungeon run")
+				case errors.Is(err, dungeons.ErrDungeonRunNotFound):
+					writeError(w, r, http.StatusNotFound, "DUNGEON_RUN_NOT_FOUND", "dungeon run does not exist")
+				case errors.Is(err, dungeons.ErrDungeonRunForbidden):
+					writeError(w, r, http.StatusForbidden, "DUNGEON_RUN_FORBIDDEN", "dungeon run does not belong to caller")
+				case errors.Is(err, dungeons.ErrDungeonRewardClaimNotAllowed):
+					writeError(w, r, http.StatusBadRequest, "DUNGEON_REWARD_NOT_CLAIMABLE", "run rewards are not claimable")
+				case errors.Is(err, dungeons.ErrDungeonRewardClaimCapReached), errors.Is(err, characters.ErrDungeonRewardClaimCap):
+					writeError(w, r, http.StatusBadRequest, "DUNGEON_REWARD_CLAIM_LIMIT_REACHED", "daily dungeon reward claim cap has been reached")
+				case errors.Is(err, inventory.ErrItemNotOwned):
+					writeError(w, r, http.StatusNotFound, "ITEM_NOT_OWNED", "item does not belong to character")
+				case errors.Is(err, inventory.ErrItemNotEquippable):
+					writeError(w, r, http.StatusBadRequest, "ITEM_NOT_EQUIPPABLE", "item cannot be equipped by current character")
+				case errors.Is(err, inventory.ErrSlotNotOccupied):
+					writeError(w, r, http.StatusBadRequest, "ITEM_SLOT_EMPTY", "slot is not currently occupied")
+				case errors.Is(err, arena.ErrSignupClosed):
+					writeError(w, r, http.StatusBadRequest, "ARENA_SIGNUP_CLOSED", "arena signup window is closed")
+				case errors.Is(err, arena.ErrRankNotEligible):
+					writeError(w, r, http.StatusBadRequest, "ARENA_RANK_NOT_ELIGIBLE", "character rank is not eligible for arena")
+				case errors.Is(err, arena.ErrAlreadySignedUp):
+					writeError(w, r, http.StatusConflict, "ARENA_ALREADY_SIGNED_UP", "character already signed up for current arena")
 				default:
 					writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to execute action")
 				}
@@ -570,8 +606,8 @@ func NewServer(cfg config.API) *Server {
 				return
 			}
 
-			character, limits, err := currentCharacterWithLimits(account, characterService, worldService)
-			if err != nil {
+			character, exists := characterService.GetCharacterByAccount(account)
+			if !exists {
 				writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before rerolling quests")
 				return
 			}
@@ -581,7 +617,7 @@ func NewServer(cfg config.API) *Server {
 				return
 			}
 
-			character, limits, err = currentCharacterWithLimits(account, characterService, worldService)
+			character, limits, err := currentCharacterWithLimits(account, characterService, worldService)
 			if err != nil {
 				writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before rerolling quests")
 				return
@@ -599,6 +635,399 @@ func NewServer(cfg config.API) *Server {
 			}
 
 			writeEnvelope(w, r, http.StatusOK, board)
+		})
+
+		r.Get("/me/inventory", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+
+			character, exists := characterService.GetCharacterByAccount(account)
+			if !exists {
+				writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before requesting inventory")
+				return
+			}
+
+			writeEnvelope(w, r, http.StatusOK, inventoryService.GetInventory(character))
+		})
+
+		r.Post("/me/equipment/equip", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+
+			character, exists := characterService.GetCharacterByAccount(account)
+			if !exists {
+				writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before equipping items")
+				return
+			}
+
+			var request struct {
+				ItemID string `json:"item_id"`
+			}
+			if !decodeJSONBody(w, r, &request) {
+				return
+			}
+
+			view, err := inventoryService.EquipItem(character, request.ItemID)
+			if err != nil {
+				switch {
+				case errors.Is(err, inventory.ErrItemNotOwned):
+					writeError(w, r, http.StatusNotFound, "ITEM_NOT_OWNED", "item does not belong to character")
+				case errors.Is(err, inventory.ErrItemNotEquippable):
+					writeError(w, r, http.StatusBadRequest, "ITEM_NOT_EQUIPPABLE", "item cannot be equipped by current character")
+				default:
+					writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to equip item")
+				}
+				return
+			}
+
+			_ = characterService.AppendEvents(character.CharacterID, world.WorldEvent{
+				EventID:          requestID(r),
+				EventType:        "inventory.item_equipped",
+				Visibility:       "public",
+				ActorCharacterID: character.CharacterID,
+				ActorName:        character.Name,
+				RegionID:         character.LocationRegionID,
+				Summary:          fmt.Sprintf("%s equipped an item.", character.Name),
+				Payload:          map[string]any{"item_id": request.ItemID},
+				OccurredAt:       time.Now().Format(time.RFC3339),
+			})
+
+			writeEnvelope(w, r, http.StatusOK, view)
+		})
+
+		r.Post("/me/equipment/unequip", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+
+			character, exists := characterService.GetCharacterByAccount(account)
+			if !exists {
+				writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before unequipping items")
+				return
+			}
+
+			var request struct {
+				Slot string `json:"slot"`
+			}
+			if !decodeJSONBody(w, r, &request) {
+				return
+			}
+
+			view, err := inventoryService.UnequipItem(character, request.Slot)
+			if err != nil {
+				if errors.Is(err, inventory.ErrSlotNotOccupied) {
+					writeError(w, r, http.StatusBadRequest, "ITEM_SLOT_EMPTY", "slot is not currently occupied")
+					return
+				}
+
+				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to unequip item")
+				return
+			}
+
+			_ = characterService.AppendEvents(character.CharacterID, world.WorldEvent{
+				EventID:          requestID(r),
+				EventType:        "inventory.item_unequipped",
+				Visibility:       "public",
+				ActorCharacterID: character.CharacterID,
+				ActorName:        character.Name,
+				RegionID:         character.LocationRegionID,
+				Summary:          fmt.Sprintf("%s unequipped an item from %s.", character.Name, request.Slot),
+				Payload:          map[string]any{"slot": request.Slot},
+				OccurredAt:       time.Now().Format(time.RFC3339),
+			})
+
+			writeEnvelope(w, r, http.StatusOK, view)
+		})
+
+		r.Get("/buildings/{buildingId}", func(w http.ResponseWriter, r *http.Request) {
+			buildingID := chi.URLParam(r, "buildingId")
+			building, region, found := findBuilding(worldService, buildingID)
+			if !found {
+				writeError(w, r, http.StatusNotFound, "BUILDING_NOT_FOUND", "building does not exist")
+				return
+			}
+
+			writeEnvelope(w, r, http.StatusOK, map[string]any{
+				"building":          building,
+				"region":            region.Region,
+				"supported_actions": building.Actions,
+			})
+		})
+
+		r.Get("/buildings/{buildingId}/shop-inventory", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+
+			character, exists := characterService.GetCharacterByAccount(account)
+			if !exists {
+				writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before requesting shop inventory")
+				return
+			}
+
+			buildingID := chi.URLParam(r, "buildingId")
+			building, _, found := findBuilding(worldService, buildingID)
+			if !found {
+				writeError(w, r, http.StatusNotFound, "BUILDING_NOT_FOUND", "building does not exist")
+				return
+			}
+
+			writeEnvelope(w, r, http.StatusOK, map[string]any{
+				"building_id": building.ID,
+				"items":       inventoryService.ListShopInventory(building.Type, character),
+			})
+		})
+
+		r.Post("/buildings/{buildingId}/heal", func(w http.ResponseWriter, r *http.Request) {
+			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, "heal")
+		})
+		r.Post("/buildings/{buildingId}/cleanse", func(w http.ResponseWriter, r *http.Request) {
+			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, "cleanse")
+		})
+		r.Post("/buildings/{buildingId}/enhance", func(w http.ResponseWriter, r *http.Request) {
+			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, "enhance")
+		})
+		r.Post("/buildings/{buildingId}/repair", func(w http.ResponseWriter, r *http.Request) {
+			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, "repair")
+		})
+		r.Post("/buildings/{buildingId}/purchase", func(w http.ResponseWriter, r *http.Request) {
+			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, "purchase")
+		})
+		r.Post("/buildings/{buildingId}/sell", func(w http.ResponseWriter, r *http.Request) {
+			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, "sell")
+		})
+
+		r.Post("/arena/signup", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+			character, exists := characterService.GetCharacterByAccount(account)
+			if !exists {
+				writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before arena signup")
+				return
+			}
+
+			entry, err := arenaService.Signup(character, inventoryService.ComputeEquipmentScore(character), worldService.CurrentArenaStatus(worldService.CurrentTime()))
+			if err != nil {
+				switch {
+				case errors.Is(err, arena.ErrSignupClosed):
+					writeError(w, r, http.StatusBadRequest, "ARENA_SIGNUP_CLOSED", "arena signup window is closed")
+				case errors.Is(err, arena.ErrRankNotEligible):
+					writeError(w, r, http.StatusBadRequest, "ARENA_RANK_NOT_ELIGIBLE", "character rank is not eligible for arena")
+				case errors.Is(err, arena.ErrAlreadySignedUp):
+					writeError(w, r, http.StatusConflict, "ARENA_ALREADY_SIGNED_UP", "character already signed up for current arena")
+				default:
+					writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to signup arena")
+				}
+				return
+			}
+
+			_ = characterService.AppendEvents(character.CharacterID, world.WorldEvent{
+				EventID:          requestID(r),
+				EventType:        "arena.entry_accepted",
+				Visibility:       "public",
+				ActorCharacterID: character.CharacterID,
+				ActorName:        character.Name,
+				RegionID:         character.LocationRegionID,
+				Summary:          fmt.Sprintf("%s signed up for arena.", character.Name),
+				Payload: map[string]any{
+					"character_id":    entry.CharacterID,
+					"equipment_score": entry.EquipmentScore,
+				},
+				OccurredAt: time.Now().Format(time.RFC3339),
+			})
+
+			writeEnvelope(w, r, http.StatusOK, map[string]any{
+				"signed_up": true,
+				"entry":     entry,
+			})
+		})
+
+		r.Get("/arena/current", func(w http.ResponseWriter, r *http.Request) {
+			writeEnvelope(w, r, http.StatusOK, arenaService.GetCurrent(worldService.CurrentArenaStatus(worldService.CurrentTime())))
+		})
+
+		r.Get("/arena/leaderboard", func(w http.ResponseWriter, r *http.Request) {
+			writeEnvelope(w, r, http.StatusOK, map[string]any{"entries": arenaService.GetLeaderboard()})
+		})
+
+		r.Get("/dungeons/{dungeonId}", func(w http.ResponseWriter, r *http.Request) {
+			dungeonID := chi.URLParam(r, "dungeonId")
+			definition, ok := dungeonService.GetDungeonDefinition(dungeonID)
+			if !ok {
+				writeError(w, r, http.StatusNotFound, "DUNGEON_NOT_FOUND", "dungeon definition does not exist")
+				return
+			}
+
+			writeEnvelope(w, r, http.StatusOK, definition)
+		})
+
+		r.Post("/dungeons/{dungeonId}/enter", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+
+			character, limits, err := currentCharacterWithLimits(account, characterService, worldService)
+			if err != nil {
+				writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before entering dungeons")
+				return
+			}
+
+			run, err := dungeonService.EnterDungeon(character, limits, chi.URLParam(r, "dungeonId"))
+			if err != nil {
+				switch {
+				case errors.Is(err, dungeons.ErrDungeonNotFound):
+					writeError(w, r, http.StatusNotFound, "DUNGEON_NOT_FOUND", "dungeon definition does not exist")
+				case errors.Is(err, dungeons.ErrDungeonRankNotEligible):
+					writeError(w, r, http.StatusBadRequest, "DUNGEON_RANK_NOT_ELIGIBLE", "character rank does not unlock this dungeon")
+				case errors.Is(err, dungeons.ErrDungeonRunAlreadyActive):
+					writeError(w, r, http.StatusConflict, "DUNGEON_RUN_ALREADY_ACTIVE", "character already has an active dungeon run")
+				case errors.Is(err, dungeons.ErrDungeonRewardClaimCapReached):
+					writeError(w, r, http.StatusBadRequest, "DUNGEON_REWARD_CLAIM_LIMIT_REACHED", "daily dungeon reward claim cap has been reached")
+				default:
+					writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to enter dungeon")
+				}
+				return
+			}
+
+			definition, _ := dungeonService.GetDungeonDefinition(run.DungeonID)
+			_ = characterService.AppendEvents(character.CharacterID,
+				world.WorldEvent{
+					EventID:          requestID(r),
+					EventType:        "dungeon.entered",
+					Visibility:       "public",
+					ActorCharacterID: character.CharacterID,
+					ActorName:        character.Name,
+					RegionID:         definition.RegionID,
+					Summary:          fmt.Sprintf("%s entered %s.", character.Name, definition.Name),
+					Payload: map[string]any{
+						"run_id":     run.RunID,
+						"dungeon_id": run.DungeonID,
+					},
+					OccurredAt: time.Now().Format(time.RFC3339),
+				},
+				world.WorldEvent{
+					EventID:          fmt.Sprintf("evt_dungeon_cleared_%s", run.RunID),
+					EventType:        "dungeon.cleared",
+					Visibility:       "public",
+					ActorCharacterID: character.CharacterID,
+					ActorName:        character.Name,
+					RegionID:         definition.RegionID,
+					Summary:          fmt.Sprintf("%s cleared %s.", character.Name, definition.Name),
+					Payload: map[string]any{
+						"run_id":         run.RunID,
+						"dungeon_id":     run.DungeonID,
+						"current_rating": run.CurrentRating,
+					},
+					OccurredAt: time.Now().Format(time.RFC3339),
+				},
+			)
+
+			writeEnvelope(w, r, http.StatusOK, run)
+		})
+
+		r.Get("/me/runs/active", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+
+			character, exists := characterService.GetCharacterByAccount(account)
+			if !exists {
+				writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before viewing dungeon runs")
+				return
+			}
+
+			run, err := dungeonService.GetActiveRun(character.CharacterID)
+			if err != nil {
+				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to load active dungeon run")
+				return
+			}
+
+			if run == nil {
+				writeEnvelope(w, r, http.StatusOK, nil)
+				return
+			}
+
+			writeEnvelope(w, r, http.StatusOK, run)
+		})
+
+		r.Get("/me/runs/{runId}", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+
+			character, exists := characterService.GetCharacterByAccount(account)
+			if !exists {
+				writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before viewing dungeon runs")
+				return
+			}
+
+			run, err := dungeonService.GetRun(character.CharacterID, chi.URLParam(r, "runId"))
+			if err != nil {
+				switch {
+				case errors.Is(err, dungeons.ErrDungeonRunNotFound):
+					writeError(w, r, http.StatusNotFound, "DUNGEON_RUN_NOT_FOUND", "dungeon run does not exist")
+				case errors.Is(err, dungeons.ErrDungeonRunForbidden):
+					writeError(w, r, http.StatusForbidden, "DUNGEON_RUN_FORBIDDEN", "dungeon run does not belong to caller")
+				default:
+					writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to load dungeon run")
+				}
+				return
+			}
+
+			writeEnvelope(w, r, http.StatusOK, run)
+		})
+
+		r.Post("/me/runs/{runId}/claim", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+
+			character, limits, err := currentCharacterWithLimits(account, characterService, worldService)
+			if err != nil {
+				writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before claiming rewards")
+				return
+			}
+
+			run, rewardGold, rating, err := dungeonService.ClaimRunRewards(character.CharacterID, chi.URLParam(r, "runId"), limits)
+			if err != nil {
+				switch {
+				case errors.Is(err, dungeons.ErrDungeonRunNotFound):
+					writeError(w, r, http.StatusNotFound, "DUNGEON_RUN_NOT_FOUND", "dungeon run does not exist")
+				case errors.Is(err, dungeons.ErrDungeonRunForbidden):
+					writeError(w, r, http.StatusForbidden, "DUNGEON_RUN_FORBIDDEN", "dungeon run does not belong to caller")
+				case errors.Is(err, dungeons.ErrDungeonRewardClaimNotAllowed):
+					writeError(w, r, http.StatusBadRequest, "DUNGEON_REWARD_NOT_CLAIMABLE", "run rewards are not claimable")
+				case errors.Is(err, dungeons.ErrDungeonRewardClaimCapReached):
+					writeError(w, r, http.StatusBadRequest, "DUNGEON_REWARD_CLAIM_LIMIT_REACHED", "daily dungeon reward claim cap has been reached")
+				default:
+					writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to claim dungeon rewards")
+				}
+				return
+			}
+
+			if _, _, _, err := characterService.ApplyDungeonRewardClaim(character.CharacterID, run.RunID, run.DungeonID, rewardGold, rating); err != nil {
+				if errors.Is(err, characters.ErrDungeonRewardClaimCap) {
+					writeError(w, r, http.StatusBadRequest, "DUNGEON_REWARD_CLAIM_LIMIT_REACHED", "daily dungeon reward claim cap has been reached")
+					return
+				}
+
+				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to apply dungeon rewards")
+				return
+			}
+
+			writeEnvelope(w, r, http.StatusOK, run)
 		})
 
 		r.Get("/world/regions", func(w http.ResponseWriter, r *http.Request) {
@@ -633,16 +1062,86 @@ func NewServer(cfg config.API) *Server {
 				})
 			})
 
+			r.Get("/events/stream", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				w.Header().Set("Cache-Control", "no-cache")
+				w.Header().Set("Connection", "keep-alive")
+
+				events := buildPublicEvents(characterService.SnapshotRuntime().Events, 1)
+				if len(events) == 0 {
+					fmt.Fprintf(w, "event: world.counter.updated\n")
+					fmt.Fprintf(w, "data: {\"status\":\"idle\"}\n\n")
+				} else {
+					payload, _ := json.Marshal(events[0])
+					fmt.Fprintf(w, "event: world.event.created\n")
+					fmt.Fprintf(w, "data: %s\n\n", payload)
+				}
+
+				if flusher, ok := w.(http.Flusher); ok {
+					flusher.Flush()
+				}
+			})
+
 			r.Get("/leaderboards", func(w http.ResponseWriter, r *http.Request) {
 				snapshot := characterService.SnapshotRuntime()
 				writeEnvelope(w, r, http.StatusOK, buildPublicLeaderboards(snapshot))
+			})
+
+			r.Get("/bots", func(w http.ResponseWriter, r *http.Request) {
+				limit := parseLimit(r, 20, 100)
+				cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
+				snapshot := characterService.SnapshotRuntime()
+				items := buildPublicBots(snapshot.Characters, inventoryService)
+				start := 0
+				if cursor != "" {
+					if value, err := strconv.Atoi(cursor); err == nil && value >= 0 && value < len(items) {
+						start = value
+					}
+				}
+				end := start + limit
+				if end > len(items) {
+					end = len(items)
+				}
+
+				nextCursor := any(nil)
+				if end < len(items) {
+					nextCursor = strconv.Itoa(end)
+				}
+
+				writeEnvelope(w, r, http.StatusOK, map[string]any{
+					"items":       items[start:end],
+					"next_cursor": nextCursor,
+				})
+			})
+
+			r.Get("/bots/{botId}", func(w http.ResponseWriter, r *http.Request) {
+				botID := chi.URLParam(r, "botId")
+				summary, stats, limits, events, ok := characterService.GetRuntimeDetailByCharacterID(botID)
+				if !ok {
+					writeError(w, r, http.StatusNotFound, "BOT_NOT_FOUND", "public bot does not exist")
+					return
+				}
+
+				writeEnvelope(w, r, http.StatusOK, map[string]any{
+					"character_summary": summary,
+					"stats_snapshot":    stats,
+					"equipment":         inventoryService.GetInventory(summary),
+					"daily_limits":      limits,
+					"active_quests":     []any{},
+					"recent_runs":       []any{},
+					"arena_history":     []any{},
+					"recent_events":     events,
+				})
 			})
 		})
 	})
 
 	return &Server{
 		authService:      authService,
+		arenaService:     arenaService,
 		characterService: characterService,
+		dungeonService:   dungeonService,
+		inventoryService: inventoryService,
 		questService:     questService,
 		worldService:     worldService,
 		httpServer: &http.Server{
@@ -1045,7 +1544,222 @@ func activeObjectivesFromBoard(board quests.BoardView) []characters.QuestSummary
 	return objectives
 }
 
-func executeAction(account auth.Account, actionType string, actionArgs map[string]any, characterService *characters.Service, questService *quests.Service, worldService *world.Service) (map[string]any, error) {
+func findBuilding(worldService *world.Service, buildingID string) (world.Building, world.RegionDetail, bool) {
+	for _, region := range worldService.ListRegions() {
+		detail, ok := worldService.GetRegion(region.ID)
+		if !ok {
+			continue
+		}
+
+		for _, building := range detail.Buildings {
+			if building.ID == buildingID {
+				return building, detail, true
+			}
+		}
+	}
+
+	return world.Building{}, world.RegionDetail{}, false
+}
+
+func handleBuildingAction(w http.ResponseWriter, r *http.Request, authService *auth.Service, worldService *world.Service, characterService *characters.Service, inventoryService *inventory.Service, questService *quests.Service, actionName string) {
+	account, ok := requireAccount(w, r, authService)
+	if !ok {
+		return
+	}
+
+	character, exists := characterService.GetCharacterByAccount(account)
+	if !exists {
+		writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before building actions")
+		return
+	}
+
+	buildingID := chi.URLParam(r, "buildingId")
+	building, _, found := findBuilding(worldService, buildingID)
+	if !found {
+		writeError(w, r, http.StatusNotFound, "BUILDING_NOT_FOUND", "building does not exist")
+		return
+	}
+
+	if !buildingSupportsAction(building, actionName) {
+		writeError(w, r, http.StatusBadRequest, "INVALID_ACTION_STATE", "building does not support this action")
+		return
+	}
+
+	response := map[string]any{}
+
+	switch actionName {
+	case "purchase":
+		var payload struct {
+			CatalogID string `json:"catalog_id"`
+		}
+		if !decodeJSONBody(w, r, &payload) {
+			return
+		}
+
+		catalogID := strings.TrimSpace(payload.CatalogID)
+		shopItems := inventoryService.ListShopInventory(building.Type, character)
+		selectedIndex := -1
+		for index := range shopItems {
+			if shopItems[index].CatalogID == catalogID {
+				selectedIndex = index
+				break
+			}
+		}
+		if selectedIndex < 0 {
+			writeError(w, r, http.StatusBadRequest, "INVALID_ACTION_STATE", "shop item does not exist for this building")
+			return
+		}
+
+		price := shopItems[selectedIndex].PriceGold
+		if _, err := characterService.SpendGold(character.CharacterID, price); err != nil {
+			if errors.Is(err, characters.ErrGoldInsufficient) {
+				writeError(w, r, http.StatusBadRequest, "GOLD_INSUFFICIENT", "character does not have enough gold to purchase this item")
+				return
+			}
+			writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to settle purchase")
+			return
+		}
+
+		view, purchased, _, err := inventoryService.PurchaseItem(character, catalogID)
+		if err != nil {
+			_, _ = characterService.GrantGold(character.CharacterID, price)
+			switch {
+			case errors.Is(err, inventory.ErrCatalogNotFound):
+				writeError(w, r, http.StatusBadRequest, "INVALID_ACTION_STATE", "shop item does not exist")
+			case errors.Is(err, inventory.ErrItemNotEquippable):
+				writeError(w, r, http.StatusBadRequest, "ITEM_NOT_EQUIPPABLE", "item cannot be equipped by current character")
+			default:
+				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to purchase item")
+			}
+			return
+		}
+
+		response["inventory"] = view
+		response["item"] = purchased
+		response["price_gold"] = price
+	case "sell":
+		var payload struct {
+			ItemID string `json:"item_id"`
+		}
+		if !decodeJSONBody(w, r, &payload) {
+			return
+		}
+
+		view, sold, gain, err := inventoryService.SellItem(character, payload.ItemID)
+		if err != nil {
+			switch {
+			case errors.Is(err, inventory.ErrItemNotOwned):
+				writeError(w, r, http.StatusNotFound, "ITEM_NOT_OWNED", "item does not belong to character")
+			case errors.Is(err, inventory.ErrItemEquipped):
+				writeError(w, r, http.StatusBadRequest, "INVALID_ACTION_STATE", "unequip item before selling")
+			default:
+				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to sell item")
+			}
+			return
+		}
+
+		if _, err := characterService.GrantGold(character.CharacterID, gain); err != nil {
+			writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to settle sell reward")
+			return
+		}
+
+		response["inventory"] = view
+		response["item"] = sold
+		response["gain_gold"] = gain
+
+		_ = characterService.AppendEvents(character.CharacterID, world.WorldEvent{
+			EventID:          requestID(r),
+			EventType:        "inventory.item_sold",
+			Visibility:       "public",
+			ActorCharacterID: character.CharacterID,
+			ActorName:        character.Name,
+			RegionID:         character.LocationRegionID,
+			Summary:          fmt.Sprintf("%s sold %s.", character.Name, sold.Name),
+			Payload: map[string]any{
+				"item_id":    sold.ItemID,
+				"catalog_id": sold.CatalogID,
+				"gain_gold":  gain,
+			},
+			OccurredAt: time.Now().Format(time.RFC3339),
+		})
+	}
+
+	state, err := buildCharacterState(account, characterService, questService, worldService)
+	if err != nil {
+		writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to load updated character state")
+		return
+	}
+
+	writeEnvelope(w, r, http.StatusOK, map[string]any{
+		"action_result": map[string]any{
+			"action_type":   actionName,
+			"building_id":   buildingID,
+			"building_name": building.Name,
+			"status":        "success",
+		},
+		"state":  state,
+		"result": response,
+	})
+}
+
+func buildingSupportsAction(building world.Building, actionName string) bool {
+	mapping := map[string][]string{
+		"heal":     {"restore_hp_mp"},
+		"cleanse":  {"remove_status"},
+		"enhance":  {"enhance_item"},
+		"repair":   {"repair_item"},
+		"purchase": {"purchase", "buy_consumables"},
+		"sell":     {"sell_loot"},
+	}
+
+	required, ok := mapping[actionName]
+	if !ok {
+		return false
+	}
+
+	for _, candidate := range required {
+		for _, supported := range building.Actions {
+			if candidate == supported {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+func buildPublicBots(charactersList []characters.Summary, inventoryService *inventory.Service) []map[string]any {
+	items := make([]map[string]any, 0, len(charactersList))
+	for _, character := range charactersList {
+		items = append(items, map[string]any{
+			"character_summary":        character,
+			"equipment_score":          inventoryService.ComputeEquipmentScore(character),
+			"current_activity_type":    activityTypeFromRegion(character.LocationRegionID),
+			"current_activity_summary": fmt.Sprintf("Active in %s", character.LocationRegionID),
+			"last_seen_at":             time.Now().Format(time.RFC3339),
+		})
+	}
+
+	slices.SortFunc(items, func(left, right map[string]any) int {
+		leftName, _ := left["character_summary"].(characters.Summary)
+		rightName, _ := right["character_summary"].(characters.Summary)
+		return cmp.Compare(leftName.Name, rightName.Name)
+	})
+
+	return items
+}
+
+func activityTypeFromRegion(regionID string) string {
+	if strings.Contains(regionID, "dungeon") || strings.Contains(regionID, "catacomb") || strings.Contains(regionID, "den") {
+		return "dungeon"
+	}
+	if strings.Contains(regionID, "city") || strings.Contains(regionID, "village") {
+		return "hub"
+	}
+	return "field"
+}
+
+func executeAction(account auth.Account, actionType string, actionArgs map[string]any, characterService *characters.Service, questService *quests.Service, dungeonService *dungeons.Service, inventoryService *inventory.Service, arenaService *arena.Service, worldService *world.Service) (map[string]any, error) {
 	switch strings.TrimSpace(actionType) {
 	case "travel":
 		regionID, _ := actionArgs["region_id"].(string)
@@ -1155,14 +1869,14 @@ func executeAction(account auth.Account, actionType string, actionArgs map[strin
 		if !confirmCost {
 			return nil, quests.ErrQuestRerollConfirmRequired
 		}
-		character, limits, err := currentCharacterWithLimits(account, characterService, worldService)
+		character, _, err := currentCharacterWithLimits(account, characterService, worldService)
 		if err != nil {
 			return nil, err
 		}
 		if _, err := characterService.SpendGold(character.CharacterID, quests.RerollCostGold()); err != nil {
 			return nil, err
 		}
-		character, limits, err = currentCharacterWithLimits(account, characterService, worldService)
+		character, limits, err := currentCharacterWithLimits(account, characterService, worldService)
 		if err != nil {
 			return nil, err
 		}
@@ -1177,6 +1891,171 @@ func executeAction(account auth.Account, actionType string, actionArgs map[strin
 				"reroll_count": board.RerollCount,
 			},
 			"state": board,
+		}, nil
+	case "enter_dungeon":
+		dungeonID, _ := actionArgs["dungeon_id"].(string)
+		character, limits, err := currentCharacterWithLimits(account, characterService, worldService)
+		if err != nil {
+			return nil, err
+		}
+
+		run, err := dungeonService.EnterDungeon(character, limits, dungeonID)
+		if err != nil {
+			return nil, err
+		}
+
+		definition, _ := dungeonService.GetDungeonDefinition(run.DungeonID)
+		_ = characterService.AppendEvents(character.CharacterID,
+			world.WorldEvent{
+				EventID:          fmt.Sprintf("evt_dungeon_enter_%s", run.RunID),
+				EventType:        "dungeon.entered",
+				Visibility:       "public",
+				ActorCharacterID: character.CharacterID,
+				ActorName:        character.Name,
+				RegionID:         definition.RegionID,
+				Summary:          fmt.Sprintf("%s entered %s.", character.Name, definition.Name),
+				Payload: map[string]any{
+					"run_id":     run.RunID,
+					"dungeon_id": run.DungeonID,
+				},
+				OccurredAt: time.Now().Format(time.RFC3339),
+			},
+			world.WorldEvent{
+				EventID:          fmt.Sprintf("evt_dungeon_clear_%s", run.RunID),
+				EventType:        "dungeon.cleared",
+				Visibility:       "public",
+				ActorCharacterID: character.CharacterID,
+				ActorName:        character.Name,
+				RegionID:         definition.RegionID,
+				Summary:          fmt.Sprintf("%s cleared %s.", character.Name, definition.Name),
+				Payload: map[string]any{
+					"run_id":         run.RunID,
+					"dungeon_id":     run.DungeonID,
+					"current_rating": run.CurrentRating,
+				},
+				OccurredAt: time.Now().Format(time.RFC3339),
+			},
+		)
+
+		state, err := buildCharacterState(account, characterService, questService, worldService)
+		if err != nil {
+			return nil, err
+		}
+
+		return map[string]any{
+			"action_result": map[string]any{
+				"action_type": "enter_dungeon",
+				"run_id":      run.RunID,
+				"run_status":  run.RunStatus,
+			},
+			"state": map[string]any{
+				"run":   run,
+				"state": state,
+			},
+		}, nil
+	case "claim_dungeon_rewards", "claim_run_rewards":
+		runID, _ := actionArgs["run_id"].(string)
+		character, limits, err := currentCharacterWithLimits(account, characterService, worldService)
+		if err != nil {
+			return nil, err
+		}
+
+		run, rewardGold, rating, err := dungeonService.ClaimRunRewards(character.CharacterID, runID, limits)
+		if err != nil {
+			return nil, err
+		}
+
+		if _, _, _, err := characterService.ApplyDungeonRewardClaim(character.CharacterID, run.RunID, run.DungeonID, rewardGold, rating); err != nil {
+			return nil, err
+		}
+
+		state, err := buildCharacterState(account, characterService, questService, worldService)
+		if err != nil {
+			return nil, err
+		}
+
+		return map[string]any{
+			"action_result": map[string]any{
+				"action_type": "claim_dungeon_rewards",
+				"run_id":      run.RunID,
+				"reward_gold": rewardGold,
+			},
+			"state": map[string]any{
+				"run":   run,
+				"state": state,
+			},
+		}, nil
+	case "equip_item":
+		itemID, _ := actionArgs["item_id"].(string)
+		character, exists := characterService.GetCharacterByAccount(account)
+		if !exists {
+			return nil, characters.ErrCharacterNotFound
+		}
+
+		view, err := inventoryService.EquipItem(character, itemID)
+		if err != nil {
+			return nil, err
+		}
+
+		return map[string]any{
+			"action_result": map[string]any{"action_type": "equip_item", "item_id": itemID},
+			"state":         view,
+		}, nil
+	case "enter_building":
+		buildingID, _ := actionArgs["building_id"].(string)
+		building, detail, found := findBuilding(worldService, buildingID)
+		if !found {
+			return nil, characters.ErrActionNotSupported
+		}
+		return map[string]any{
+			"action_result": map[string]any{
+				"action_type":   "enter_building",
+				"building_id":   building.ID,
+				"building_name": building.Name,
+			},
+			"state": map[string]any{
+				"region":            detail.Region,
+				"supported_actions": building.Actions,
+			},
+		}, nil
+	case "restore_hp_mp", "remove_status", "enhance_item", "sell_item":
+		return map[string]any{
+			"action_result": map[string]any{
+				"action_type": actionType,
+				"status":      "success",
+			},
+			"state": map[string]any{},
+		}, nil
+	case "unequip_item":
+		slot, _ := actionArgs["slot"].(string)
+		character, exists := characterService.GetCharacterByAccount(account)
+		if !exists {
+			return nil, characters.ErrCharacterNotFound
+		}
+
+		view, err := inventoryService.UnequipItem(character, slot)
+		if err != nil {
+			return nil, err
+		}
+
+		return map[string]any{
+			"action_result": map[string]any{"action_type": "unequip_item", "slot": slot},
+			"state":         view,
+		}, nil
+	case "arena_signup":
+		character, exists := characterService.GetCharacterByAccount(account)
+		if !exists {
+			return nil, characters.ErrCharacterNotFound
+		}
+
+		entry, err := arenaService.Signup(character, inventoryService.ComputeEquipmentScore(character), worldService.CurrentArenaStatus(worldService.CurrentTime()))
+		if err != nil {
+			return nil, err
+		}
+
+		return map[string]any{
+			"action_result": map[string]any{"action_type": "arena_signup", "signed_up": true},
+			"state":         map[string]any{"entry": entry},
 		}, nil
 	default:
 		return characterService.ExecuteAction(account, actionType, actionArgs, worldService)

@@ -579,6 +579,457 @@ func TestPublicRoutesReflectRuntimeData(t *testing.T) {
 	}
 }
 
+func TestDungeonAutoResolveAndClaimFlow(t *testing.T) {
+	server := NewServer(config.API{Port: "8080"})
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "bot-dungeon",
+		"password": "verysecure",
+	}), "", http.StatusOK, nil)
+
+	var loginResponse struct {
+		Data struct {
+			AccessToken string `json:"access_token"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "bot-dungeon",
+		"password": "verysecure",
+	}), "", http.StatusOK, &loginResponse)
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
+		"name":         "DungeonRunner",
+		"class":        "warrior",
+		"weapon_style": "sword_shield",
+	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+
+	var preClaimState struct {
+		Data struct {
+			Character struct {
+				Gold int `json:"gold"`
+			} `json:"character"`
+			Limits struct {
+				DungeonEntryUsed int `json:"dungeon_entry_used"`
+			} `json:"limits"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/state", nil, loginResponse.Data.AccessToken, http.StatusOK, &preClaimState)
+
+	var enterResponse struct {
+		Data struct {
+			RunID            string `json:"run_id"`
+			DungeonID        string `json:"dungeon_id"`
+			RunStatus        string `json:"run_status"`
+			RuntimePhase     string `json:"runtime_phase"`
+			RewardClaimable  bool   `json:"reward_claimable"`
+			CurrentRoomIndex int    `json:"current_room_index"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/dungeons/ancient_catacomb_v1/enter", nil, loginResponse.Data.AccessToken, http.StatusOK, &enterResponse)
+
+	if enterResponse.Data.RunID == "" {
+		t.Fatal("expected run_id to be returned")
+	}
+	if enterResponse.Data.DungeonID != "ancient_catacomb_v1" {
+		t.Fatalf("expected ancient_catacomb_v1, got %q", enterResponse.Data.DungeonID)
+	}
+	if enterResponse.Data.RunStatus != "cleared" {
+		t.Fatalf("expected run_status cleared, got %q", enterResponse.Data.RunStatus)
+	}
+	if enterResponse.Data.RuntimePhase != "result_ready" {
+		t.Fatalf("expected runtime_phase result_ready, got %q", enterResponse.Data.RuntimePhase)
+	}
+	if !enterResponse.Data.RewardClaimable {
+		t.Fatal("expected reward_claimable true after auto resolve")
+	}
+	if enterResponse.Data.CurrentRoomIndex != 6 {
+		t.Fatalf("expected current_room_index 6, got %d", enterResponse.Data.CurrentRoomIndex)
+	}
+
+	var activeRunResponse struct {
+		Data any `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/runs/active", nil, loginResponse.Data.AccessToken, http.StatusOK, &activeRunResponse)
+	if activeRunResponse.Data != nil {
+		t.Fatalf("expected no active run after auto-resolve, got %#v", activeRunResponse.Data)
+	}
+
+	var getRunResponse struct {
+		Data struct {
+			RunID string `json:"run_id"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/runs/"+enterResponse.Data.RunID, nil, loginResponse.Data.AccessToken, http.StatusOK, &getRunResponse)
+	if getRunResponse.Data.RunID != enterResponse.Data.RunID {
+		t.Fatalf("expected run_id %q, got %q", enterResponse.Data.RunID, getRunResponse.Data.RunID)
+	}
+
+	var claimResponse struct {
+		Data struct {
+			RunID           string  `json:"run_id"`
+			RuntimePhase    string  `json:"runtime_phase"`
+			RewardClaimable bool    `json:"reward_claimable"`
+			RewardClaimedAt *string `json:"reward_claimed_at"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/runs/"+enterResponse.Data.RunID+"/claim", nil, loginResponse.Data.AccessToken, http.StatusOK, &claimResponse)
+
+	if claimResponse.Data.RuntimePhase != "claim_settled" {
+		t.Fatalf("expected claim_settled phase, got %q", claimResponse.Data.RuntimePhase)
+	}
+	if claimResponse.Data.RewardClaimable {
+		t.Fatal("expected reward_claimable false after claim")
+	}
+	if claimResponse.Data.RewardClaimedAt == nil || *claimResponse.Data.RewardClaimedAt == "" {
+		t.Fatal("expected reward_claimed_at to be populated")
+	}
+
+	var postClaimState struct {
+		Data struct {
+			Character struct {
+				Gold int `json:"gold"`
+			} `json:"character"`
+			Limits struct {
+				DungeonEntryUsed int `json:"dungeon_entry_used"`
+			} `json:"limits"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/state", nil, loginResponse.Data.AccessToken, http.StatusOK, &postClaimState)
+
+	if postClaimState.Data.Character.Gold <= preClaimState.Data.Character.Gold {
+		t.Fatalf("expected gold to increase after claim, before=%d after=%d", preClaimState.Data.Character.Gold, postClaimState.Data.Character.Gold)
+	}
+	if postClaimState.Data.Limits.DungeonEntryUsed != preClaimState.Data.Limits.DungeonEntryUsed+1 {
+		t.Fatalf("expected dungeon_entry_used increment by 1, before=%d after=%d", preClaimState.Data.Limits.DungeonEntryUsed, postClaimState.Data.Limits.DungeonEntryUsed)
+	}
+
+	var secondClaimError struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/runs/"+enterResponse.Data.RunID+"/claim", nil, loginResponse.Data.AccessToken, http.StatusBadRequest, &secondClaimError)
+	if secondClaimError.Error.Code != "DUNGEON_REWARD_NOT_CLAIMABLE" {
+		t.Fatalf("expected DUNGEON_REWARD_NOT_CLAIMABLE, got %q", secondClaimError.Error.Code)
+	}
+}
+
+func TestActionAliasClaimRunRewards(t *testing.T) {
+	server := NewServer(config.API{Port: "8080"})
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "bot-claim-alias",
+		"password": "verysecure",
+	}), "", http.StatusOK, nil)
+
+	var loginResponse struct {
+		Data struct {
+			AccessToken string `json:"access_token"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "bot-claim-alias",
+		"password": "verysecure",
+	}), "", http.StatusOK, &loginResponse)
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
+		"name":         "AliasRunner",
+		"class":        "warrior",
+		"weapon_style": "sword_shield",
+	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+
+	var enterResponse struct {
+		Data struct {
+			RunID string `json:"run_id"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/dungeons/ancient_catacomb_v1/enter", nil, loginResponse.Data.AccessToken, http.StatusOK, &enterResponse)
+
+	if enterResponse.Data.RunID == "" {
+		t.Fatal("expected run_id from dungeon enter")
+	}
+
+	var actionResponse struct {
+		Data struct {
+			ActionResult struct {
+				ActionType string `json:"action_type"`
+				RunID      string `json:"run_id"`
+			} `json:"action_result"`
+			State struct {
+				Run struct {
+					RuntimePhase string `json:"runtime_phase"`
+				} `json:"run"`
+			} `json:"state"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/actions", map[string]any{
+		"action_type": "claim_run_rewards",
+		"action_args": map[string]any{
+			"run_id": enterResponse.Data.RunID,
+		},
+	}, loginResponse.Data.AccessToken, http.StatusOK, &actionResponse)
+
+	if actionResponse.Data.ActionResult.ActionType != "claim_dungeon_rewards" {
+		t.Fatalf("expected normalized action_type claim_dungeon_rewards, got %q", actionResponse.Data.ActionResult.ActionType)
+	}
+	if actionResponse.Data.ActionResult.RunID != enterResponse.Data.RunID {
+		t.Fatalf("expected run_id %q, got %q", enterResponse.Data.RunID, actionResponse.Data.ActionResult.RunID)
+	}
+	if actionResponse.Data.State.Run.RuntimePhase != "claim_settled" {
+		t.Fatalf("expected claim_settled runtime phase, got %q", actionResponse.Data.State.Run.RuntimePhase)
+	}
+}
+
+func TestInventoryArenaAndPublicBotsRoutes(t *testing.T) {
+	server := NewServer(config.API{Port: "8080"})
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "bot-routing",
+		"password": "verysecure",
+	}), "", http.StatusOK, nil)
+
+	var loginResponse struct {
+		Data struct {
+			AccessToken string `json:"access_token"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "bot-routing",
+		"password": "verysecure",
+	}), "", http.StatusOK, &loginResponse)
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
+		"name":         "RouteRunner",
+		"class":        "mage",
+		"weapon_style": "staff",
+	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+
+	var inventoryResponse struct {
+		Data struct {
+			EquipmentScore int `json:"equipment_score"`
+			Equipped       []struct {
+				ItemID string `json:"item_id"`
+				Slot   string `json:"slot"`
+			} `json:"equipped"`
+			Inventory []struct {
+				ItemID string `json:"item_id"`
+				Slot   string `json:"slot"`
+			} `json:"inventory"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/inventory", nil, loginResponse.Data.AccessToken, http.StatusOK, &inventoryResponse)
+	if len(inventoryResponse.Data.Equipped) == 0 {
+		t.Fatal("expected starter equipped item")
+	}
+	if len(inventoryResponse.Data.Inventory) == 0 {
+		t.Fatal("expected inventory items")
+	}
+
+	var equipResponse struct {
+		Data struct {
+			Equipped []struct {
+				ItemID string `json:"item_id"`
+				Slot   string `json:"slot"`
+			} `json:"equipped"`
+		} `json:"data"`
+	}
+	var targetItemID string
+	for _, item := range inventoryResponse.Data.Inventory {
+		if item.Slot == "weapon" {
+			targetItemID = item.ItemID
+			break
+		}
+	}
+	if targetItemID == "" {
+		targetItemID = inventoryResponse.Data.Inventory[0].ItemID
+	}
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/equipment/equip", map[string]any{
+		"item_id": targetItemID,
+	}, loginResponse.Data.AccessToken, http.StatusOK, &equipResponse)
+	if len(equipResponse.Data.Equipped) == 0 {
+		t.Fatal("expected equipped items after equip")
+	}
+
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/buildings/guild_main_city", nil, "", http.StatusOK, nil)
+
+	var arenaCurrent struct {
+		Data struct {
+			TournamentID string `json:"tournament_id"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/arena/current", nil, "", http.StatusOK, &arenaCurrent)
+	if arenaCurrent.Data.TournamentID == "" {
+		t.Fatal("expected tournament_id in arena current")
+	}
+
+	var botsResponse struct {
+		Data struct {
+			Items []struct {
+				CharacterSummary struct {
+					CharacterID string `json:"character_id"`
+					Name        string `json:"name"`
+				} `json:"character_summary"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/public/bots", nil, "", http.StatusOK, &botsResponse)
+	if len(botsResponse.Data.Items) == 0 {
+		t.Fatal("expected public bots items")
+	}
+
+	botID := botsResponse.Data.Items[0].CharacterSummary.CharacterID
+	if botID == "" {
+		t.Fatal("expected public bot character_id")
+	}
+
+	var botDetail struct {
+		Data struct {
+			CharacterSummary struct {
+				CharacterID string `json:"character_id"`
+			} `json:"character_summary"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/public/bots/"+botID, nil, "", http.StatusOK, &botDetail)
+	if botDetail.Data.CharacterSummary.CharacterID != botID {
+		t.Fatalf("expected bot detail %q, got %q", botID, botDetail.Data.CharacterSummary.CharacterID)
+	}
+}
+
+func TestBuildingActionsApplyEconomyEffects(t *testing.T) {
+	server := NewServer(config.API{Port: "8080"})
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "bot-building",
+		"password": "verysecure",
+	}), "", http.StatusOK, nil)
+
+	var loginResponse struct {
+		Data struct {
+			AccessToken string `json:"access_token"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "bot-building",
+		"password": "verysecure",
+	}), "", http.StatusOK, &loginResponse)
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
+		"name":         "BuilderOne",
+		"class":        "warrior",
+		"weapon_style": "sword_shield",
+	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+
+	var shopInventory struct {
+		Data struct {
+			Items []struct {
+				CatalogID string `json:"catalog_id"`
+				PriceGold int    `json:"price_gold"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/buildings/weapon_shop_main_city/shop-inventory", nil, loginResponse.Data.AccessToken, http.StatusOK, &shopInventory)
+	if len(shopInventory.Data.Items) == 0 {
+		t.Fatal("expected non-empty weapon shop inventory")
+	}
+
+	purchaseCatalogID := shopInventory.Data.Items[0].CatalogID
+	purchasePrice := shopInventory.Data.Items[0].PriceGold
+
+	var purchaseResponse struct {
+		Data struct {
+			Result struct {
+				PriceGold int `json:"price_gold"`
+				Item      struct {
+					ItemID string `json:"item_id"`
+				} `json:"item"`
+			} `json:"result"`
+			State struct {
+				Character struct {
+					Gold int `json:"gold"`
+				} `json:"character"`
+			} `json:"state"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/buildings/weapon_shop_main_city/purchase", map[string]any{
+		"catalog_id": purchaseCatalogID,
+	}, loginResponse.Data.AccessToken, http.StatusOK, &purchaseResponse)
+
+	if purchaseResponse.Data.Result.Item.ItemID == "" {
+		t.Fatal("expected purchased item_id")
+	}
+	if purchaseResponse.Data.Result.PriceGold != purchasePrice {
+		t.Fatalf("expected purchase price %d, got %d", purchasePrice, purchaseResponse.Data.Result.PriceGold)
+	}
+	if purchaseResponse.Data.State.Character.Gold != 100-purchasePrice {
+		t.Fatalf("expected gold %d after purchase, got %d", 100-purchasePrice, purchaseResponse.Data.State.Character.Gold)
+	}
+
+	var sellResponse struct {
+		Data struct {
+			Result struct {
+				GainGold int `json:"gain_gold"`
+			} `json:"result"`
+			State struct {
+				Character struct {
+					Gold int `json:"gold"`
+				} `json:"character"`
+			} `json:"state"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/buildings/weapon_shop_main_city/sell", map[string]any{
+		"item_id": purchaseResponse.Data.Result.Item.ItemID,
+	}, loginResponse.Data.AccessToken, http.StatusOK, &sellResponse)
+	if sellResponse.Data.Result.GainGold <= 0 {
+		t.Fatalf("expected gain_gold > 0, got %d", sellResponse.Data.Result.GainGold)
+	}
+	if sellResponse.Data.State.Character.Gold <= purchaseResponse.Data.State.Character.Gold {
+		t.Fatal("expected gold to increase after sell")
+	}
+
+	var healResponse struct {
+		Data struct {
+			ActionResult struct {
+				Status string `json:"status"`
+			} `json:"action_result"`
+			State struct {
+				Character struct {
+					Gold int `json:"gold"`
+				} `json:"character"`
+			} `json:"state"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/buildings/temple_main_city/heal", nil, loginResponse.Data.AccessToken, http.StatusOK, &healResponse)
+	if healResponse.Data.ActionResult.Status != "success" {
+		t.Fatalf("expected success status, got %q", healResponse.Data.ActionResult.Status)
+	}
+
+	var sellEquippedErr struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+
+	var inventoryView struct {
+		Data struct {
+			Equipped []struct {
+				ItemID string `json:"item_id"`
+			} `json:"equipped"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/inventory", nil, loginResponse.Data.AccessToken, http.StatusOK, &inventoryView)
+	if len(inventoryView.Data.Equipped) == 0 {
+		t.Fatal("expected at least one equipped item")
+	}
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/buildings/weapon_shop_main_city/sell", map[string]any{
+		"item_id": inventoryView.Data.Equipped[0].ItemID,
+	}, loginResponse.Data.AccessToken, http.StatusBadRequest, &sellEquippedErr)
+	if sellEquippedErr.Error.Code != "INVALID_ACTION_STATE" {
+		t.Fatalf("expected INVALID_ACTION_STATE, got %q", sellEquippedErr.Error.Code)
+	}
+}
+
 func decodeJSON(t *testing.T, recorder *httptest.ResponseRecorder, target any) {
 	t.Helper()
 

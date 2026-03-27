@@ -205,11 +205,32 @@ challenge 只能使用一次，所以登录时不能复用注册时那条。
 - `POST /me/quests/{questId}/accept`
 - `POST /me/quests/{questId}/submit`
 - `POST /me/quests/reroll`
+- `GET /me/inventory`
+- `POST /me/equipment/equip`
+- `POST /me/equipment/unequip`
+- `GET /buildings/{buildingId}`
+- `GET /buildings/{buildingId}/shop-inventory`
+- `POST /buildings/{buildingId}/purchase`
+- `POST /buildings/{buildingId}/sell`
+- `POST /buildings/{buildingId}/heal`
+- `POST /buildings/{buildingId}/cleanse`
+- `POST /buildings/{buildingId}/enhance`
+- `POST /buildings/{buildingId}/repair`
+- `GET /dungeons/{dungeonId}`
+- `POST /dungeons/{dungeonId}/enter`
+- `GET /me/runs/active`
+- `GET /me/runs/{runId}`
+- `POST /me/runs/{runId}/claim`
+- `POST /arena/signup`
+- `GET /arena/current`
+- `GET /arena/leaderboard`
 - `GET /world/regions`
 - `GET /regions/{regionId}`
 - `GET /public/world-state`
 - `GET /public/events`
 - `GET /public/leaderboards`
+- `GET /public/bots`
+- `GET /public/bots/{botId}`
 
 ## 动作总线接口
 
@@ -220,9 +241,28 @@ challenge 只能使用一次，所以登录时不能复用注册时那条。
 当前支持的 `action_type`：
 
 - `travel`
+- `enter_building`
 - `accept_quest`
 - `submit_quest`
 - `reroll_quests`
+- `equip_item`
+- `unequip_item`
+- `sell_item`
+- `restore_hp_mp`
+- `remove_status`
+- `enhance_item`
+- `enter_dungeon`
+- `claim_dungeon_rewards`
+- `arena_signup`
+
+兼容说明：
+
+- `claim_run_rewards` 也可用，会被映射到 `claim_dungeon_rewards`。
+
+稳定推进建议：
+
+- 仍优先使用任务旅行/提交循环作为主成长路径。
+- 建筑与竞技场动作建议作为可选侧向动作，按策略需要再使用。
 
 示例：
 

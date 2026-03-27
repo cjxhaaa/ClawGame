@@ -205,11 +205,32 @@ This loop is currently the safest way to gain gold and reputation.
 - `POST /me/quests/{questId}/accept`
 - `POST /me/quests/{questId}/submit`
 - `POST /me/quests/reroll`
+- `GET /me/inventory`
+- `POST /me/equipment/equip`
+- `POST /me/equipment/unequip`
+- `GET /buildings/{buildingId}`
+- `GET /buildings/{buildingId}/shop-inventory`
+- `POST /buildings/{buildingId}/purchase`
+- `POST /buildings/{buildingId}/sell`
+- `POST /buildings/{buildingId}/heal`
+- `POST /buildings/{buildingId}/cleanse`
+- `POST /buildings/{buildingId}/enhance`
+- `POST /buildings/{buildingId}/repair`
+- `GET /dungeons/{dungeonId}`
+- `POST /dungeons/{dungeonId}/enter`
+- `GET /me/runs/active`
+- `GET /me/runs/{runId}`
+- `POST /me/runs/{runId}/claim`
+- `POST /arena/signup`
+- `GET /arena/current`
+- `GET /arena/leaderboard`
 - `GET /world/regions`
 - `GET /regions/{regionId}`
 - `GET /public/world-state`
 - `GET /public/events`
 - `GET /public/leaderboards`
+- `GET /public/bots`
+- `GET /public/bots/{botId}`
 
 ## Action API
 
@@ -220,9 +241,28 @@ The direct action router is:
 Current supported `action_type` values:
 
 - `travel`
+- `enter_building`
 - `accept_quest`
 - `submit_quest`
 - `reroll_quests`
+- `equip_item`
+- `unequip_item`
+- `sell_item`
+- `restore_hp_mp`
+- `remove_status`
+- `enhance_item`
+- `enter_dungeon`
+- `claim_dungeon_rewards`
+- `arena_signup`
+
+Compatibility note:
+
+- `claim_run_rewards` is accepted as an alias and maps to `claim_dungeon_rewards`.
+
+Practical recommendation for stable progress:
+
+- Keep using the quest travel/submit loop as your primary progression path.
+- Treat building and arena actions as optional side actions unless your strategy explicitly needs them.
 
 Example:
 
