@@ -38,6 +38,25 @@
 - `arena_history`
 - `recent_events`
 
+### 10.4 DungeonRunDetail
+
+字段应包含：
+
+- `run_id`
+- `dungeon_id`
+- `run_status`
+- `runtime_phase`
+- `current_room_index`
+- `highest_room_cleared`
+- `projected_rating`
+- `current_rating`
+- `room_summary`
+- `battle_state`
+- `staged_material_drops`
+- `pending_rating_rewards`
+- `available_actions`
+- `recent_battle_log`
+
 ## 11. 状态机
 
 ### 11.1 任务状态机
@@ -59,6 +78,22 @@
 - `failed`
 - `abandoned`
 - `expired`
+
+`active` 内部的运行态阶段流转：
+
+- `room_preparing -> in_combat`
+- `in_combat -> room_cleared`
+- `in_combat -> rating_pending`
+- `room_cleared -> room_preparing`
+- `room_cleared -> rating_pending`
+- `rating_pending -> completed`
+
+规则：
+
+- 房间胜利后应立即暂存该房间的击杀材料掉落
+- 运行提前结束时，`current_rating` 由 `highest_room_cleared` 推导
+- 通关第 `6` 房后进入 `rating_pending`，再结算成 `cleared`
+- `dungeon_run_states.state_json` 是唯一可信的副本运行态快照
 
 ### 11.3 竞技场赛事状态机
 
@@ -298,6 +333,21 @@
 
 ## 12.8 Dungeon APIs
 
+#### `GET /api/v1/dungeons/{dungeon_id}`
+
+用途：
+
+- 返回进入副本前所需的静态定义
+
+返回：
+
+- 副本元信息
+- 房间数量
+- 推荐等级带
+- Boss 房间索引
+- 评级规则摘要
+- 可见奖励摘要
+
 #### `POST /api/v1/dungeons/{dungeon_id}/enter`
 
 校验：
@@ -311,17 +361,69 @@
 
 - 新创建的 run 状态
 
+推荐返回字段：
+
+- `run_id`
+- `run_status`
+- `runtime_phase`
+- `current_room_index`
+- `highest_room_cleared`
+- `projected_rating`
+- `available_actions`
+
+#### `GET /api/v1/me/runs/active`
+
+用途：
+
+- 获取当前角色的 active 副本运行
+
+返回：
+
+- 若无 active run，则返回 `null`
+- 若存在，则返回完整运行态载荷
+
 #### `GET /api/v1/me/runs/{run_id}`
 
 用途：
 
 - 查看当前地下城运行状态
 
+返回应包含：
+
+- 运行摘要
+- 当前房间摘要
+- 战斗快照
+- 已暂存的击杀材料掉落
+- 待结算的评级装备奖励
+- 可执行动作
+- 最近战斗日志
+
 #### `POST /api/v1/me/runs/{run_id}/action`
 
 用途：
 
 - 执行地下城内动作
+
+支持动作：
+
+- `start_room`
+- `battle_attack`
+- `battle_skill`
+- `battle_use_consumable`
+- `battle_defend`
+- `claim_room_drops`
+- `continue_to_next_room`
+- `settle_rating_rewards`
+- `abandon_run`
+
+动作规则：
+
+- `start_room` 仅可在 `room_preparing` 使用
+- 战斗类动作仅可在 `in_combat` 使用
+- `claim_room_drops` 仅可在 `room_cleared` 且存在暂存掉落时使用
+- `continue_to_next_room` 仅可在当前房间完成后使用
+- `settle_rating_rewards` 仅可在 `rating_pending` 使用
+- `abandon_run` 可在任意 active 运行阶段使用
 
 ## 12.9 Arena APIs
 
@@ -388,4 +490,3 @@
 返回：
 
 - 综合排行榜
-

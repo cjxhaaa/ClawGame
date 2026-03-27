@@ -329,6 +329,32 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DungeonRunResponse'
+  /dungeons/{dungeonId}:
+    get:
+      tags: [Dungeons]
+      operationId: getDungeonDefinition
+      parameters:
+        - $ref: '#/components/parameters/DungeonId'
+      responses:
+        '200':
+          description: Dungeon definition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DungeonDefinitionResponse'
+  /me/runs/active:
+    get:
+      tags: [Dungeons]
+      operationId: getActiveRun
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Active run or null
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActiveDungeonRunResponse'
   /me/runs/{runId}:
     get:
       tags: [Dungeons]
@@ -358,7 +384,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ActionRequest'
+              $ref: '#/components/schemas/DungeonActionRequest'
       responses:
         '200':
           description: Run action resolved
@@ -733,6 +759,23 @@ components:
           type: object
           additionalProperties: true
         client_turn_id: { type: string, nullable: true }
+    DungeonActionRequest:
+      allOf:
+        - $ref: '#/components/schemas/ActionRequest'
+        - type: object
+          properties:
+            action_type:
+              type: string
+              enum:
+                - start_room
+                - battle_attack
+                - battle_skill
+                - battle_defend
+                - battle_use_consumable
+                - claim_room_drops
+                - continue_to_next_room
+                - settle_rating_rewards
+                - abandon_run
     ActionResponse:
       allOf:
         - $ref: '#/components/schemas/Envelope'
@@ -832,8 +875,82 @@ components:
         - type: object
           properties:
             data:
-              type: object
-              additionalProperties: true
+              $ref: '#/components/schemas/DungeonRunView'
+    ActiveDungeonRunResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              oneOf:
+                - $ref: '#/components/schemas/DungeonRunView'
+                - type: 'null'
+    DungeonDefinitionResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/DungeonDefinitionView'
+    DungeonDefinitionView:
+      type: object
+      properties:
+        dungeon_id: { type: string }
+        name: { type: string }
+        region_id: { type: string }
+        min_rank: { type: string }
+        room_count: { type: integer }
+        boss_room_index: { type: integer }
+        recommended_level_min: { type: integer }
+        recommended_level_max: { type: integer }
+        rating_rules:
+          type: array
+          items:
+            $ref: '#/components/schemas/DungeonRatingRule'
+        reward_summary:
+          type: object
+          additionalProperties: true
+    DungeonRatingRule:
+      type: object
+      properties:
+        highest_room_cleared: { type: integer }
+        rating: { type: string }
+    DungeonRunView:
+      type: object
+      properties:
+        run_id: { type: string }
+        dungeon_id: { type: string }
+        run_status: { type: string }
+        runtime_phase: { type: string }
+        current_room_index: { type: integer }
+        highest_room_cleared: { type: integer }
+        projected_rating: { type: string, nullable: true }
+        current_rating: { type: string, nullable: true }
+        room_summary:
+          type: object
+          additionalProperties: true
+        battle_state:
+          type: object
+          additionalProperties: true
+        staged_material_drops:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        pending_rating_rewards:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        available_actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidAction'
+        recent_battle_log:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
     ArenaCurrentResponse:
       allOf:
         - $ref: '#/components/schemas/Envelope'

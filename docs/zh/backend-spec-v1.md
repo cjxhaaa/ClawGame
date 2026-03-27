@@ -118,7 +118,10 @@ V1 后端由两个 Go 应用组成：
 
 - 地下城进入校验
 - run 创建
-- 遭遇状态切换
+- 房间推进运行态编排
+- 战斗状态持久化
+- 评级计算
+- 击杀掉落暂存与发放
 - 奖励结算
 - 失败和放弃处理
 
@@ -225,8 +228,10 @@ V1 后端由两个 Go 应用组成：
 ### 6.5 地下城枚举
 
 - `dungeon_run_status`：`active`、`cleared`、`failed`、`abandoned`、`expired`
-- `dungeon_node_type`：`combat`、`boss`、`reward`
+- `dungeon_runtime_phase`：`room_preparing`、`in_combat`、`room_cleared`、`rating_pending`、`completed`
+- `dungeon_room_type`：`normal`、`elite`、`boss`、`event`
 - `encounter_result`：`victory`、`defeat`
+- `dungeon_rating`：`S`、`A`、`B`、`C`、`D`、`E`
 
 ### 6.6 竞技场枚举
 
@@ -558,13 +563,38 @@ V1 后端由两个 Go 应用组成：
 
 用于存储地下城定义。
 
+关键字段建议：
+
+- `room_count`
+- `boss_room_index`
+- `rating_reward_profile_id`
+- `room_config_json`
+
 ### 9.14 `dungeon_runs`
 
 用于存储单次地下城运行记录。
 
+关键字段建议：
+
+- `status`
+- `runtime_phase`
+- `current_room_index`
+- `highest_room_cleared`
+- `current_rating`
+- `seed`
+- `party_snapshot_json`
+- `run_summary_json`
+
 ### 9.15 `dungeon_run_states`
 
 用于存储地下城内部状态 JSON。
+
+关键字段建议：
+
+- `run_id`
+- `state_version`
+- `state_json`
+- `updated_at`
 
 ### 9.16 `arena_tournaments`
 
@@ -643,6 +673,25 @@ V1 后端由两个 Go 应用组成：
 - `recent_runs`
 - `arena_history`
 - `recent_events`
+
+### 10.4 DungeonRunDetail
+
+字段应包含：
+
+- `run_id`
+- `dungeon_id`
+- `run_status`
+- `runtime_phase`
+- `current_room_index`
+- `highest_room_cleared`
+- `projected_rating`
+- `current_rating`
+- `room_summary`
+- `battle_state`
+- `staged_material_drops`
+- `pending_rating_rewards`
+- `available_actions`
+- `recent_battle_log`
 
 ## 11. 状态机
 
@@ -917,17 +966,55 @@ V1 后端由两个 Go 应用组成：
 
 - 新创建的 run 状态
 
+推荐返回字段：
+
+- `run_id`
+- `run_status`
+- `runtime_phase`
+- `current_room_index`
+- `highest_room_cleared`
+- `projected_rating`
+- `available_actions`
+
+#### `GET /api/v1/me/runs/active`
+
+用途：
+
+- 获取当前角色的 active 副本运行
+
 #### `GET /api/v1/me/runs/{run_id}`
 
 用途：
 
 - 查看当前地下城运行状态
 
+返回应包含：
+
+- 运行摘要
+- 当前房间摘要
+- 战斗快照
+- 已暂存的击杀材料掉落
+- 待结算的评级装备奖励
+- 可执行动作
+- 最近战斗日志
+
 #### `POST /api/v1/me/runs/{run_id}/action`
 
 用途：
 
 - 执行地下城内动作
+
+支持动作：
+
+- `start_room`
+- `battle_attack`
+- `battle_skill`
+- `battle_use_consumable`
+- `battle_defend`
+- `claim_room_drops`
+- `continue_to_next_room`
+- `settle_rating_rewards`
+- `abandon_run`
 
 ## 12.9 Arena APIs
 

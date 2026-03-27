@@ -9,6 +9,9 @@ Goals:
 - equipment progression should be primarily sourced from dungeon drops
 - a new baseline gear band should appear every `20` levels
 - bots should clearly understand what dungeon they should farm for each level bracket
+- dungeons should use a room-by-room challenge flow with up to `6` rooms per run
+- equipment rewards should primarily be driven by final challenge rating rather than a fixed final-boss chest
+- materials should mainly come from monster kills to preserve combat-level rewards
 - only weapons are class-restricted
 - all other wearable slots are shared across all classes
 - rarity, affix count, and set effects should be explicit and machine-readable
@@ -86,8 +89,8 @@ Main purpose:
 Main stat directions:
 
 - warrior weapons: `physical_attack`, small `max_hp`
-- mage weapons: `magic_attack`, small `max_mp`
-- priest weapons: `magic_attack`, `healing_power`, small `max_mp`
+- mage weapons: `magic_attack`, small `speed`
+- priest weapons: `magic_attack`, `healing_power`, small `max_hp`
 
 ### 5.2 Head
 
@@ -157,7 +160,7 @@ Main purpose:
 
 Main stat directions:
 
-- `max_mp`
+- `max_hp`
 - `healing_power`
 - `magic_defense`
 - occasional `speed`
@@ -167,7 +170,6 @@ Main stat directions:
 Base affix pool for V1:
 
 - `+max_hp`
-- `+max_mp`
 - `+physical_attack`
 - `+magic_attack`
 - `+physical_defense`
@@ -244,7 +246,7 @@ Narrative identity:
 | Chest | +90 HP, +10 P.Def, +10 M.Def |
 | Boots | +45 HP, +3 speed, +4 P.Def |
 | Ring | +10 primary attack |
-| Necklace | +40 MP, +8 healing or +6 magic attack |
+| Necklace | +45 HP, +8 healing or +6 magic attack |
 
 ## 7.2 T2 Dungeon: Thorned Hollow
 
@@ -298,7 +300,7 @@ Narrative identity:
 | Chest | +160 HP, +16 P.Def, +16 M.Def |
 | Boots | +80 HP, +5 speed, +7 M.Def |
 | Ring | +18 primary attack or +14 healing |
-| Necklace | +80 MP, +12 healing or +12 magic attack |
+| Necklace | +85 HP, +12 healing or +12 magic attack |
 
 ## 7.3 T3 Dungeon: Sunscar Warvault
 
@@ -352,7 +354,7 @@ Narrative identity:
 | Chest | +240 HP, +24 P.Def, +22 M.Def |
 | Boots | +120 HP, +7 speed, +10 P.Def |
 | Ring | +28 primary attack or +22 healing |
-| Necklace | +130 MP, +18 healing or +18 magic attack |
+| Necklace | +135 HP, +18 healing or +18 magic attack |
 
 ## 7.4 T4 Dungeon: Obsidian Spire
 
@@ -406,7 +408,7 @@ Narrative identity:
 | Chest | +340 HP, +34 P.Def, +30 M.Def |
 | Boots | +170 HP, +9 speed, +14 M.Def |
 | Ring | +40 primary attack or +32 healing |
-| Necklace | +190 MP, +26 healing or +26 magic attack |
+| Necklace | +195 HP, +26 healing or +26 magic attack |
 
 ## 7.5 T5 Dungeon: Sandworm Den
 
@@ -460,7 +462,7 @@ Narrative identity:
 | Chest | +470 HP, +45 P.Def, +40 M.Def |
 | Boots | +230 HP, +12 speed, +18 P.Def |
 | Ring | +56 primary attack or +42 healing |
-| Necklace | +260 MP, +36 healing or +36 magic attack |
+| Necklace | +265 HP, +36 healing or +36 magic attack |
 
 ## 8. Set Effects
 
@@ -484,13 +486,13 @@ Each dungeon set uses the same progression shape:
 
 - `2-piece`: +10% physical attack and +10% magic attack
 - `4-piece`: first offensive skill each battle deals +18% increased damage
-- `6-piece`: after defeating an elite or boss phase, restore 12% HP and 12% MP
+- `6-piece`: after defeating an elite or boss phase, restore 12% HP and reduce one skill cooldown by 1
 
 ### 8.4 Nightglass Set
 
 - `2-piece`: +12% magic defense and +10% healing power
 - `4-piece`: when casting a non-basic skill, gain 8% damage reduction for 2 turns
-- `6-piece`: once every 4 turns, the next magic or holy skill costs 0 MP and gains +15% effect value
+- `6-piece`: once every 4 turns, the next magic or holy skill gains +15% effect value and reduces its cooldown by 1
 
 ### 8.5 Dunescourge Set
 
@@ -498,48 +500,97 @@ Each dungeon set uses the same progression shape:
 - `4-piece`: against boss targets, gain +12% damage and +12% healing output
 - `6-piece`: after receiving lethal damage once per battle, survive at 1 HP, gain a 15% HP shield, and cleanse poison
 
-## 9. Loot Probability Model
+## 9. Dungeon Challenge And Rating Rewards
 
-Drop rates should be strict enough to support long-term farming without making upgrades feel impossible.
+Dungeons should no longer rely on a single final-boss chest. Instead, they should use a room-by-room challenge structure with an end-of-run rating.
 
-## 9.1 Standard Encounter Chest
+## 9.1 Room Progression Rules
 
-| Quality | Drop Rate |
+Core rules:
+
+- each dungeon run contains `1-6` consecutive rooms
+- room difficulty increases in order, with later rooms adding more stat pressure, skill complexity, and boss pressure
+- every room should have a readable encounter identity such as standard fight, elite fight, event room, or phase boss room
+- if a player or bot fails in a room, the final rating is based on the highest completed room
+- room `6` is the final challenge room, and only a clear of room `6` can award `S`
+
+Recommended cadence:
+
+| Room | Identity | Notes |
+| --- | --- | --- |
+| 1 | warm-up room | baseline enemies to validate current loadout |
+| 2 | standard room | introduces smaller mechanics and sustain pressure |
+| 3 | elite room | forces the team to spend real resources |
+| 4 | pressure room | heavier debuffs or summons start separating builds |
+| 5 | pre-boss room | near-limit pressure that gates high ratings |
+| 6 | finale room | strongest boss or end-stage encounter that decides `S` rewards |
+
+## 9.2 Rating Rules
+
+This follows the confirmed six-grade structure: `S / A / B / C / D / E`.
+
+Suggested mapping:
+
+| Highest Completed Room | Rating | Notes |
+| --- | --- | --- |
+| 6 | `S` | cleared all `6` rooms |
+| 5 | `A` | stopped just before the final full clear |
+| 4 | `B` | strong completion depth and stable farming value |
+| 3 | `C` | mid-run completion, suitable for progression |
+| 2 | `D` | only early progress completed |
+| 1 or failed before clearing room 1 | `E` | failed run or minimal progress |
+
+Additional rules:
+
+- rating only controls end-of-run equipment rewards and does not replace in-combat drops
+- future phases can fine-tune within a rating using remaining HP, deaths, or round count
+- V1 should mainly use room completion depth so bots can predict value cleanly
+
+## 9.3 Equipment Reward Probabilities
+
+Equipment rewards should be granted from the final rating pool, not primarily from a boss material chest.
+
+### 9.3.1 Number of Gear Rolls
+
+| Rating | End-of-run Gear Rule |
 | --- | --- |
-| Blue | 72.00% |
-| Purple | 20.00% |
-| Gold | 6.50% |
-| Red | 1.30% |
-| Prismatic | 0.20% |
+| `S` | guaranteed `2` gear rolls, including `1` high-quality roll |
+| `A` | guaranteed `1` gear roll, plus `35%` chance for `1` extra roll |
+| `B` | guaranteed `1` gear roll |
+| `C` | `75%` chance to receive `1` gear roll |
+| `D` | `45%` chance to receive `1` gear roll |
+| `E` | `20%` chance to receive `1` gear roll |
 
-## 9.2 Dungeon Final Boss Drop
+### 9.3.2 Quality Distribution Per Roll
 
-| Quality | Drop Rate |
-| --- | --- |
-| Blue | 48.00% |
-| Purple | 30.00% |
-| Gold | 16.00% |
-| Red | 5.00% |
-| Prismatic | 1.00% |
-
-## 9.3 High-Difficulty Boss Drop
-
-For challenge mode, elite mode, or weekly featured dungeon modifiers:
-
-| Quality | Drop Rate |
-| --- | --- |
-| Blue | 30.00% |
-| Purple | 34.00% |
-| Gold | 23.00% |
-| Red | 10.00% |
-| Prismatic | 3.00% |
+| Rating | Blue | Purple | Gold | Red | Prismatic |
+| --- | --- | --- | --- | --- | --- |
+| `S` | 0% | 18% | 42% | 32% | 8% |
+| `A` | 8% | 34% | 36% | 18% | 4% |
+| `B` | 24% | 42% | 24% | 9% | 1% |
+| `C` | 46% | 36% | 14% | 4% | 0% |
+| `D` | 65% | 27% | 7% | 1% | 0% |
+| `E` | 82% | 16% | 2% | 0% | 0% |
 
 Control rules:
 
-- each clear should guarantee at least one equipment drop source
-- boss loot should be the main source of red and prismatic gear
-- prismatic drops should have bad-luck protection after repeated dry runs in a future phase
-- set pieces should be weighted toward armor slots more than jewelry in the first pass, to help players assemble 2-piece and 4-piece bonuses earlier
+- `S` and `A` are the main sources of red and prismatic gear
+- `B` is the baseline lane for long-term stable farming
+- below `C`, the system should mainly serve progression and gap-filling rather than endgame chase
+- future phases should add soft pity for long red/prismatic droughts
+- set pieces should still be weighted slightly toward armor over jewelry so bots can assemble `2-piece` and `4-piece` bonuses earlier
+
+## 9.4 Material Drop Principles
+
+Materials should no longer be modeled primarily as a shared dungeon completion bundle. Instead, they should come from monster kills during combat.
+
+Core rules:
+
+- normal monsters drop base materials
+- elite monsters drop base materials plus a small chance at advanced materials
+- bosses or final-room key enemies drop high-value and dungeon-specific materials
+- deeper room progress should bias monster material weights toward higher-tier pools
+- even on a failed run, materials earned from already-killed monsters should be retained
 
 ## 10. Slot Drop Weight
 
@@ -599,7 +650,7 @@ Recommended item fields:
 Recommended API requirements:
 
 - every item response should expose slot, rarity, tier, stat lines, and set membership explicitly
-- dungeon result payloads should separate guaranteed rewards and RNG rewards
+- dungeon result payloads should separate rating-based equipment rewards from in-combat kill drops
 - website observer pages should be able to show where a visible high-end item originated
 
 ## 13. Open Tuning Questions

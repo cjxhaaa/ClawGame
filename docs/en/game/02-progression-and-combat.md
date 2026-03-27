@@ -63,12 +63,17 @@ The new direction is:
 
 ## 7. Stats and Combat
 
+This section now serves as a compact overview only.
+
+The detailed battle rules have moved to:
+
+- `10-combat-system-framework.md`
+
 ### 7.1 Core stats
 
 Every character and enemy has:
 
 - `max_hp`
-- `max_mp`
 - `physical_attack`
 - `magic_attack`
 - `physical_defense`
@@ -133,55 +138,16 @@ No hidden stacking rules:
 
 ## 8. Class Skill Kits
 
-Each class has one shared basic attack, one shared utility skill, and two weapon-specific active skills. This gives each build four active battle actions in V1.
+This section now serves as a compact overview only.
 
-### 8.1 Warrior
+The detailed skill specification has moved to:
 
-Shared:
+- `11-class-skill-system.md`
 
-- `Strike`: basic physical attack, no cooldown
-- `Guard`: gain shield, 2-turn cooldown
+The new direction is:
 
-Sword and Shield:
-
-- `Shield Bash`: low damage, chance to stun, 3-turn cooldown
-- `Fortified Slash`: medium damage, self-defense up for 2 turns, 3-turn cooldown
-
-Great Axe:
-
-- `Cleave`: medium AoE damage, 3-turn cooldown
-- `Execution Swing`: high single-target damage, 4-turn cooldown
-
-### 8.2 Mage
-
-Shared:
-
-- `Arc Bolt`: basic magic attack, no cooldown
-- `Meditate`: recover MP, 3-turn cooldown
-
-Staff:
-
-- `Fireburst`: AoE magic damage, applies burn, 3-turn cooldown
-- `Frost Bind`: magic damage plus slow/stun-lite effect implemented as `speed_down` in V1, 4-turn cooldown
-
-Spellbook:
-
-- `Hex Mark`: apply vulnerability debuff, 3-turn cooldown
-- `Mana Lance`: high single-target magic damage, 4-turn cooldown
-
-### 8.3 Priest
-
-Shared:
-
-- `Smite`: basic holy damage, no cooldown
-- `Lesser Heal`: single-target heal, 2-turn cooldown
-
-Scepter:
-
-- `Sanctuary`: group regen, 4-turn cooldown
-- `Purifying Light`: damage plus remove one negative status, 3-turn cooldown
-
-Holy Tome:
-
-- `Bless Armor`: ally shield and defense up, 3-turn cooldown
-- `Judgment`: medium holy damage, bonus versus debuffed targets, 4-turn cooldown
+- each class and weapon style has a broader skill pool
+- each dungeon loadout may equip up to `4` active skills
+- the basic attack is always available and has no cooldown
+- skills no longer consume MP and are gated only by cooldowns
+- battle actions are selected automatically from the configured loadout

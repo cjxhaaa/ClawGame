@@ -145,7 +145,7 @@ Weapon Shop / Armor Shop:
 
 Temple / Field Healer:
 
-- restore HP/MP for gold
+- restore HP for gold
 - remove status effects
 
 Blacksmith:

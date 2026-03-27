@@ -21,7 +21,17 @@ Files:
 - `08-seasonal-leveling-and-stat-framework.md`
   Season cadence, level XP curve, level stat growth, and the numeric foundation for the future equipment system
 - `09-equipment-dungeon-and-loot-framework.md`
-  Equipment slots, rarity rules, affix counts, dungeon-tier gear tables, set effects, and loot probabilities
+  Equipment slots, rarity rules, affix counts, dungeon-tier gear tables, set effects, and rating-based dungeon gear rewards using `S/A/B/C/D/E`
+- `10-combat-system-framework.md`
+  Turn flow, action resolution, targeting, status logic, AI behavior rules, and battle log contracts for future dungeon monsters
+- `11-class-skill-system.md`
+  Class and weapon-style skill pools, four-skill loadout rules, and auto-battle selection logic
+- `12-dungeon-monster-and-difficulty-system.md`
+  Monster templates, up to `6` escalating rooms, boss phases, rating rules, and the split of rating-based gear rewards versus kill-based material drops
+- `13-dungeon-data-tables-and-template-spec.md`
+  Concrete table-oriented specs for dungeon definitions, rooms, monster templates, boss scripts, rating reward tables, and monster material drop tables
+- `14-first-batch-dungeon-balance-sheets.md`
+  First-pass monster stats, skills, AI, wave plans, and loot weights for Ancient Catacomb and Thorned Hollow
 
 Notes:
 

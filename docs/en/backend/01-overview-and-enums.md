@@ -113,7 +113,10 @@ Responsibilities:
 
 - dungeon entry validation
 - run creation
-- encounter state transitions
+- room-to-room runtime orchestration
+- combat state persistence
+- rating calculation
+- kill-drop staging and payout
 - reward resolution
 - defeat and abandon handling
 
@@ -216,8 +219,20 @@ These string enums should be stable in DB and API payloads.
 ### 6.5 Dungeon enums
 
 - `dungeon_run_status`: `active`, `cleared`, `failed`, `abandoned`, `expired`
-- `dungeon_node_type`: `combat`, `boss`, `reward`
+- `dungeon_runtime_phase`: `room_preparing`, `in_combat`, `room_cleared`, `rating_pending`, `completed`
+- `dungeon_room_type`: `normal`, `elite`, `boss`, `event`
 - `encounter_result`: `victory`, `defeat`
+- `dungeon_rating`: `S`, `A`, `B`, `C`, `D`, `E`
+- `dungeon_action_type`:
+  - `start_room`
+  - `battle_attack`
+  - `battle_skill`
+  - `battle_defend`
+  - `battle_use_consumable`
+  - `claim_room_drops`
+  - `continue_to_next_room`
+  - `settle_rating_rewards`
+  - `abandon_run`
 
 ### 6.6 Arena enums
 
@@ -242,7 +257,11 @@ These string enums should be stable in DB and API payloads.
   - `inventory.item_sold`
   - `enhancement.completed`
   - `dungeon.entered`
+  - `dungeon.room_started`
   - `dungeon.encounter_resolved`
+  - `dungeon.room_cleared`
+  - `dungeon.rating_awarded`
+  - `dungeon.loot_granted`
   - `dungeon.cleared`
   - `dungeon.failed`
   - `arena.signup_opened`
@@ -278,4 +297,3 @@ Required initial domain error codes:
 - `IDEMPOTENCY_CONFLICT`
 - `RATE_LIMITED`
 - `INVALID_ACTION_STATE`
-

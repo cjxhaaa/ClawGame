@@ -113,7 +113,10 @@ Responsibilities:
 
 - dungeon entry validation
 - run creation
-- encounter state transitions
+- room-to-room runtime orchestration
+- combat state persistence
+- rating calculation
+- kill-drop staging and payout
 - reward resolution
 - defeat and abandon handling
 
@@ -216,8 +219,10 @@ These string enums should be stable in DB and API payloads.
 ### 6.5 Dungeon enums
 
 - `dungeon_run_status`: `active`, `cleared`, `failed`, `abandoned`, `expired`
-- `dungeon_node_type`: `combat`, `boss`, `reward`
+- `dungeon_runtime_phase`: `room_preparing`, `in_combat`, `room_cleared`, `rating_pending`, `completed`
+- `dungeon_room_type`: `normal`, `elite`, `boss`, `event`
 - `encounter_result`: `victory`, `defeat`
+- `dungeon_rating`: `S`, `A`, `B`, `C`, `D`, `E`
 
 ### 6.6 Arena enums
 
@@ -242,7 +247,11 @@ These string enums should be stable in DB and API payloads.
   - `inventory.item_sold`
   - `enhancement.completed`
   - `dungeon.entered`
+  - `dungeon.room_started`
   - `dungeon.encounter_resolved`
+  - `dungeon.room_cleared`
+  - `dungeon.rating_awarded`
+  - `dungeon.loot_granted`
   - `dungeon.cleared`
   - `dungeon.failed`
   - `arena.signup_opened`
@@ -744,9 +753,10 @@ Fields:
 - `name` `text` not null
 - `min_rank` `text` not null
 - `region_id` `text` not null references `regions(id)`
-- `encounter_count` `int` not null
-- `boss_encounter_key` `text` not null
-- `reward_table_json` `jsonb` not null
+- `room_count` `int` not null
+- `boss_room_index` `int` not null
+- `rating_reward_profile_id` `text` not null
+- `room_config_json` `jsonb` not null
 - `is_active` `boolean` not null default `true`
 
 ### 9.14 `dungeon_runs`
@@ -761,8 +771,13 @@ Fields:
 - `character_id` `text` not null references `characters(id)`
 - `dungeon_id` `text` not null references `dungeon_definitions(id)`
 - `status` `text` not null
-- `encounter_index` `int` not null default `0`
+- `runtime_phase` `text` not null
+- `current_room_index` `int` not null default `1`
+- `highest_room_cleared` `int` not null default `0`
+- `current_rating` `text` null
 - `seed` `bigint` not null
+- `party_snapshot_json` `jsonb` not null
+- `run_summary_json` `jsonb` not null
 - `started_at` `timestamptz` not null
 - `finished_at` `timestamptz` null
 - `last_action_at` `timestamptz` not null
@@ -781,12 +796,13 @@ Purpose:
 Fields:
 
 - `run_id` `text` primary key references `dungeon_runs(id)`
+- `state_version` `int` not null default `1`
 - `state_json` `jsonb` not null
 - `updated_at` `timestamptz` not null
 
 Notes:
 
-- stores encounter state, combat state, pending rewards, and transient action choices
+- stores room state, combat snapshot, staged kill drops, pending rating rewards, and available action context
 
 ### 9.16 `arena_tournaments`
 
@@ -961,6 +977,25 @@ Fields:
 - `arena_history`
 - `recent_events`
 
+### 10.4 DungeonRunDetail
+
+Fields:
+
+- `run_id`
+- `dungeon_id`
+- `run_status`
+- `runtime_phase`
+- `current_room_index`
+- `highest_room_cleared`
+- `projected_rating`
+- `current_rating`
+- `room_summary`
+- `battle_state`
+- `staged_material_drops`
+- `pending_rating_rewards`
+- `available_actions`
+- `recent_battle_log`
+
 ## 11. State Machines
 
 ### 11.1 Quest state machine
@@ -986,6 +1021,15 @@ Allowed transitions:
 - `active -> failed`
 - `active -> abandoned`
 - `active -> expired`
+
+Runtime phase transitions inside `active`:
+
+- `room_preparing -> in_combat`
+- `in_combat -> room_cleared`
+- `in_combat -> rating_pending`
+- `room_cleared -> room_preparing`
+- `room_cleared -> rating_pending`
+- `rating_pending -> completed`
 
 ### 11.3 Arena tournament state machine
 
@@ -1382,6 +1426,12 @@ Side effects:
 
 ### 12.8 Dungeon APIs
 
+#### `GET /api/v1/dungeons/{dungeon_id}`
+
+Purpose:
+
+- return static dungeon definition before entering a run
+
 #### `POST /api/v1/dungeons/{dungeon_id}/enter`
 
 Purpose:
@@ -1410,26 +1460,30 @@ Success response:
   "data": {
     "run_id": "run_01JV...",
     "run_status": "active",
-    "encounter_index": 1,
-    "state": {
-      "available_actions": [
-        {
-          "action_type": "start_encounter"
-        }
-      ]
-    }
+    "runtime_phase": "room_preparing",
+    "current_room_index": 1,
+    "highest_room_cleared": 0,
+    "projected_rating": "E"
   }
 }
 ```
+
+#### `GET /api/v1/me/runs/active`
+
+Purpose:
+
+- fetch the caller's active dungeon run if one exists
 
 #### `GET /api/v1/me/runs/{run_id}`
 
 Returns:
 
 - current run summary
-- serialized state
+- serialized runtime state
 - available actions
 - recent battle log
+- staged material drops
+- pending rating rewards
 
 #### `POST /api/v1/me/runs/{run_id}/action`
 
@@ -1441,7 +1495,7 @@ Request examples:
 
 ```json
 {
-  "action_type": "start_encounter",
+  "action_type": "start_room",
   "action_args": {}
 }
 ```
@@ -1465,13 +1519,14 @@ Request examples:
 
 Supported run actions:
 
-- `start_encounter`
+- `start_room`
 - `battle_attack`
 - `battle_skill`
 - `battle_use_consumable`
 - `battle_defend`
-- `claim_reward`
-- `advance_node`
+- `claim_room_drops`
+- `continue_to_next_room`
+- `settle_rating_rewards`
 - `abandon_run`
 
 ### 12.9 Arena APIs

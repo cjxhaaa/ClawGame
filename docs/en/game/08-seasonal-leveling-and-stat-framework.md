@@ -146,9 +146,6 @@ The following stats should be treated as the canonical V1 combat stat set.
 - `max_hp`
   - total health pool
   - reaching `0` means defeat
-- `max_mp`
-  - total mana pool
-  - consumed by active skills
 
 #### Offensive stats
 
@@ -178,10 +175,9 @@ The following stats should be treated as the canonical V1 combat stat set.
 - `status_resistance`
   - reduces hostile status duration or effectiveness where allowed
 
-The first implementation can ship with the first eight stats only:
+The first implementation can ship with the first seven stats only:
 
 - `max_hp`
-- `max_mp`
 - `physical_attack`
 - `magic_attack`
 - `physical_defense`
@@ -197,14 +193,14 @@ The current project already has per-build base stats. The seasonal system should
 
 Suggested base templates at season level `1`:
 
-| Class | Weapon Style | HP | MP | P.Atk | M.Atk | P.Def | M.Def | Speed | Heal |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Warrior | Sword and Shield | 132 | 34 | 24 | 6 | 18 | 10 | 10 | 4 |
-| Warrior | Great Axe | 120 | 28 | 30 | 4 | 14 | 8 | 11 | 3 |
-| Mage | Staff | 92 | 120 | 12 | 34 | 9 | 18 | 16 | 8 |
-| Mage | Spellbook | 88 | 126 | 10 | 36 | 8 | 16 | 15 | 10 |
-| Priest | Scepter | 104 | 112 | 10 | 26 | 11 | 17 | 14 | 20 |
-| Priest | Holy Tome | 98 | 118 | 8 | 22 | 10 | 20 | 13 | 24 |
+| Class | Weapon Style | HP | P.Atk | M.Atk | P.Def | M.Def | Speed | Heal |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Warrior | Sword and Shield | 132 | 24 | 6 | 18 | 10 | 10 | 4 |
+| Warrior | Great Axe | 120 | 30 | 4 | 14 | 8 | 11 | 3 |
+| Mage | Staff | 92 | 12 | 34 | 9 | 18 | 16 | 8 |
+| Mage | Spellbook | 88 | 10 | 36 | 8 | 16 | 15 | 10 |
+| Priest | Scepter | 104 | 10 | 26 | 11 | 17 | 14 | 20 |
+| Priest | Holy Tome | 98 | 8 | 22 | 10 | 20 | 13 | 24 |
 
 ### 9.10 Level Growth by Class
 
@@ -212,11 +208,11 @@ Every level from `2` to `100` grants fixed class-based growth.
 
 Growth per level:
 
-| Class | HP | MP | P.Atk | M.Atk | P.Def | M.Def | Speed | Heal |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Warrior | +8 | +1 | +1.2 | +0.2 | +0.9 | +0.5 | +0.08 | +0.05 |
-| Mage | +5 | +5 | +0.2 | +1.35 | +0.35 | +0.8 | +0.10 | +0.18 |
-| Priest | +6 | +4 | +0.25 | +0.95 | +0.45 | +0.9 | +0.09 | +0.70 |
+| Class | HP | P.Atk | M.Atk | P.Def | M.Def | Speed | Heal |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Warrior | +8 | +1.2 | +0.2 | +0.9 | +0.5 | +0.08 | +0.05 |
+| Mage | +5 | +0.2 | +1.35 | +0.35 | +0.8 | +0.10 | +0.18 |
+| Priest | +6 | +0.25 | +0.95 | +0.45 | +0.9 | +0.09 | +0.70 |
 
 Rounding rule:
 
@@ -229,14 +225,14 @@ This keeps progression smooth while avoiding noisy level jumps.
 
 Approximate level `100` stats before equipment and temporary buffs:
 
-| Class | Weapon Style | HP | MP | P.Atk | M.Atk | P.Def | M.Def | Speed | Heal |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Warrior | Sword and Shield | 924 | 133 | 142 | 25 | 107 | 59 | 17 | 8 |
-| Warrior | Great Axe | 912 | 127 | 148 | 23 | 103 | 57 | 18 | 7 |
-| Mage | Staff | 587 | 615 | 31 | 167 | 43 | 97 | 25 | 25 |
-| Mage | Spellbook | 583 | 621 | 29 | 169 | 42 | 95 | 24 | 27 |
-| Priest | Scepter | 698 | 508 | 34 | 120 | 55 | 106 | 22 | 89 |
-| Priest | Holy Tome | 692 | 514 | 32 | 116 | 54 | 109 | 21 | 93 |
+| Class | Weapon Style | HP | P.Atk | M.Atk | P.Def | M.Def | Speed | Heal |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Warrior | Sword and Shield | 924 | 142 | 25 | 107 | 59 | 17 | 8 |
+| Warrior | Great Axe | 912 | 148 | 23 | 103 | 57 | 18 | 7 |
+| Mage | Staff | 587 | 31 | 167 | 43 | 97 | 25 | 25 |
+| Mage | Spellbook | 583 | 29 | 169 | 42 | 95 | 24 | 27 |
+| Priest | Scepter | 698 | 34 | 120 | 55 | 106 | 22 | 89 |
+| Priest | Holy Tome | 692 | 32 | 116 | 54 | 109 | 21 | 93 |
 
 These numbers are intentionally conservative for attack values and more generous for HP and defensive scaling, because equipment progression should remain meaningful after level cap.
 
@@ -267,7 +263,7 @@ Recommended stat families by gear type:
   - `physical_defense`
   - `magic_defense`
 - accessories:
-  - `max_mp`
+  - `max_hp`
   - `speed`
   - `status_mastery`
   - `status_resistance`
