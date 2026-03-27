@@ -1,0 +1,1138 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ClawGame 竞品分析</title>
+    <style>
+      :root {
+        --bg: #f4efe5;
+        --panel: rgba(255, 252, 246, 0.9);
+        --panel-strong: #fffdf8;
+        --ink: #17211f;
+        --muted: #5f6e69;
+        --line: rgba(23, 33, 31, 0.12);
+        --accent: #b6492d;
+        --accent-soft: rgba(182, 73, 45, 0.1);
+        --teal: #2b6f6a;
+        --shadow: 0 18px 48px rgba(33, 34, 28, 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+        color: var(--ink);
+        font-size: 15px;
+        background:
+          radial-gradient(circle at top left, rgba(182, 73, 45, 0.14), transparent 28%),
+          radial-gradient(circle at top right, rgba(43, 111, 106, 0.14), transparent 22%),
+          linear-gradient(180deg, #f8f3ea 0%, var(--bg) 100%);
+      }
+
+      a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+
+      a:hover {
+        text-decoration: underline;
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: 290px minmax(0, 1fr);
+        gap: 24px;
+        max-width: 1480px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+
+      .sidebar {
+        position: sticky;
+        top: 24px;
+        align-self: start;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        padding: 22px 20px;
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(14px);
+      }
+
+      .sidebar h1 {
+        margin: 0;
+        font-size: 1.15rem;
+        line-height: 1.3;
+      }
+
+      .sidebar p {
+        margin: 10px 0 0;
+        color: var(--muted);
+        font-size: 0.88rem;
+        line-height: 1.6;
+      }
+
+      .meta {
+        margin-top: 16px;
+        padding-top: 16px;
+        border-top: 1px solid var(--line);
+        display: grid;
+        gap: 8px;
+        font-size: 0.84rem;
+        color: var(--muted);
+      }
+
+      .nav-group {
+        margin-top: 20px;
+      }
+
+      .nav-group h2 {
+        margin: 0 0 10px;
+        font-size: 0.78rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      .nav-group a {
+        display: block;
+        padding: 7px 10px;
+        margin: 4px 0;
+        border-radius: 12px;
+        color: var(--ink);
+        font-size: 0.9rem;
+      }
+
+      .nav-group a:hover {
+        background: var(--accent-soft);
+        text-decoration: none;
+      }
+
+      main {
+        display: grid;
+        gap: 24px;
+      }
+
+      .hero,
+      .section,
+      .table-wrap,
+      .source-card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 28px;
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(14px);
+      }
+
+      .hero {
+        padding: 32px;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        padding: 7px 11px;
+        border-radius: 999px;
+        font-size: 0.76rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .hero h2 {
+        margin: 18px 0 12px;
+        font-size: clamp(1.65rem, 3.2vw, 2.6rem);
+        line-height: 1.14;
+        max-width: 13ch;
+      }
+
+      .hero p {
+        margin: 0;
+        max-width: 74ch;
+        color: var(--muted);
+        font-size: 0.95rem;
+        line-height: 1.75;
+      }
+
+      .hero-grid,
+      .summary-grid,
+      .category-grid,
+      .detail-grid {
+        display: grid;
+        gap: 18px;
+      }
+
+      .hero-grid {
+        margin-top: 24px;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .summary-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .category-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+
+      .detail-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .metric,
+      .summary-card,
+      .category-card,
+      .detail-card {
+        background: var(--panel-strong);
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        padding: 20px;
+      }
+
+      .metric .label,
+      .summary-card .label {
+        font-size: 0.76rem;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+
+      .metric .value {
+        margin-top: 10px;
+        font-size: 1.55rem;
+        font-weight: 800;
+        line-height: 1.1;
+      }
+
+      .metric .hint,
+      .summary-card p,
+      .category-card p,
+      .detail-card p {
+        margin: 10px 0 0;
+        color: var(--muted);
+        line-height: 1.7;
+      }
+
+      .section {
+        padding: 28px;
+      }
+
+      .section-header {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: flex-end;
+        margin-bottom: 18px;
+      }
+
+      .section-header h3 {
+        margin: 0;
+        font-size: 1.3rem;
+      }
+
+      .section-header p {
+        margin: 8px 0 0;
+        max-width: 70ch;
+        color: var(--muted);
+        font-size: 0.93rem;
+        line-height: 1.7;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: rgba(43, 111, 106, 0.1);
+        color: var(--teal);
+        font-size: 0.82rem;
+        font-weight: 700;
+      }
+
+      .category-card h4,
+      .detail-card h4,
+      .source-card h4 {
+        margin: 0;
+        font-size: 0.98rem;
+      }
+
+      .category-card ul,
+      .detail-card ul,
+      .source-card ul {
+        margin: 14px 0 0;
+        padding-left: 18px;
+        color: var(--muted);
+        font-size: 0.92rem;
+        line-height: 1.72;
+      }
+
+      .table-wrap {
+        overflow: hidden;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 860px;
+      }
+
+      th,
+      td {
+        padding: 16px 18px;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+        text-align: left;
+      }
+
+      th {
+        background: rgba(23, 33, 31, 0.03);
+        font-size: 0.76rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--muted);
+      }
+
+      td {
+        font-size: 0.9rem;
+        line-height: 1.58;
+      }
+
+      tr:last-child td {
+        border-bottom: none;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: 0.74rem;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+
+      .badge.direct {
+        background: rgba(182, 73, 45, 0.12);
+        color: var(--accent);
+      }
+
+      .badge.near {
+        background: rgba(43, 111, 106, 0.12);
+        color: var(--teal);
+      }
+
+      .badge.platform {
+        background: rgba(49, 73, 143, 0.12);
+        color: #31498f;
+      }
+
+      .badge.experimental {
+        background: rgba(120, 76, 166, 0.12);
+        color: #784ca6;
+      }
+
+      .detail-card .topline {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: center;
+        margin-bottom: 12px;
+      }
+
+      .detail-card .meta-line {
+        color: var(--muted);
+        font-size: 0.86rem;
+        margin-bottom: 12px;
+      }
+
+      .detail-card .subhead {
+        margin-top: 18px;
+        font-weight: 800;
+        color: var(--ink);
+      }
+
+      .source-card {
+        padding: 28px;
+      }
+
+      .source-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      .source-block {
+        background: var(--panel-strong);
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 18px;
+      }
+
+      .footer-note {
+        color: var(--muted);
+        font-size: 0.9rem;
+        line-height: 1.75;
+      }
+
+      @media (max-width: 1180px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+
+        .sidebar {
+          position: static;
+        }
+
+        .hero-grid,
+        .summary-grid,
+        .category-grid,
+        .detail-grid,
+        .source-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <h1>ClawGame 竞品分析</h1>
+        <p>静态浏览版。适合直接在浏览器中阅读，也方便后续在同一文件上持续更新。</p>
+
+        <div class="meta">
+          <div><strong>版本：</strong> V1</div>
+          <div><strong>更新：</strong> 2026-03-26</div>
+          <div><strong>范围：</strong> 用户自带 bot / agent 的游戏、赛事与平台产品</div>
+        </div>
+
+        <div class="nav-group">
+          <h2>总览</h2>
+          <a href="#summary">结论摘要</a>
+          <a href="#categories">竞品分层</a>
+          <a href="#matrix">模式对比表</a>
+        </div>
+
+        <div class="nav-group">
+          <h2>重点竞品</h2>
+          <a href="#screeps">Screeps</a>
+          <a href="#botzone">Botzone</a>
+          <a href="#botclash">BotClash</a>
+          <a href="#elympics">Elympics</a>
+          <a href="#codecombat">CodeCombat AI League</a>
+          <a href="#codingame">CodinGame</a>
+          <a href="#battlecode">Battlecode</a>
+          <a href="#robocode">Robocode</a>
+          <a href="#newgen">新一代垂直平台</a>
+        </div>
+
+        <div class="nav-group">
+          <h2>策略判断</h2>
+          <a href="#insights">对 ClawGame 的启发</a>
+          <a href="#sources">参考来源</a>
+        </div>
+      </aside>
+
+      <main>
+        <section class="hero">
+          <span class="eyebrow">Competitor Map</span>
+          <h2>用户自带 Bot 的游戏世界，竞品其实比看起来多。</h2>
+          <p>
+            这份页面把 ClawGame 所处赛道拆成直接竞品、邻近竞品、平台型竞品和新一代垂直 bot
+            平台四层。核心结论不是“市场上没人做”，而是“真正把持续 RPG 世界、bot 角色成长、公开观战和赛季竞争整合起来的人还很少”。
+          </p>
+
+          <div class="hero-grid">
+            <div class="metric">
+              <div class="label">重点观察对象</div>
+              <div class="value">13+</div>
+              <div class="hint">从成熟产品到新兴 agent-native 平台，覆盖直接与相邻赛道。</div>
+            </div>
+            <div class="metric">
+              <div class="label">最强成熟参照</div>
+              <div class="value">Screeps</div>
+              <div class="hint">验证了程序驱动持久世界、赛季和能力收费可以长期存在。</div>
+            </div>
+            <div class="metric">
+              <div class="label">你的空位</div>
+              <div class="value">RPG World</div>
+              <div class="hint">长期世界、任务/地下城/竞技场、公开世界状态、bot 故事化叙事。</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="summary">
+          <div class="section-header">
+            <div>
+              <h3>结论摘要</h3>
+              <p>先回答最重要的问题：这个方向并非空白，但完全等同于 ClawGame 的成熟产品仍然不多。</p>
+            </div>
+            <span class="pill">截至 2026-03-26 的公开资料</span>
+          </div>
+
+          <div class="summary-grid">
+            <div class="summary-card">
+              <div class="label">市场状态</div>
+              <p>“提交 bot、自动对战、看榜单”的平台已经很多；“程序驱动持久世界”的代表也存在；“人类围观、agent 参赛”的表达在 2025-2026 年明显增多。</p>
+            </div>
+            <div class="summary-card">
+              <div class="label">机会所在</div>
+              <p>把 <strong>用户自带 bot + RPG 世界 + live service + 公开观战 + 周期赛事</strong> 真正组合好的产品，仍然很少。</p>
+            </div>
+            <div class="summary-card">
+              <div class="label">商业方向</div>
+              <p>竞品共同证明了三种可行路径：<strong>月卡/订阅</strong>、<strong>能力与额度收费</strong>、<strong>赛事与组织者销售</strong>。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="categories">
+          <div class="section-header">
+            <div>
+              <h3>竞品分层</h3>
+              <p>把不同产品分开看，才能避免把教育平台、bot 托管平台和持久世界游戏混在一起。</p>
+            </div>
+          </div>
+
+          <div class="category-grid">
+            <div class="category-card">
+              <h4>直接竞品</h4>
+              <p>最接近 ClawGame 的产品形态，用户自带 bot，平台负责运行和竞争。</p>
+              <ul>
+                <li>Screeps: World / Arena</li>
+                <li>BotClash</li>
+                <li>Arena Protocol</li>
+              </ul>
+            </div>
+            <div class="category-card">
+              <h4>邻近竞品</h4>
+              <p>满足“写 bot、跑比赛、看排名”中的一部分，但不一定有统一持续世界。</p>
+              <ul>
+                <li>Botzone</li>
+                <li>CodinGame</li>
+                <li>Battlecode</li>
+                <li>CodeCombat AI League</li>
+              </ul>
+            </div>
+            <div class="category-card">
+              <h4>平台型竞品</h4>
+              <p>向开发者或游戏团队出售 bot、回放、匹配、托管等基础设施能力。</p>
+              <ul>
+                <li>Elympics</li>
+              </ul>
+            </div>
+            <div class="category-card">
+              <h4>新一代垂直平台</h4>
+              <p>agent-native、builder-first，强调沙箱、公平算力、日志和 replay。</p>
+              <ul>
+                <li>ChessArena</li>
+                <li>BotArena</li>
+                <li>Constrained Agent Arena</li>
+                <li>Robocode Tank Royale</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <section class="table-wrap" id="matrix">
+          <table>
+            <thead>
+              <tr>
+                <th>项目</th>
+                <th>类型</th>
+                <th>用户是否自带 Bot</th>
+                <th>持久世界</th>
+                <th>公开模式</th>
+                <th>与你的关系</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Screeps: World</td>
+                <td><span class="badge direct">直接竞品</span></td>
+                <td>是</td>
+                <td>是</td>
+                <td>买断、能力解锁、商店、赛季</td>
+                <td>最强成熟参照物</td>
+              </tr>
+              <tr>
+                <td>Screeps: Arena</td>
+                <td><span class="badge direct">直接竞品</span></td>
+                <td>是</td>
+                <td>否</td>
+                <td>异步 1v1、赛季化</td>
+                <td>竞技层直接参照</td>
+              </tr>
+              <tr>
+                <td>BotClash</td>
+                <td><span class="badge direct">直接竞品</span></td>
+                <td>是</td>
+                <td>否</td>
+                <td>bot-only 竞技场，公开未见明确价格</td>
+                <td>表达方式非常接近</td>
+              </tr>
+              <tr>
+                <td>Arena Protocol</td>
+                <td><span class="badge direct">直接竞品</span></td>
+                <td>是</td>
+                <td>否</td>
+                <td>AI Agents Compete, Humans Spectate</td>
+                <td>产品叙事高度接近</td>
+              </tr>
+              <tr>
+                <td>Botzone</td>
+                <td><span class="badge near">邻近竞品</span></td>
+                <td>是</td>
+                <td>否</td>
+                <td>比赛平台，公开未见订阅定价</td>
+                <td>比赛基础设施参照</td>
+              </tr>
+              <tr>
+                <td>CodinGame</td>
+                <td><span class="badge near">邻近竞品</span></td>
+                <td>是</td>
+                <td>否</td>
+                <td>多题型 bot programming、活动和社区</td>
+                <td>多 arena 与活动运营参照</td>
+              </tr>
+              <tr>
+                <td>Battlecode</td>
+                <td><span class="badge near">邻近竞品</span></td>
+                <td>是</td>
+                <td>否</td>
+                <td>赛季制学术竞赛</td>
+                <td>强竞赛结构参照</td>
+              </tr>
+              <tr>
+                <td>CodeCombat AI League</td>
+                <td><span class="badge near">邻近竞品</span></td>
+                <td>部分是</td>
+                <td>否</td>
+                <td>教育赛事、Premium、组织化销售</td>
+                <td>组织者版和私有赛事参照</td>
+              </tr>
+              <tr>
+                <td>Elympics</td>
+                <td><span class="badge platform">平台型</span></td>
+                <td>不面向终端玩家</td>
+                <td>否</td>
+                <td>Bot deployment、smart matchmaking、replays</td>
+                <td>未来 B 端平台侧竞品</td>
+              </tr>
+              <tr>
+                <td>ChessArena / BotArena / Constrained Arena</td>
+                <td><span class="badge experimental">实验新秀</span></td>
+                <td>是</td>
+                <td>否</td>
+                <td>builder-first、沙箱、公平算力、replay</td>
+                <td>新一代 agent-native 产品参照</td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section class="section" id="screeps">
+          <div class="section-header">
+            <div>
+              <h3>Screeps</h3>
+              <p>最接近 ClawGame 长期愿景的成熟产品。也是你做商业模式和产品表达时最该长期跟踪的对象。</p>
+            </div>
+            <span class="badge direct">直接竞品</span>
+          </div>
+
+          <div class="detail-grid">
+            <article class="detail-card">
+              <div class="topline"><h4>产品形态</h4></div>
+              <p>官方将产品拆成 `World` 和 `Arena` 两层：前者是持续开放世界 MMO，后者是异步匹配竞技场。</p>
+              <ul>
+                <li>`World` 强调 persistent open world、真实 JavaScript、24/7 持续运行。</li>
+                <li>`Arena` 强调 rating-based matchmaking、seasons、asynchronous PvP。</li>
+                <li>这一点直接证明“程序驱动世界 + 持续竞争”是可以成立的。</li>
+              </ul>
+            </article>
+            <article class="detail-card">
+              <div class="topline"><h4>商业模式</h4></div>
+              <p>公开页面显示它是混合收费，而不是单一订阅。</p>
+              <ul>
+                <li>Steam 买断进入。</li>
+                <li>World 商店包含 CPU unlock、access keys、pixels 等。</li>
+                <li>能力解锁和持续运行资源可以付费购买。</li>
+                <li>有赛季和 creator program，说明内容分发也被纳入商业体系。</li>
+              </ul>
+            </article>
+            <article class="detail-card">
+              <div class="topline"><h4>对 ClawGame 的启发</h4></div>
+              <ul>
+                <li>月卡制可以成立，但更好的表达是“运行能力”而不是“入场门票”。</li>
+                <li>可以把配额、运行额度、回放、赛季资格做成付费层。</li>
+                <li>基础接入和能力解锁分层，是很值得参考的设计。</li>
+              </ul>
+            </article>
+            <article class="detail-card">
+              <div class="topline"><h4>对你的威胁与差异化</h4></div>
+              <ul>
+                <li>它已经占据“程序员世界游戏”的认知高地。</li>
+                <li>你不能做成另一个通用 RTS 编程世界。</li>
+                <li>你的差异化应放在 RPG 世界、任务/地下城/竞技场、公开观战站和 bot 角色故事化上。</li>
+              </ul>
+            </article>
+          </div>
+        </section>
+
+        <section class="section" id="botzone">
+          <div class="section-header">
+            <div>
+              <h3>Botzone</h3>
+              <p>不是持久世界产品，但它非常能说明“提交 bot、打比赛、看排行榜”这一需求长期存在。</p>
+            </div>
+            <span class="badge near">邻近竞品</span>
+          </div>
+          <div class="detail-grid">
+            <article class="detail-card">
+              <h4>产品形态</h4>
+              <ul>
+                <li>多游戏 bot 比赛平台，覆盖棋牌和策略类项目。</li>
+                <li>提供 bot 提交、游戏桌对局、排行榜、本地 AI 连接、比赛规则。</li>
+                <li>公开页面显示承办正式 AI 竞赛，并提供样例程序、协议与裁判程序。</li>
+              </ul>
+            </article>
+            <article class="detail-card">
+              <h4>模式判断</h4>
+              <ul>
+                <li>更像竞赛平台与教育/学术平台的结合。</li>
+                <li>截至目前未在公开页面看到清晰的个人订阅价格。</li>
+                <li>比赛组织能力本身就是平台价值的一部分。</li>
+              </ul>
+            </article>
+            <article class="detail-card">
+              <h4>对 ClawGame 的启发</h4>
+              <ul>
+                <li>必须尽早提供样例 bot、调试方式和清晰协议。</li>
+                <li>没有赛事的 bot 平台很难持续活跃。</li>
+                <li>组织比赛、维护规则、做榜单，本身就能构成商业价值。</li>
+              </ul>
+            </article>
+            <article class="detail-card">
+              <h4>局限提醒</h4>
+              <ul>
+                <li>Botzone 不强调世界叙事和 live service。</li>
+                <li>ClawGame 不该退化成“另一个提交 bot 的平台外壳”。</li>
+              </ul>
+            </article>
+          </div>
+        </section>
+
+        <section class="section" id="botclash">
+          <div class="section-header">
+            <div>
+              <h3>BotClash</h3>
+              <p>新兴 bot-only 竞技场。它最大的参考价值不是收入，而是产品叙事和接入路径。</p>
+            </div>
+            <span class="badge direct">直接竞品</span>
+          </div>
+          <div class="detail-grid">
+            <article class="detail-card">
+              <h4>产品形态</h4>
+              <ul>
+                <li>官网直接写 `AI Battle Arena`、`Bots Only`、`BETA v0.1`。</li>
+                <li>用户注册 agent，获取 agentId 与 apiKey。</li>
+                <li>REST 进入匹配，WebSocket 进入对局。</li>
+                <li>前台强调直播、排行榜、战斗日志和 bot 聊天。</li>
+              </ul>
+            </article>
+            <article class="detail-card">
+              <h4>模式判断</h4>
+              <ul>
+                <li>当前更像社区冷启动阶段，重点放在活跃和围观感上。</li>
+                <li>公开页面暂未见到明确的收费页。</li>
+                <li>表达上非常 agent-native，和你的“人类围观、bot 参赛”方向高度接近。</li>
+              </ul>
+            </article>
+            <article class="detail-card">
+              <h4>对 ClawGame 的启发</h4>
+              <ul>
+                <li>官网不该像后台，而应像 bot 世界观测站。</li>
+                <li>接入流程必须短，从注册到开始运行 bot 的路径要尽量直接。</li>
+                <li>战报、排行榜、热点 bot 和局部事件是很重要的前台资产。</li>
+              </ul>
+            </article>
+            <article class="detail-card">
+              <h4>差异化机会</h4>
+              <ul>
+                <li>BotClash 更像快节奏 1v1 arena。</li>
+                <li>ClawGame 应坚持长期世界、多系统循环与角色成长，避免做成它的慢版本。</li>
+              </ul>
+            </article>
+          </div>
+        </section>
+
+        <section class="section" id="elympics">
+          <div class="section-header">
+            <div>
+              <h3>Elympics</h3>
+              <p>不一定抢同一批终端用户，但很像你未来若走 B 端平台化时会遇到的参照物和潜在竞争者。</p>
+            </div>
+            <span class="badge platform">平台型竞品</span>
+          </div>
+          <div class="detail-grid">
+            <article class="detail-card">
+              <h4>产品形态</h4>
+              <ul>
+                <li>公开产品页强调 Bot Deployment、Smart Matchmaking、Verifiable Replays、Leaderboards、Tournaments &amp; Duels。</li>
+                <li>bot 可自动填充空位、降低等待时间、用于测试游戏。</li>
+                <li>回放会自动存储，可用于直播与 debug。</li>
+              </ul>
+            </article>
+            <article class="detail-card">
+              <h4>模式判断</h4>
+              <ul>
+                <li>这是典型的 B2B SaaS / infra 思路。</li>
+                <li>卖的是托管、匹配、回放和比赛基础设施能力，而不是单个 bot 用户月卡。</li>
+              </ul>
+            </article>
+            <article class="detail-card">
+              <h4>对 ClawGame 的启发</h4>
+              <ul>
+                <li>今天做的回放、赛季配置、私有联赛、规则版本管理，未来都可能抽象成平台能力。</li>
+                <li>这说明 ClawGame 有机会不只是游戏，也能成长为平台产品。</li>
+              </ul>
+            </article>
+            <article class="detail-card">
+              <h4>与你的差异</h4>
+              <ul>
+                <li>Elympics 强在通用平台，弱在内容化世界表达。</li>
+                <li>ClawGame 强在 bot-first RPG 世界与公开叙事，这仍是短期差异化空间。</li>
+              </ul>
+            </article>
+          </div>
+        </section>
+
+        <section class="section" id="codecombat">
+          <div class="section-header">
+            <div>
+              <h3>CodeCombat AI League</h3>
+              <p>玩法不是最像你的，但它非常值得参考“组织者销售”和“赛事包装”的方式。</p>
+            </div>
+            <span class="badge near">邻近竞品</span>
+          </div>
+          <div class="detail-grid">
+            <article class="detail-card">
+              <h4>产品形态</h4>
+              <ul>
+                <li>官方将 AI League 描述为 academic esports。</li>
+                <li>支持学校、班级、组织层面的竞赛包装。</li>
+                <li>Premium 提供私有 clan、组内 leaderboard 等能力。</li>
+              </ul>
+            </article>
+            <article class="detail-card">
+              <h4>模式判断</h4>
+              <ul>
+                <li>公开信息显示其收入结构包含 Premium、教育销售和组织化赛事方案。</li>
+                <li>说明排行榜、私有群组和赛事都可以变成付费权益。</li>
+              </ul>
+            </article>
+            <article class="detail-card">
+              <h4>对 ClawGame 的启发</h4>
+              <ul>
+                <li>组织者版很可能比纯个人月卡更早带来收入。</li>
+                <li>私有联赛、团队榜单和组内回放适合视为单独付费能力。</li>
+              </ul>
+            </article>
+            <article class="detail-card">
+              <h4>适用边界</h4>
+              <ul>
+                <li>它更偏教育和品牌化包装，不是持久世界。</li>
+                <li>你可以借鉴销售结构，但不必模仿玩法。</li>
+              </ul>
+            </article>
+          </div>
+        </section>
+
+        <section class="section" id="codingame">
+          <div class="section-header">
+            <div>
+              <h3>CodinGame</h3>
+              <p>它说明“大规模 bot 编程社区 + 多活动轮换”是能长期维持的，这对你做赛季和特别赛很有帮助。</p>
+            </div>
+            <span class="badge near">邻近竞品</span>
+          </div>
+          <div class="detail-grid">
+            <article class="detail-card">
+              <h4>产品形态</h4>
+              <ul>
+                <li>有成熟的 bot programming 赛道，覆盖 multi-agent、resource management、pathfinding、simulation 等多类题型。</li>
+                <li>支持公开活动和私有活动。</li>
+                <li>新提交会触发重新匹配，形成持续榜单竞争。</li>
+              </ul>
+            </article>
+            <article class="detail-card">
+              <h4>模式判断</h4>
+              <ul>
+                <li>bot 编程更像其开发者生态和品牌流量入口。</li>
+                <li>商业价值更可能来自平台整体、企业合作和赞助赛事。</li>
+              </ul>
+            </article>
+            <article class="detail-card">
+              <h4>对 ClawGame 的启发</h4>
+              <ul>
+                <li>长期世界榜之外，可以增加限时特别赛、主题赛和短期挑战榜。</li>
+                <li>多活动层能帮助避免世界玩法过快收敛。</li>
+              </ul>
+            </article>
+            <article class="detail-card">
+              <h4>与你的差异</h4>
+              <ul>
+                <li>CodinGame 强在多题型与大社区。</li>
+                <li>ClawGame 应该更像一个持续 live service 世界，而不是一组离散竞赛题目。</li>
+              </ul>
+            </article>
+          </div>
+        </section>
+
+        <section class="section" id="battlecode">
+          <div class="section-header">
+            <div>
+              <h3>Battlecode</h3>
+              <p>经典学术竞赛先例。它告诉你高门槛 bot 竞赛也可以形成长期社群，只是商业化路径不同。</p>
+            </div>
+            <span class="badge near">邻近竞品</span>
+          </div>
+          <div class="detail-grid">
+            <article class="detail-card">
+              <h4>产品形态</h4>
+              <ul>
+                <li>官方 About 页将其定义为 real-time strategy game 竞赛。</li>
+                <li>参赛者编写 autonomous player。</li>
+                <li>一个赛季内有 scrimmages、tournaments、总决赛和奖励。</li>
+              </ul>
+            </article>
+            <article class="detail-card">
+              <h4>模式判断</h4>
+              <ul>
+                <li>更像学术/社群竞赛，而不是持续运营的商业游戏平台。</li>
+                <li>但其赛季节奏和总决赛层次非常值得借鉴。</li>
+              </ul>
+            </article>
+            <article class="detail-card">
+              <h4>对 ClawGame 的启发</h4>
+              <ul>
+                <li>赛季不一定全年无休，也可以有冲刺、资格赛、总决赛层次。</li>
+                <li>强竞赛用户会非常在意算力限制、公平性和规则稳定性。</li>
+              </ul>
+            </article>
+            <article class="detail-card">
+              <h4>适用边界</h4>
+              <ul>
+                <li>Battlecode 不是持续世界产品。</li>
+                <li>ClawGame 需要吸收其竞赛强度，但保持 live service 的持续性。</li>
+              </ul>
+            </article>
+          </div>
+        </section>
+
+        <section class="section" id="robocode">
+          <div class="section-header">
+            <div>
+              <h3>Robocode / Tank Royale</h3>
+              <p>历史很长的 bot 战斗传统。它更像形态先例，而不是直接商业竞品。</p>
+            </div>
+            <span class="badge near">形态先例</span>
+          </div>
+          <div class="detail-grid">
+            <article class="detail-card">
+              <h4>产品形态</h4>
+              <ul>
+                <li>核心是编写机器人自动对战。</li>
+                <li>Tank Royale 文档强调多语言、Viewer、Recorder、Replay、Debugging、Team Messages。</li>
+                <li>还专门提到适合比赛展示和大屏观战。</li>
+              </ul>
+            </article>
+            <article class="detail-card">
+              <h4>模式判断</h4>
+              <ul>
+                <li>偏开源社区和长期知识积累，不是强商业化产品。</li>
+                <li>但它证明“写 bot 看对战”本身有很长的生命周期。</li>
+              </ul>
+            </article>
+            <article class="detail-card">
+              <h4>对 ClawGame 的启发</h4>
+              <ul>
+                <li>Replay、viewer 和战术分析不是附属功能，而是核心资产。</li>
+                <li>长期社群会自然产生策略文章、复盘内容和 bot 流派。</li>
+              </ul>
+            </article>
+            <article class="detail-card">
+              <h4>对你的提醒</h4>
+              <ul>
+                <li>如果想经营长期社区，必须给高手足够深的优化空间。</li>
+                <li>否则只会停留在“新鲜一阵”的体验层。</li>
+              </ul>
+            </article>
+          </div>
+        </section>
+
+        <section class="section" id="newgen">
+          <div class="section-header">
+            <div>
+              <h3>新一代垂直 Bot 平台</h3>
+              <p>这些产品很新，但它们集中体现了 2025-2026 年 agent-native 产品的表达方式。</p>
+            </div>
+            <span class="badge experimental">实验新秀</span>
+          </div>
+          <div class="detail-grid">
+            <article class="detail-card">
+              <h4>ChessArena</h4>
+              <ul>
+                <li>官网强调 5 分钟部署、真实 ELO、sandboxed environment、same hardware same limits。</li>
+                <li>说明 builder-first 产品可以把公平硬件和代码所有权放在前台。</li>
+                <li>对你的启发是：bot 注册和开打路径可以非常短，公平约束应该明确写给用户看。</li>
+              </ul>
+            </article>
+            <article class="detail-card">
+              <h4>BotArena</h4>
+              <ul>
+                <li>公开页面强调 transparent match logs、deterministic replay、team workspaces、versioned deployments。</li>
+                <li>这很像 bot 产品经理工具和竞技场的结合。</li>
+                <li>对你的启发是：版本管理、A/B 对战、团队空间都可能成为高价值付费功能。</li>
+              </ul>
+            </article>
+            <article class="detail-card">
+              <h4>Arena Protocol</h4>
+              <ul>
+                <li>直接写出 `AI Agents Compete. Humans Spectate.`</li>
+                <li>支持多游戏，自动匹配、自动记录、ELO 排名、Replay API。</li>
+                <li>这是目前和你“人类围观、agent 才是玩家”叙事最接近的一类产品。</li>
+              </ul>
+            </article>
+            <article class="detail-card">
+              <h4>Constrained Agent Arena</h4>
+              <ul>
+                <li>强调 `Compete with Code, Not Clicks`、No GPUs、No massive models、Elo-style ratings、match replays。</li>
+                <li>代表“受限算力、公平约束、研究友好”的 agent 平台方向。</li>
+                <li>对你的启发是：如果未来允许 LLM/agent 深度参与，必须尽早定义算力、延迟和公平边界。</li>
+              </ul>
+            </article>
+          </div>
+        </section>
+
+        <section class="section" id="insights">
+          <div class="section-header">
+            <div>
+              <h3>对 ClawGame 的启发</h3>
+              <p>看完竞品之后，真正值得记住的不是“谁做过”，而是“哪些模式已经被不同人分别验证过”。</p>
+            </div>
+          </div>
+
+          <div class="summary-grid">
+            <div class="summary-card">
+              <div class="label">定位</div>
+              <p>你不能只做“又一个 bot 平台”。最值得坚持的是 <strong>RPG 世界、任务与地下城、公开世界动态、角色成长和赛季竞技场</strong>。</p>
+            </div>
+            <div class="summary-card">
+              <div class="label">收费</div>
+              <p>最合理的路径依然是 <strong>个人月卡 + 能力/额度增购 + 团队/组织者套餐 + 未来 B 端授权</strong>。</p>
+            </div>
+            <div class="summary-card">
+              <div class="label">优先开发</div>
+              <p>商业化前最该补的是 <strong>bot 接入、认证、配额、日志、回放、赛季配置、私有联赛和公开站叙事能力</strong>。</p>
+            </div>
+          </div>
+
+          <div class="detail-grid" style="margin-top: 18px;">
+            <article class="detail-card">
+              <h4>最该长期盯的对象</h4>
+              <ul>
+                <li>Screeps：看持久世界和收费逻辑。</li>
+                <li>BotClash / Arena Protocol：看 AI agents compete, humans spectate 的产品表达。</li>
+                <li>CodinGame：看多活动和长期社区运营。</li>
+                <li>ChessArena / BotArena：看 builder-first、bot 托管即产品的做法。</li>
+                <li>Elympics：看未来平台化的 SaaS 方向。</li>
+              </ul>
+            </article>
+            <article class="detail-card">
+              <h4>最后的战略判断</h4>
+              <ul>
+                <li>不要做成 Screeps 的低配替代。</li>
+                <li>不要做成 Botzone 的另一种壳。</li>
+                <li>不要做成 BotClash 的慢版本。</li>
+                <li>也不要做成 CodinGame 上一题更重的长期题。</li>
+                <li>你应该被理解为：<strong>一个让用户自带 bot，在持续运行的 RPG 世界里成长、竞争、被围观，并最终形成赛季与联赛生态的平台。</strong></li>
+              </ul>
+            </article>
+          </div>
+        </section>
+
+        <section class="source-card" id="sources">
+          <div class="section-header">
+            <div>
+              <h3>参考来源</h3>
+              <p>以下是这份页面主要参考的公开来源。以后继续更新内容时，直接在这里补充链接即可。</p>
+            </div>
+          </div>
+
+          <div class="source-grid">
+            <div class="source-block">
+              <h4>核心参考</h4>
+              <ul>
+                <li><a href="https://docs.screeps.com/introduction.html" target="_blank" rel="noreferrer">Screeps Documentation - Introduction</a></li>
+                <li><a href="https://docs.screeps.com/tos.html" target="_blank" rel="noreferrer">Screeps Documentation - Terms of Service</a></li>
+                <li><a href="https://store.screeps.com/" target="_blank" rel="noreferrer">Screeps Store</a></li>
+                <li><a href="https://botclash.live/" target="_blank" rel="noreferrer">BotClash</a></li>
+                <li><a href="https://www.botzone.org.cn/" target="_blank" rel="noreferrer">Botzone</a></li>
+                <li><a href="https://www.elympics.ai/products/bot-deployment" target="_blank" rel="noreferrer">Elympics Bot Deployment</a></li>
+              </ul>
+            </div>
+
+            <div class="source-block">
+              <h4>相邻赛道</h4>
+              <ul>
+                <li><a href="https://www.codingame.com/multiplayer/bot-programming" target="_blank" rel="noreferrer">CodinGame Bot Programming</a></li>
+                <li><a href="https://battlecode.org/about.html" target="_blank" rel="noreferrer">Battlecode About</a></li>
+                <li><a href="https://robocode.dev/" target="_blank" rel="noreferrer">Robocode Tank Royale Docs</a></li>
+                <li><a href="https://blog.codecombat.com/ai-league-redefining-what-an-esport-can-be/" target="_blank" rel="noreferrer">CodeCombat AI League Overview</a></li>
+                <li><a href="https://codecombat.com/features/" target="_blank" rel="noreferrer">CodeCombat Features</a></li>
+              </ul>
+            </div>
+
+            <div class="source-block">
+              <h4>新一代垂直平台</h4>
+              <ul>
+                <li><a href="https://chessarena.dev/" target="_blank" rel="noreferrer">ChessArena</a></li>
+                <li><a href="https://www.botarena.app/" target="_blank" rel="noreferrer">BotArena</a></li>
+                <li><a href="https://openclawagentleague.com/" target="_blank" rel="noreferrer">Arena Protocol / OpenClaw Agent League</a></li>
+                <li><a href="https://constrainedarena.com/" target="_blank" rel="noreferrer">Constrained Agent Arena</a></li>
+                <li><a href="https://gladiabots.com/" target="_blank" rel="noreferrer">Gladiabots</a></li>
+              </ul>
+            </div>
+
+            <div class="source-block">
+              <h4>维护说明</h4>
+              <ul>
+                <li>页面文件：`business/competitor-analysis.html`</li>
+                <li>原始分析稿：`business/competitor-analysis.md`</li>
+                <li>以后我可以继续把新增竞品和结论同时补到两个文件里。</li>
+                <li>这页无需构建工具，直接用浏览器打开即可。</li>
+              </ul>
+            </div>
+          </div>
+
+          <p class="footer-note">
+            备注：部分项目的价格和商业模式并未在公开页面中完整披露，因此页面中明确区分了“公开事实”和“基于公开结构的推断”。
+          </p>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>
