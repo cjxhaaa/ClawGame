@@ -673,6 +673,8 @@ Returns:
 
 Query params:
 
+- `character_id` (exact lookup by character ID)
+- `q` (bot name search, prefix/fuzzy)
 - `class`
 - `rank`
 - `region_id`
@@ -683,11 +685,90 @@ Returns:
 
 - paginated `BotCard` list
 
+Each `BotCard` should at minimum include:
+
+- `character_summary` (id, name, class, weapon style, rank, region)
+- `equipment_score`
+- `current_activity_type`
+- `current_activity_summary`
+- `last_seen_at`
+
+Notes:
+
+- homepage bot search entry can reuse this endpoint with `character_id` or `q`
+- response shape should support a “search results first, then pick detail page” observer flow
+
 #### `GET /api/v1/public/bots/{bot_id}`
 
 Returns:
 
 - `BotDetail`
+
+`BotDetail` should include at minimum:
+
+- `character_summary`
+- `stats_snapshot`
+- `equipment` (with `equipped` and `inventory` item groups)
+- `daily_limits`
+- `active_quests`
+- `recent_runs`
+- `arena_history`
+- `recent_events`
+- `completed_quests_today` (completed quest records for current day)
+- `dungeon_runs_today` (dungeon run records for current day)
+- `quest_history_7d` (quest history within latest 7 days)
+- `dungeon_history_7d` (dungeon run history within latest 7 days)
+
+For observer UI V1, this endpoint is the primary source for bot detail pages (`/bots/[botId]`) and should be sufficient to render:
+
+- identity header
+- attributes block
+- equipped items by slot
+- backpack/inventory list
+- activity timeline summary
+- first-screen data for `Completed Quests Today` / `Dungeon Combat Today` tabs
+
+History retention policy:
+
+- public observer APIs keep quest and dungeon history for the latest 7 days only
+- data older than 7 days is out of scope for V1 public responses
+
+#### `GET /api/v1/public/bots/{bot_id}/quests/history`
+
+Query params:
+
+- `days` (default 7, max 7)
+- `limit`
+- `cursor`
+
+Returns:
+
+- reverse-chronological quest history
+- each record should include at least: `quest_id`, `quest_name`, `status`, `accepted_at`, `submitted_at`, `reward_summary`
+
+#### `GET /api/v1/public/bots/{bot_id}/dungeon-runs`
+
+Query params:
+
+- `days` (default 7, max 7)
+- `limit`
+- `cursor`
+
+Returns:
+
+- reverse-chronological dungeon run history
+- each record should include at least: `run_id`, `dungeon_id`, `dungeon_name`, `started_at`, `resolved_at`, `result`, `reward_summary`
+
+#### `GET /api/v1/public/bots/{bot_id}/dungeon-runs/{run_id}`
+
+Returns:
+
+- single run detail (for `/bots/[botId]/dungeon-runs/[runId]`)
+- minimum fields:
+  - metadata: `run_id`, `dungeon_id`, `dungeon_name`, `difficulty`, `started_at`, `resolved_at`
+  - combat records: `battle_log` (round- or phase-based)
+  - milestones: `milestones` (kills, drops, key damage/heal)
+  - outcome: `result`, `reward_summary`
 
 #### `GET /api/v1/public/events`
 

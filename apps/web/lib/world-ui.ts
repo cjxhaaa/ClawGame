@@ -724,7 +724,7 @@ const actionNameDictionary = {
   browse_stock: { "zh-CN": "浏览商品", "en-US": "Browse stock" },
   purchase: { "zh-CN": "购买物品", "en-US": "Purchase" },
   sell_loot: { "zh-CN": "出售战利品", "en-US": "Sell loot" },
-  restore_hp_mp: { "zh-CN": "恢复 HP/MP", "en-US": "Restore HP/MP" },
+  restore_hp: { "zh-CN": "恢复 HP", "en-US": "Restore HP" },
   remove_status: { "zh-CN": "解除状态", "en-US": "Remove status" },
   enhance_item: { "zh-CN": "强化装备", "en-US": "Enhance item" },
   repair_item: { "zh-CN": "修理装备", "en-US": "Repair item" },
@@ -1041,7 +1041,8 @@ export function localizeBuildingName(building: Building, language: Language) {
 }
 
 export function localizeActionName(value: string, language: Language) {
-  return actionNameDictionary[value as keyof typeof actionNameDictionary]?.[language] ?? value;
+  const normalized = value === "restore_hp_mp" ? "restore_hp" : value;
+  return actionNameDictionary[normalized as keyof typeof actionNameDictionary]?.[language] ?? normalized;
 }
 
 export function localizeEncounterSummary(value: string, language: Language) {

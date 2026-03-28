@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import {
+  type BotCard,
   type Leaderboards,
   type PublicWorldState,
   type Region,
@@ -15,7 +17,6 @@ import {
 import { useWorldLanguage } from "../lib/use-world-language";
 import {
   boardLinkForEntry,
-  boardLinkForScoreLabel,
   collectFeaturedBots,
   eventTypeToFilter,
   filters,
@@ -48,6 +49,7 @@ type HomeConsoleProps = {
   regionDetails: RegionDetail[];
   events: WorldEvent[];
   leaderboards: Leaderboards;
+  botDirectory: BotCard[];
 };
 
 export default function HomeConsole({
@@ -56,7 +58,9 @@ export default function HomeConsole({
   regionDetails,
   events,
   leaderboards,
+  botDirectory,
 }: HomeConsoleProps) {
+  const router = useRouter();
   const { language, toggleLanguage } = useWorldLanguage();
   const [selectedRegionID, setSelectedRegionID] = useState("main_city");
   const [eventFilter, setEventFilter] = useState<EventFilter>("all");
@@ -79,6 +83,46 @@ export default function HomeConsole({
       detail: region,
       pulse: worldState.regions.find((item) => item.region_id === region.region.region_id),
     }));
+  const [botSearchKeyword, setBotSearchKeyword] = useState("");
+  const [showBotSearchModal, setShowBotSearchModal] = useState(false);
+  const [selectedBotID, setSelectedBotID] = useState("");
+  const normalizedBotSearch = botSearchKeyword.trim().toLowerCase();
+  const botSearchResults = normalizedBotSearch
+    ? botDirectory.filter((item) => {
+        const summary = item.character_summary;
+        return (
+          summary.character_id.toLowerCase().includes(normalizedBotSearch) ||
+          summary.name.toLowerCase().includes(normalizedBotSearch)
+        );
+      })
+    : [];
+
+  const openBotSearch = () => {
+    if (!normalizedBotSearch) {
+      setShowBotSearchModal(false);
+      setSelectedBotID("");
+      return;
+    }
+    setShowBotSearchModal(true);
+    setSelectedBotID((current) => {
+      if (current) {
+        return current;
+      }
+      return botSearchResults[0]?.character_summary.character_id ?? "";
+    });
+  };
+
+  const closeBotSearch = () => {
+    setShowBotSearchModal(false);
+  };
+
+  const confirmBotSelection = () => {
+    if (!selectedBotID) {
+      return;
+    }
+    setShowBotSearchModal(false);
+    router.push(`/bots/${encodeURIComponent(selectedBotID)}`);
+  };
 
   useEffect(() => {
     if (selectedRegionDetail || !regionDetails[0]) {
@@ -88,8 +132,120 @@ export default function HomeConsole({
     setSelectedRegionID(regionDetails[0].region.region_id);
   }, [regionDetails, selectedRegionDetail]);
 
+  useEffect(() => {
+    if (!showBotSearchModal) {
+      return;
+    }
+    setSelectedBotID((current) => {
+      if (current && botSearchResults.some((item) => item.character_summary.character_id === current)) {
+        return current;
+      }
+      return botSearchResults[0]?.character_summary.character_id ?? "";
+    });
+  }, [botSearchResults, showBotSearchModal]);
+
   return (
     <main className="console-shell pixel-theme">
+      <section className="pixel-panel top-bot-search-panel">
+        <div className="section-header">
+          <div>
+            <p className="eyebrow">{language === "zh-CN" ? "观测台检索" : "Observer Lookup"}</p>
+            <h2>{language === "zh-CN" ? "追踪目标 Bot" : "Track a Bot"}</h2>
+          </div>
+        </div>
+
+        <div className="top-bot-search-row">
+          <input
+            className="top-bot-search-input"
+            type="text"
+            value={botSearchKeyword}
+            onChange={(event) => setBotSearchKeyword(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                openBotSearch();
+              }
+            }}
+            placeholder={
+              language === "zh-CN"
+                ? "输入角色ID或代号"
+                : "Search character ID or bot name"
+            }
+          />
+          <button className="top-bot-search-trigger" type="button" onClick={openBotSearch}>
+            {language === "zh-CN" ? "搜索" : "Search"}
+          </button>
+        </div>
+      </section>
+
+      {showBotSearchModal ? (
+        <div className="bot-search-modal" role="dialog" aria-modal="true" aria-label="Bot search results">
+          <button
+            type="button"
+            className="bot-search-modal-backdrop"
+            aria-label={language === "zh-CN" ? "关闭搜索弹窗" : "Close search popup"}
+            onClick={closeBotSearch}
+          />
+          <section className="pixel-panel bot-search-modal-panel">
+            <div className="section-header">
+              <div>
+                <p className="eyebrow">{language === "zh-CN" ? "候选列表" : "Candidate List"}</p>
+                <h2>{language === "zh-CN" ? "确认一个 Bot" : "Confirm One Bot"}</h2>
+              </div>
+            </div>
+
+            <div className="bot-search-modal-list">
+              {botSearchResults.length > 0 ? (
+                botSearchResults.map((item) => {
+                  const characterID = item.character_summary.character_id;
+                  const isActive = selectedBotID === characterID;
+                  return (
+                    <button
+                      key={characterID}
+                      type="button"
+                      className={`bot-search-modal-item ${isActive ? "active" : ""}`}
+                      onClick={() => setSelectedBotID(characterID)}
+                    >
+                      <div>
+                        <strong>{item.character_summary.name}</strong>
+                        <p>
+                          ID: {characterID} · {localizeClass(item.character_summary.class, language)}
+                        </p>
+                      </div>
+                      <span>
+                        {localizeRegionName(
+                          item.character_summary.location_region_id,
+                          item.character_summary.location_region_id,
+                          language,
+                        )}
+                      </span>
+                    </button>
+                  );
+                })
+              ) : (
+                <p className="empty-state">
+                  {language === "zh-CN" ? "未检索到目标 Bot。" : "No matching bots found."}
+                </p>
+              )}
+            </div>
+
+            <div className="bot-search-modal-actions">
+              <button className="portal-link" type="button" onClick={closeBotSearch}>
+                {language === "zh-CN" ? "取消" : "Cancel"}
+              </button>
+              <button
+                className="section-link"
+                type="button"
+                onClick={confirmBotSelection}
+                disabled={!selectedBotID}
+              >
+                {language === "zh-CN" ? "确认并进入详情" : "Confirm & Open Detail"}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
       <section className="pixel-hero">
         <div className="hero-copy pixel-panel">
           <div className="hero-topbar">
@@ -392,7 +548,7 @@ export default function HomeConsole({
               <Link
                 key={bot.character_id}
                 className="bot-card-link"
-                href={`/leaderboards?board=${boardLinkForScoreLabel(bot.score_label)}`}
+                href={`/bots/${bot.character_id}`}
               >
                 <article className="bot-card">
                   <div className="bot-card-top">
@@ -504,6 +660,7 @@ export default function HomeConsole({
           </div>
         </section>
       </section>
+
     </main>
   );
 }

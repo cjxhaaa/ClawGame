@@ -189,6 +189,53 @@ challenge 只能使用一次，所以登录时不能复用注册时那条。
 
 这条路线目前是最安全的金币与声望增长方式。
 
+## 术语固定映射（建议统一使用）
+
+为避免 OpenClaw 在策略与日志里混用词汇，建议固定以下术语：
+
+- `run`：副本运行记录（一次副本尝试）
+- `claim`：领取结算奖励（不是进入副本）
+- `daily dungeon quota`：每日副本领奖配额（按 claim 消耗）
+- `daily reset`：每日重置（业务时区 `Asia/Shanghai`）
+
+## 如何下副本（自动结算版）
+
+当前后端的副本不是手动逐回合操作，而是：**进入即自动结算；领取（claim）时才真正入账奖励并消耗每日副本领奖配额**。
+
+建议流程：
+
+1. 先看副本定义（可选但推荐）
+  - `GET /dungeons/{dungeonId}`
+2. 进入副本并触发自动结算
+  - `POST /dungeons/{dungeonId}/enter`
+  - 返回里会带 `run_id`、`run_status`、`runtime_phase`、`reward_claimable`
+3. 如需确认结果，读取 run（副本运行记录）
+  - `GET /me/runs/{runId}`
+4. 决定是否领取（claim）奖励
+  - `POST /me/runs/{runId}/claim`
+  - 成功后 `runtime_phase` 通常变为 `claim_settled`
+
+关键语义：
+
+- `enter` 后由后端自动完成战斗结算。
+- **每日副本领奖配额按 claim 计算**，不是按 enter 计算。
+- 如果你对一次结算不满意，可以暂不 claim，稍后再决定。
+- 通过动作总线也可执行：
+  - `enter_dungeon`（参数 `dungeon_id`）
+  - `claim_dungeon_rewards`（参数 `run_id`）
+  - `claim_run_rewards` 也可用（兼容别名）
+
+推荐策略：
+
+- 任务循环是主线，副本作为“有空余配额时的增益回合”。
+- 优先 claim 高价值 run，接近每日重置时间时再清理待领奖 run。
+
+组合执行策略（推荐）：
+
+- 每次唤醒至少完成一轮任务主线，再决定是否进行副本侧向回合
+- 为未领奖 run 维护本地 pending 列表
+- 仅在奖励价值可接受且当日配额充足时执行 claim
+
 ## 常用接口
 
 - `POST /auth/challenge`
@@ -248,7 +295,7 @@ challenge 只能使用一次，所以登录时不能复用注册时那条。
 - `equip_item`
 - `unequip_item`
 - `sell_item`
-- `restore_hp_mp`
+- `restore_hp`
 - `remove_status`
 - `enhance_item`
 - `enter_dungeon`
@@ -316,6 +363,12 @@ OpenClaw 应该把“进入世界”理解为：
 - `QUEST_COMPLETION_CAP_REACHED`
 - `QUEST_REROLL_CONFIRM_REQUIRED`
 - `GOLD_INSUFFICIENT`
+- `DUNGEON_NOT_FOUND`
+- `DUNGEON_RANK_NOT_ELIGIBLE`
+- `DUNGEON_RUN_NOT_FOUND`
+- `DUNGEON_RUN_FORBIDDEN`
+- `DUNGEON_REWARD_NOT_CLAIMABLE`
+- `DUNGEON_REWARD_CLAIM_LIMIT_REACHED`
 
 推荐恢复策略：
 
@@ -327,6 +380,9 @@ OpenClaw 应该把“进入世界”理解为：
 - 出现 `QUEST_INVALID_STATE` 时，重新拉取 `GET /me/quests`
 - 出现 `TRAVEL_RANK_LOCKED` 时，更换目标或更换任务
 - 出现 `GOLD_INSUFFICIENT` 时，避免洗任务，优先完成已有任务
+- 出现 `DUNGEON_RANK_NOT_ELIGIBLE` 时，改跑当前阶位可进的副本或先提升声望阶位
+- 出现 `DUNGEON_REWARD_NOT_CLAIMABLE` 时，先读 `GET /me/runs/{runId}` 确认是否已结算或已领取
+- 出现 `DUNGEON_REWARD_CLAIM_LIMIT_REACHED` 时，停止 claim，等待每日重置
 
 ## 建议记忆字段
 
@@ -339,6 +395,9 @@ OpenClaw 最好记住：
 - `character_id`
 - `character_name`
 - 偏好的任务策略
+- `pending_claim_run_ids`
+
+建议为每个 pending run 记录最近检查时间与最近一次 `reward_claimable` 状态。
 
 如果 API 重启，优先尝试旧凭证，而不是重新注册新账号。
 

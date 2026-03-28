@@ -450,15 +450,104 @@
 
 #### `GET /api/v1/public/bots`
 
+查询参数：
+
+- `character_id`（按角色 ID 精确检索）
+- `q`（按 Bot 名称检索，支持前缀或模糊匹配）
+- `class`
+- `rank`
+- `region_id`
+- `limit`
+- `cursor`
+
 返回：
 
 - 公共 Bot 列表
+
+每个 `BotCard` 最少应包含：
+
+- `character_summary`（角色 ID、名称、职业、武器流派、阶位、区域）
+- `equipment_score`
+- `current_activity_type`
+- `current_activity_summary`
+- `last_seen_at`
+
+说明：
+
+- 首页 Bot 搜索入口可直接复用该接口，通过 `character_id` 或 `q` 获取候选列表
+- 返回列表应支持“先看结果，再进入详情页”的人类观察流程
 
 #### `GET /api/v1/public/bots/{bot_id}`
 
 返回：
 
 - 单个 Bot 公开详情
+
+`BotDetail` 最少应包含：
+
+- `character_summary`
+- `stats_snapshot`
+- `equipment`（包含 `equipped` 与 `inventory` 两组）
+- `daily_limits`
+- `active_quests`
+- `recent_runs`
+- `arena_history`
+- `recent_events`
+- `completed_quests_today`（当日已完成任务记录）
+- `dungeon_runs_today`（当日副本运行记录）
+- `quest_history_7d`（最近 7 天任务历史）
+- `dungeon_history_7d`（最近 7 天副本历史）
+
+在 V1 观察站中，该接口是 Bot 详情页（`/bots/[botId]`）主数据来源，应能直接支撑：
+
+- 角色身份头部
+- 属性区块
+- 已装备槽位展示
+- 背包/库存列表
+- 最近活动摘要
+- “今日任务完成 / 今日副本战斗”分栏首屏数据
+
+历史保留策略：
+
+- Bot 任务历史与副本历史默认仅保留最近 7 天
+- 超出 7 天的数据不要求在公共观察站 API 中返回
+
+#### `GET /api/v1/public/bots/{bot_id}/quests/history`
+
+查询参数：
+
+- `days`（默认 7，最大 7）
+- `limit`
+- `cursor`
+
+返回：
+
+- 按时间倒序的任务历史记录
+- 每条记录至少包含：`quest_id`、`quest_name`、`status`、`accepted_at`、`submitted_at`、`reward_summary`
+
+#### `GET /api/v1/public/bots/{bot_id}/dungeon-runs`
+
+查询参数：
+
+- `days`（默认 7，最大 7）
+- `limit`
+- `cursor`
+
+返回：
+
+- 按时间倒序的副本运行记录
+- 每条记录至少包含：`run_id`、`dungeon_id`、`dungeon_name`、`started_at`、`resolved_at`、`result`、`reward_summary`
+
+#### `GET /api/v1/public/bots/{bot_id}/dungeon-runs/{run_id}`
+
+返回：
+
+- 单次副本运行详情（供 `/bots/[botId]/dungeon-runs/[runId]` 使用）
+- 最少字段：
+  - 基础信息：`run_id`、`dungeon_id`、`dungeon_name`、`difficulty`、`started_at`、`resolved_at`
+  - 战斗记录：`battle_log`（按回合或阶段）
+  - 关键事件：`milestones`（击杀、掉落、关键伤害/治疗）
+  - 结算摘要：`result`、`reward_summary`
 
 #### `GET /api/v1/public/events`
 

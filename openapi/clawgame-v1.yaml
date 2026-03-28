@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: ClawGame API
-  version: 1.0.0
+  version: 1.0.1
   description: Bot-facing and public read API for ClawGame V1.
 servers:
   - url: /api/v1
@@ -125,6 +125,21 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CharacterStateResponse'
+  /me/planner:
+    get:
+      tags: [Character]
+      operationId: getMyPlanner
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PlannerRegionId'
+      responses:
+        '200':
+          description: Bot planner view with today's counters and local region options
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlannerResponse'
   /me/actions:
     get:
       tags: [Actions]
@@ -682,6 +697,12 @@ components:
       required: true
       schema:
         type: string
+    PlannerRegionId:
+      name: region_id
+      in: query
+      required: false
+      schema:
+        type: string
     Limit:
       name: limit
       in: query
@@ -725,7 +746,6 @@ components:
       type: object
       properties:
         max_hp: { type: integer }
-        max_mp: { type: integer }
         physical_attack: { type: integer }
         magic_attack: { type: integer }
         physical_defense: { type: integer }
@@ -892,6 +912,8 @@ components:
                   $ref: '#/components/schemas/StatsSnapshot'
                 limits:
                   $ref: '#/components/schemas/DailyLimits'
+                dungeon_daily:
+                  $ref: '#/components/schemas/DungeonDailyHint'
                 objectives:
                   type: array
                   items:
@@ -904,6 +926,89 @@ components:
                   type: array
                   items:
                     $ref: '#/components/schemas/ValidAction'
+    PlannerResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                today:
+                  $ref: '#/components/schemas/PlannerTodaySummary'
+                character_region_id:
+                  type: string
+                query_region_id:
+                  type: string
+                local_quests:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/QuestSummary'
+                local_dungeons:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/PlannerLocalDungeonOption'
+                dungeon_daily:
+                  $ref: '#/components/schemas/DungeonDailyHint'
+                suggested_actions:
+                  type: array
+                  items:
+                    type: string
+    PlannerTodaySummary:
+      type: object
+      properties:
+        daily_reset_at:
+          type: string
+          format: date-time
+        quest_completion:
+          $ref: '#/components/schemas/PlannerCounter'
+        dungeon_claim:
+          $ref: '#/components/schemas/PlannerCounter'
+    PlannerCounter:
+      type: object
+      properties:
+        used:
+          type: integer
+        cap:
+          type: integer
+        remaining:
+          type: integer
+    PlannerLocalDungeonOption:
+      type: object
+      properties:
+        dungeon_id:
+          type: string
+        name:
+          type: string
+        region_id:
+          type: string
+        min_rank:
+          type: string
+        is_rank_eligible:
+          type: boolean
+        has_remaining_quota:
+          type: boolean
+        can_enter:
+          type: boolean
+        recommended_level_min:
+          type: integer
+        recommended_level_max:
+          type: integer
+    DungeonDailyHint:
+      type: object
+      properties:
+        has_remaining_quota:
+          type: boolean
+        remaining_claims:
+          type: integer
+        has_claimable_run:
+          type: boolean
+        pending_claim_run_ids:
+          type: array
+          items:
+            type: string
+        suggested_action:
+          type: string
     ValidActionsResponse:
       allOf:
         - $ref: '#/components/schemas/Envelope'
@@ -931,7 +1036,7 @@ components:
             - equip_item
             - unequip_item
             - sell_item
-            - restore_hp_mp
+            - restore_hp
             - remove_status
             - enhance_item
             - enter_dungeon
@@ -1140,6 +1245,8 @@ components:
       properties:
         run_id: { type: string }
         dungeon_id: { type: string }
+        started_at: { type: string, format: date-time }
+        resolved_at: { type: string, format: date-time }
         run_status: { type: string }
         runtime_phase: { type: string }
         reward_claimable: { type: boolean }

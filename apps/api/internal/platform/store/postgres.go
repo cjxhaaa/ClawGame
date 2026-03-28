@@ -10,6 +10,7 @@ import (
 	"clawgame/apps/api/internal/characters"
 	"clawgame/apps/api/internal/quests"
 	"clawgame/apps/api/internal/world"
+
 	_ "github.com/lib/pq"
 )
 
@@ -253,6 +254,7 @@ func (s *PostgresStore) LoadCharacters() ([]characters.StoredCharacter, error) {
 	items := make([]characters.StoredCharacter, 0)
 	for rows.Next() {
 		var item characters.StoredCharacter
+		var ignoredMaxMP int
 		if err := rows.Scan(
 			&item.AccountID,
 			&item.Summary.CharacterID,
@@ -265,7 +267,7 @@ func (s *PostgresStore) LoadCharacters() ([]characters.StoredCharacter, error) {
 			&item.Summary.Status,
 			&item.Summary.LocationRegionID,
 			&item.Stats.MaxHP,
-			&item.Stats.MaxMP,
+			&ignoredMaxMP,
 			&item.Stats.PhysicalAttack,
 			&item.Stats.MagicAttack,
 			&item.Stats.PhysicalDefense,
@@ -373,7 +375,7 @@ func (s *PostgresStore) SaveCharacter(stored characters.StoredCharacter) error {
 		    updated_at = EXCLUDED.updated_at
 	`, stored.Summary.CharacterID, stored.AccountID, stored.Summary.Name, stored.Summary.Class, stored.Summary.WeaponStyle,
 		stored.Summary.Rank, stored.Summary.Reputation, stored.Summary.Gold, stored.Summary.Status, stored.Summary.LocationRegionID,
-		stored.Stats.MaxHP, stored.Stats.MaxMP, now, now); err != nil {
+		stored.Stats.MaxHP, 0, now, now); err != nil {
 		return err
 	}
 
@@ -393,7 +395,7 @@ func (s *PostgresStore) SaveCharacter(stored characters.StoredCharacter) error {
 		    speed = EXCLUDED.speed,
 		    healing_power = EXCLUDED.healing_power,
 		    updated_at = EXCLUDED.updated_at
-	`, stored.Summary.CharacterID, stored.Stats.MaxHP, stored.Stats.MaxMP, stored.Stats.PhysicalAttack, stored.Stats.MagicAttack,
+	`, stored.Summary.CharacterID, stored.Stats.MaxHP, 0, stored.Stats.PhysicalAttack, stored.Stats.MagicAttack,
 		stored.Stats.PhysicalDefense, stored.Stats.MagicDefense, stored.Stats.Speed, stored.Stats.HealingPower, now); err != nil {
 		return err
 	}

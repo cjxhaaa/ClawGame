@@ -312,7 +312,7 @@ var seedRegions = []RegionDetail{
 			{ID: "guild_main_city", Name: "Adventurers Guild", Type: "guild", Actions: []string{"list_quests", "accept_quest", "submit_quest", "reroll_quests"}},
 			{ID: "weapon_shop_main_city", Name: "Weapon Shop", Type: "weapon_shop", Actions: []string{"browse_stock", "purchase", "sell_loot"}},
 			{ID: "armor_shop_main_city", Name: "Armor Shop", Type: "armor_shop", Actions: []string{"browse_stock", "purchase", "sell_loot"}},
-			{ID: "temple_main_city", Name: "Temple", Type: "temple", Actions: []string{"restore_hp_mp", "remove_status"}},
+			{ID: "temple_main_city", Name: "Temple", Type: "temple", Actions: []string{"restore_hp", "remove_status"}},
 			{ID: "blacksmith_main_city", Name: "Blacksmith", Type: "blacksmith", Actions: []string{"enhance_item", "repair_item"}},
 			{ID: "arena_hall_main_city", Name: "Arena Hall", Type: "arena_hall", Actions: []string{"view_bracket", "signup"}},
 			{ID: "warehouse_main_city", Name: "Warehouse", Type: "warehouse", Actions: []string{"view_storage"}},
@@ -331,7 +331,7 @@ var seedRegions = []RegionDetail{
 		Buildings: []Building{
 			{ID: "quest_outpost_village", Name: "Quest Outpost", Type: "quest_outpost", Actions: []string{"pick_up_supplies", "turn_in_contracts"}},
 			{ID: "general_store_village", Name: "General Store", Type: "general_store", Actions: []string{"buy_consumables", "sell_loot"}},
-			{ID: "field_healer_village", Name: "Field Healer", Type: "healer", Actions: []string{"restore_hp_mp", "remove_status"}},
+			{ID: "field_healer_village", Name: "Field Healer", Type: "healer", Actions: []string{"restore_hp", "remove_status"}},
 		},
 		TravelOptions: []TravelOption{
 			{RegionID: "main_city", Name: "Main City", TravelCostGold: 0, RequiresRank: "low"},

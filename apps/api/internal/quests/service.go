@@ -267,6 +267,35 @@ func (s *Service) ProgressTravelQuests(character characters.Summary, targetRegio
 	return buildBoardView(board, limits), completed
 }
 
+func (s *Service) ProgressDungeonQuests(character characters.Summary, dungeonRegionID string, limits characters.DailyLimits) (BoardView, []characters.QuestSummary) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	board := s.ensureBoardLocked(character)
+	completed := make([]characters.QuestSummary, 0, 2)
+
+	for index, quest := range board.quests {
+		if quest.Status != "accepted" {
+			continue
+		}
+		if quest.TargetRegionID != dungeonRegionID {
+			continue
+		}
+		if quest.TemplateType != "kill_dungeon_elite" && quest.TemplateType != "clear_dungeon" {
+			continue
+		}
+
+		quest.ProgressCurrent = quest.ProgressTarget
+		quest.Status = "completed"
+		board.quests[index] = quest
+		completed = append(completed, quest)
+	}
+
+	_ = s.saveBoardLocked(character.CharacterID, board)
+	s.boardByCharacter[character.CharacterID] = board
+	return buildBoardView(board, limits), completed
+}
+
 func buildBoardView(board boardRecord, limits characters.DailyLimits) BoardView {
 	quests := make([]characters.QuestSummary, len(board.quests))
 	copy(quests, board.quests)

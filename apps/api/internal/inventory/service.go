@@ -221,6 +221,39 @@ func (s *Service) PurchaseItem(character characters.Summary, catalogID string) (
 	return buildView(items), purchased, template.PriceGold, nil
 }
 
+func (s *Service) GrantItemFromCatalog(character characters.Summary, catalogID string) (InventoryView, EquipmentItem, error) {
+	template, ok := catalogByID(strings.TrimSpace(catalogID))
+	if !ok {
+		return InventoryView{}, EquipmentItem{}, ErrCatalogNotFound
+	}
+	if !itemCompatible(character, EquipmentItem{RequiredClass: template.RequiredClass, RequiredWeaponStyle: template.RequiredWeaponStyle}) {
+		return InventoryView{}, EquipmentItem{}, ErrItemNotEquippable
+	}
+
+	reward := EquipmentItem{
+		ItemID:              nextItemID(),
+		CatalogID:           template.CatalogID,
+		Name:                template.Name,
+		Slot:                template.Slot,
+		Rarity:              template.Rarity,
+		RequiredClass:       template.RequiredClass,
+		RequiredWeaponStyle: template.RequiredWeaponStyle,
+		EnhancementLevel:    0,
+		Durability:          100,
+		Stats:               copyStats(template.Stats),
+		State:               "inventory",
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	items := s.ensureCharacterItemsLocked(character)
+	items = append(items, reward)
+	s.itemsByCharacter[character.CharacterID] = items
+
+	return buildView(items), reward, nil
+}
+
 func (s *Service) SellItem(character characters.Summary, itemID string) (InventoryView, EquipmentItem, int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -394,6 +427,46 @@ func sellPriceFor(item EquipmentItem) int {
 	return base / 2
 }
 
+func catalogByID(catalogID string) (catalogItem, bool) {
+	if entry, ok := shopCatalogByID[catalogID]; ok {
+		return catalogItem{
+			CatalogID:           entry.CatalogID,
+			Name:                entry.Name,
+			Slot:                entry.Slot,
+			Rarity:              entry.Rarity,
+			RequiredClass:       entry.RequiredClass,
+			RequiredWeaponStyle: entry.RequiredWeaponStyle,
+			Stats:               copyStats(entry.Stats),
+		}, true
+	}
+
+	if entry, ok := starterCatalog[catalogID]; ok {
+		return catalogItem{
+			CatalogID:           entry.CatalogID,
+			Name:                entry.Name,
+			Slot:                entry.Slot,
+			Rarity:              entry.Rarity,
+			RequiredClass:       entry.RequiredClass,
+			RequiredWeaponStyle: entry.RequiredWeaponStyle,
+			Stats:               copyStats(entry.Stats),
+		}, true
+	}
+
+	if entry, ok := dungeonRewardCatalog[catalogID]; ok {
+		return catalogItem{
+			CatalogID:           entry.CatalogID,
+			Name:                entry.Name,
+			Slot:                entry.Slot,
+			Rarity:              entry.Rarity,
+			RequiredClass:       entry.RequiredClass,
+			RequiredWeaponStyle: entry.RequiredWeaponStyle,
+			Stats:               copyStats(entry.Stats),
+		}, true
+	}
+
+	return catalogItem{}, false
+}
+
 var starterCatalog = map[string]catalogItem{
 	"warrior_sword_starter": {
 		CatalogID:           "warrior_sword_starter",
@@ -454,7 +527,7 @@ var starterCatalog = map[string]catalogItem{
 		Name:      "Novice Robe",
 		Slot:      "chest",
 		Rarity:    "common",
-		Stats:     map[string]int{"magic_defense": 3, "max_mp": 10},
+		Stats:     map[string]int{"magic_defense": 3},
 	},
 	"starter_chest_armor": {
 		CatalogID: "starter_chest_armor",
@@ -469,6 +542,135 @@ var starterCatalog = map[string]catalogItem{
 		Slot:      "boots",
 		Rarity:    "common",
 		Stats:     map[string]int{"speed": 2},
+	},
+}
+
+var dungeonRewardCatalog = map[string]catalogItem{
+	"gravewake_marchers_blue": {
+		CatalogID: "gravewake_marchers_blue",
+		Name:      "Gravewake Marchers",
+		Slot:      "boots",
+		Rarity:    "blue",
+		Stats:     map[string]int{"speed": 4, "max_hp": 45, "physical_defense": 4},
+	},
+	"gravewake_shackles_blue": {
+		CatalogID: "gravewake_shackles_blue",
+		Name:      "Gravewake Shackles",
+		Slot:      "wrist",
+		Rarity:    "blue",
+		Stats:     map[string]int{"physical_attack": 8, "speed": 2},
+	},
+	"gravewake_seal_purple": {
+		CatalogID: "gravewake_seal_purple",
+		Name:      "Gravewake Seal",
+		Slot:      "ring",
+		Rarity:    "purple",
+		Stats:     map[string]int{"magic_attack": 10, "physical_attack": 10},
+	},
+	"gravewake_hood_purple": {
+		CatalogID: "gravewake_hood_purple",
+		Name:      "Gravewake Hood",
+		Slot:      "head",
+		Rarity:    "purple",
+		Stats:     map[string]int{"max_hp": 60, "physical_defense": 6, "magic_defense": 6},
+	},
+	"gravewake_reliquary_gold": {
+		CatalogID: "gravewake_reliquary_gold",
+		Name:      "Gravewake Reliquary",
+		Slot:      "necklace",
+		Rarity:    "gold",
+		Stats:     map[string]int{"max_hp": 45, "magic_attack": 6, "healing_power": 8},
+	},
+	"gravewake_vestment_gold": {
+		CatalogID: "gravewake_vestment_gold",
+		Name:      "Gravewake Vestment",
+		Slot:      "chest",
+		Rarity:    "gold",
+		Stats:     map[string]int{"max_hp": 90, "physical_defense": 10, "magic_defense": 10},
+	},
+	"gravewake_vestment_red": {
+		CatalogID: "gravewake_vestment_red",
+		Name:      "Gravewake Vestment",
+		Slot:      "chest",
+		Rarity:    "red",
+		Stats:     map[string]int{"max_hp": 115, "physical_defense": 13, "magic_defense": 13},
+	},
+	"gravewake_seal_red": {
+		CatalogID: "gravewake_seal_red",
+		Name:      "Gravewake Seal",
+		Slot:      "ring",
+		Rarity:    "red",
+		Stats:     map[string]int{"magic_attack": 14, "physical_attack": 14},
+	},
+	"gravewake_reliquary_prismatic": {
+		CatalogID: "gravewake_reliquary_prismatic",
+		Name:      "Gravewake Reliquary",
+		Slot:      "necklace",
+		Rarity:    "prismatic",
+		Stats:     map[string]int{"max_hp": 70, "magic_attack": 12, "healing_power": 14},
+	},
+	"dunescourge_burrowstep_blue": {
+		CatalogID: "dunescourge_burrowstep_blue",
+		Name:      "Dunescourge Burrowstep Boots",
+		Slot:      "boots",
+		Rarity:    "blue",
+		Stats:     map[string]int{"speed": 12, "max_hp": 230, "physical_defense": 18},
+	},
+	"dunescourge_coilguards_blue": {
+		CatalogID: "dunescourge_coilguards_blue",
+		Name:      "Dunescourge Coilguards",
+		Slot:      "wrist",
+		Rarity:    "blue",
+		Stats:     map[string]int{"physical_attack": 44, "speed": 11},
+	},
+	"dunescourge_fang_ring_purple": {
+		CatalogID: "dunescourge_fang_ring_purple",
+		Name:      "Dunescourge Fang Ring",
+		Slot:      "ring",
+		Rarity:    "purple",
+		Stats:     map[string]int{"physical_attack": 56, "healing_power": 42},
+	},
+	"dunescourge_crownshell_purple": {
+		CatalogID: "dunescourge_crownshell_purple",
+		Name:      "Dunescourge Crownshell",
+		Slot:      "head",
+		Rarity:    "purple",
+		Stats:     map[string]int{"max_hp": 360, "physical_defense": 30, "magic_defense": 30},
+	},
+	"dunescourge_heartspine_chain_gold": {
+		CatalogID: "dunescourge_heartspine_chain_gold",
+		Name:      "Dunescourge Heartspine Chain",
+		Slot:      "necklace",
+		Rarity:    "gold",
+		Stats:     map[string]int{"max_hp": 265, "magic_attack": 36, "healing_power": 36},
+	},
+	"dunescourge_carapace_mail_gold": {
+		CatalogID: "dunescourge_carapace_mail_gold",
+		Name:      "Dunescourge Carapace Mail",
+		Slot:      "chest",
+		Rarity:    "gold",
+		Stats:     map[string]int{"max_hp": 470, "physical_defense": 45, "magic_defense": 40},
+	},
+	"dunescourge_carapace_mail_red": {
+		CatalogID: "dunescourge_carapace_mail_red",
+		Name:      "Dunescourge Carapace Mail",
+		Slot:      "chest",
+		Rarity:    "red",
+		Stats:     map[string]int{"max_hp": 520, "physical_defense": 50, "magic_defense": 45},
+	},
+	"dunescourge_fang_ring_red": {
+		CatalogID: "dunescourge_fang_ring_red",
+		Name:      "Dunescourge Fang Ring",
+		Slot:      "ring",
+		Rarity:    "red",
+		Stats:     map[string]int{"physical_attack": 64, "healing_power": 50},
+	},
+	"dunescourge_heartspine_chain_prismatic": {
+		CatalogID: "dunescourge_heartspine_chain_prismatic",
+		Name:      "Dunescourge Heartspine Chain",
+		Slot:      "necklace",
+		Rarity:    "prismatic",
+		Stats:     map[string]int{"max_hp": 310, "magic_attack": 42, "healing_power": 42},
 	},
 }
 
@@ -543,7 +745,7 @@ var shopCatalog = []shopEntry{
 				Name:      "Apprentice Robe",
 				Slot:      "chest",
 				Rarity:    "common",
-				Stats:     map[string]int{"magic_defense": 8, "max_mp": 16},
+				Stats:     map[string]int{"magic_defense": 8},
 			},
 			PriceGold: 58,
 		},

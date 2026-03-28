@@ -264,7 +264,7 @@ func NewServer(cfg config.API) *Server {
 			}
 
 			questService.EnsureDailyQuestBoard(state.Character)
-			state, err = buildCharacterState(account, characterService, questService, worldService)
+			state, err = buildCharacterState(account, characterService, questService, dungeonService, worldService)
 			if err != nil {
 				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to load character state")
 				return
@@ -300,7 +300,7 @@ func NewServer(cfg config.API) *Server {
 			}
 			_ = state
 
-			state, err = buildCharacterState(account, characterService, questService, worldService)
+			state, err = buildCharacterState(account, characterService, questService, dungeonService, worldService)
 			if err != nil {
 				if errors.Is(err, characters.ErrCharacterNotFound) {
 					writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before requesting full state")
@@ -312,6 +312,111 @@ func NewServer(cfg config.API) *Server {
 			}
 
 			writeEnvelope(w, r, http.StatusOK, state)
+		})
+
+		r.Get("/me/planner", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+
+			character, limits, err := currentCharacterWithLimits(account, characterService, worldService)
+			if err != nil {
+				writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before requesting planner context")
+				return
+			}
+
+			queryRegionID := strings.TrimSpace(r.URL.Query().Get("region_id"))
+			if queryRegionID == "" {
+				queryRegionID = character.LocationRegionID
+			}
+
+			if _, exists := worldService.GetRegion(queryRegionID); !exists {
+				writeError(w, r, http.StatusNotFound, "REGION_NOT_FOUND", fmt.Sprintf("region %q does not exist", queryRegionID))
+				return
+			}
+
+			state, err := buildCharacterState(account, characterService, questService, dungeonService, worldService)
+			if err != nil {
+				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to load planner state")
+				return
+			}
+
+			board := questService.ListQuests(character, limits)
+			localQuests := make([]characters.QuestSummary, 0, len(board.Quests))
+			for _, quest := range board.Quests {
+				if quest.TargetRegionID != queryRegionID {
+					continue
+				}
+				if quest.Status == "submitted" || quest.Status == "expired" {
+					continue
+				}
+				localQuests = append(localQuests, quest)
+			}
+
+			localDungeons := make([]map[string]any, 0, 2)
+			for _, definition := range dungeonService.ListDungeonDefinitions() {
+				if definition.RegionID != queryRegionID {
+					continue
+				}
+
+				isRankEligible := dungeons.RankAllows(character.Rank, definition.MinRank)
+				hasRemainingQuota := limits.DungeonEntryUsed < limits.DungeonEntryCap
+				canEnter := isRankEligible && hasRemainingQuota
+
+				localDungeons = append(localDungeons, map[string]any{
+					"dungeon_id":            definition.DungeonID,
+					"name":                  definition.Name,
+					"region_id":             definition.RegionID,
+					"min_rank":              definition.MinRank,
+					"is_rank_eligible":      isRankEligible,
+					"has_remaining_quota":   hasRemainingQuota,
+					"can_enter":             canEnter,
+					"recommended_level_min": definition.RecommendedLevelMin,
+					"recommended_level_max": definition.RecommendedLevelMax,
+				})
+			}
+
+			suggestedActions := make([]string, 0, 4)
+			if state.DungeonDaily.HasClaimableRun {
+				suggestedActions = append(suggestedActions, "claim_dungeon_rewards")
+			}
+			for _, quest := range localQuests {
+				if quest.Status == "completed" {
+					suggestedActions = appendUniqueString(suggestedActions, "submit_quest")
+				}
+				if quest.Status == "available" {
+					suggestedActions = appendUniqueString(suggestedActions, "accept_quest")
+				}
+			}
+			for _, dungeon := range localDungeons {
+				if canEnter, _ := dungeon["can_enter"].(bool); canEnter {
+					suggestedActions = appendUniqueString(suggestedActions, "enter_dungeon")
+					break
+				}
+			}
+
+			writeEnvelope(w, r, http.StatusOK, map[string]any{
+				"today": map[string]any{
+					"daily_reset_at": limits.DailyResetAt,
+					"quest_completion": map[string]any{
+						"used":      limits.QuestCompletionUsed,
+						"cap":       limits.QuestCompletionCap,
+						"remaining": max(0, limits.QuestCompletionCap-limits.QuestCompletionUsed),
+					},
+					"dungeon_claim": map[string]any{
+						"used":      limits.DungeonEntryUsed,
+						"cap":       limits.DungeonEntryCap,
+						"remaining": max(0, limits.DungeonEntryCap-limits.DungeonEntryUsed),
+					},
+				},
+				"character_region_id": character.LocationRegionID,
+				"query_region_id":     queryRegionID,
+				"local_quests":        localQuests,
+				"local_dungeons":      localDungeons,
+				"dungeon_daily":       state.DungeonDaily,
+				"suggested_actions":   suggestedActions,
+			})
 		})
 
 		r.Get("/me/actions", func(w http.ResponseWriter, r *http.Request) {
@@ -457,7 +562,7 @@ func NewServer(cfg config.API) *Server {
 				})
 			}
 
-			state, err := buildCharacterState(account, characterService, questService, worldService)
+			state, err := buildCharacterState(account, characterService, questService, dungeonService, worldService)
 			if err != nil {
 				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to load updated state after travel")
 				return
@@ -572,7 +677,7 @@ func NewServer(cfg config.API) *Server {
 				return
 			}
 
-			state, err := buildCharacterState(account, characterService, questService, worldService)
+			state, err := buildCharacterState(account, characterService, questService, dungeonService, worldService)
 			if err != nil {
 				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to load updated state after quest submission")
 				return
@@ -785,22 +890,22 @@ func NewServer(cfg config.API) *Server {
 		})
 
 		r.Post("/buildings/{buildingId}/heal", func(w http.ResponseWriter, r *http.Request) {
-			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, "heal")
+			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, dungeonService, "heal")
 		})
 		r.Post("/buildings/{buildingId}/cleanse", func(w http.ResponseWriter, r *http.Request) {
-			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, "cleanse")
+			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, dungeonService, "cleanse")
 		})
 		r.Post("/buildings/{buildingId}/enhance", func(w http.ResponseWriter, r *http.Request) {
-			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, "enhance")
+			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, dungeonService, "enhance")
 		})
 		r.Post("/buildings/{buildingId}/repair", func(w http.ResponseWriter, r *http.Request) {
-			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, "repair")
+			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, dungeonService, "repair")
 		})
 		r.Post("/buildings/{buildingId}/purchase", func(w http.ResponseWriter, r *http.Request) {
-			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, "purchase")
+			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, dungeonService, "purchase")
 		})
 		r.Post("/buildings/{buildingId}/sell", func(w http.ResponseWriter, r *http.Request) {
-			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, "sell")
+			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, dungeonService, "sell")
 		})
 
 		r.Post("/arena/signup", func(w http.ResponseWriter, r *http.Request) {
@@ -899,6 +1004,7 @@ func NewServer(cfg config.API) *Server {
 			}
 
 			definition, _ := dungeonService.GetDungeonDefinition(run.DungeonID)
+			_, completedQuests := questService.ProgressDungeonQuests(character, definition.RegionID, limits)
 			_ = characterService.AppendEvents(character.CharacterID,
 				world.WorldEvent{
 					EventID:          requestID(r),
@@ -930,7 +1036,24 @@ func NewServer(cfg config.API) *Server {
 					OccurredAt: time.Now().Format(time.RFC3339),
 				},
 			)
-
+			for _, quest := range completedQuests {
+				_ = characterService.AppendEvents(character.CharacterID, world.WorldEvent{
+					EventID:          fmt.Sprintf("evt_quest_completed_dungeon_%s", quest.QuestID),
+					EventType:        "quest.completed",
+					Visibility:       "public",
+					ActorCharacterID: character.CharacterID,
+					ActorName:        character.Name,
+					RegionID:         definition.RegionID,
+					Summary:          fmt.Sprintf("%s completed %s.", character.Name, quest.Title),
+					Payload: map[string]any{
+						"quest_id":    quest.QuestID,
+						"quest_title": quest.Title,
+						"dungeon_id":  run.DungeonID,
+						"run_id":      run.RunID,
+					},
+					OccurredAt: time.Now().Format(time.RFC3339),
+				})
+			}
 			writeEnvelope(w, r, http.StatusOK, run)
 		})
 
@@ -1000,7 +1123,7 @@ func NewServer(cfg config.API) *Server {
 				return
 			}
 
-			run, rewardGold, rating, err := dungeonService.ClaimRunRewards(character.CharacterID, chi.URLParam(r, "runId"), limits)
+			run, claimPackage, err := dungeonService.ClaimRunRewards(character.CharacterID, chi.URLParam(r, "runId"), limits)
 			if err != nil {
 				switch {
 				case errors.Is(err, dungeons.ErrDungeonRunNotFound):
@@ -1017,7 +1140,13 @@ func NewServer(cfg config.API) *Server {
 				return
 			}
 
-			if _, _, _, err := characterService.ApplyDungeonRewardClaim(character.CharacterID, run.RunID, run.DungeonID, rewardGold, rating); err != nil {
+			rewardItemCatalogIDs, err := grantDungeonInventoryRewards(inventoryService, character, claimPackage)
+			if err != nil {
+				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to grant dungeon item rewards")
+				return
+			}
+
+			if _, _, _, err := characterService.ApplyDungeonRewardClaim(character.CharacterID, run.RunID, run.DungeonID, claimPackage.RewardGold, claimPackage.Rating, rewardItemCatalogIDs, claimPackage.MaterialDrops); err != nil {
 				if errors.Is(err, characters.ErrDungeonRewardClaimCap) {
 					writeError(w, r, http.StatusBadRequest, "DUNGEON_REWARD_CLAIM_LIMIT_REACHED", "daily dungeon reward claim cap has been reached")
 					return
@@ -1090,8 +1219,24 @@ func NewServer(cfg config.API) *Server {
 			r.Get("/bots", func(w http.ResponseWriter, r *http.Request) {
 				limit := parseLimit(r, 20, 100)
 				cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
+				queryName := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
+				queryCharacterID := strings.TrimSpace(r.URL.Query().Get("character_id"))
 				snapshot := characterService.SnapshotRuntime()
 				items := buildPublicBots(snapshot.Characters, inventoryService)
+				if queryName != "" || queryCharacterID != "" {
+					filtered := make([]map[string]any, 0, len(items))
+					for _, item := range items {
+						summary, _ := item["character_summary"].(characters.Summary)
+						if queryCharacterID != "" && summary.CharacterID != queryCharacterID {
+							continue
+						}
+						if queryName != "" && !strings.Contains(strings.ToLower(summary.Name), queryName) {
+							continue
+						}
+						filtered = append(filtered, item)
+					}
+					items = filtered
+				}
 				start := 0
 				if cursor != "" {
 					if value, err := strconv.Atoi(cursor); err == nil && value >= 0 && value < len(items) {
@@ -1122,15 +1267,120 @@ func NewServer(cfg config.API) *Server {
 					return
 				}
 
+				now := time.Now()
+				questHistory := buildQuestHistory(events, 7, now)
+				dungeonHistory := buildDungeonHistory(events, 7, now, dungeonService)
+				completedToday := filterQuestHistoryByDay(questHistory, now)
+				dungeonToday := filterDungeonHistoryByDay(dungeonHistory, now)
+				recentRuns := dungeonService.ListRunsByCharacter(botID)
+				if len(recentRuns) > 5 {
+					recentRuns = recentRuns[:5]
+				}
+
 				writeEnvelope(w, r, http.StatusOK, map[string]any{
-					"character_summary": summary,
-					"stats_snapshot":    stats,
-					"equipment":         inventoryService.GetInventory(summary),
-					"daily_limits":      limits,
-					"active_quests":     []any{},
-					"recent_runs":       []any{},
-					"arena_history":     []any{},
-					"recent_events":     events,
+					"character_summary":      summary,
+					"stats_snapshot":         stats,
+					"equipment":              inventoryService.GetInventory(summary),
+					"daily_limits":           limits,
+					"active_quests":          []any{},
+					"recent_runs":            recentRuns,
+					"arena_history":          []any{},
+					"recent_events":          events,
+					"completed_quests_today": completedToday,
+					"dungeon_runs_today":     dungeonToday,
+					"quest_history_7d":       questHistory,
+					"dungeon_history_7d":     dungeonHistory,
+				})
+			})
+
+			r.Get("/bots/{botId}/quests/history", func(w http.ResponseWriter, r *http.Request) {
+				botID := chi.URLParam(r, "botId")
+				_, _, _, events, ok := characterService.GetRuntimeDetailByCharacterID(botID)
+				if !ok {
+					writeError(w, r, http.StatusNotFound, "BOT_NOT_FOUND", "public bot does not exist")
+					return
+				}
+
+				days := parseDays(r, 7, 7)
+				limit := parseLimit(r, 20, 100)
+				history := buildQuestHistory(events, days, time.Now())
+				if limit < len(history) {
+					history = history[:limit]
+				}
+
+				writeEnvelope(w, r, http.StatusOK, map[string]any{
+					"items":       history,
+					"next_cursor": nil,
+				})
+			})
+
+			r.Get("/bots/{botId}/dungeon-runs", func(w http.ResponseWriter, r *http.Request) {
+				botID := chi.URLParam(r, "botId")
+				_, _, _, events, ok := characterService.GetRuntimeDetailByCharacterID(botID)
+				if !ok {
+					writeError(w, r, http.StatusNotFound, "BOT_NOT_FOUND", "public bot does not exist")
+					return
+				}
+
+				days := parseDays(r, 7, 7)
+				limit := parseLimit(r, 20, 100)
+				history := buildDungeonHistory(events, days, time.Now(), dungeonService)
+				if limit < len(history) {
+					history = history[:limit]
+				}
+
+				writeEnvelope(w, r, http.StatusOK, map[string]any{
+					"items":       history,
+					"next_cursor": nil,
+				})
+			})
+
+			r.Get("/bots/{botId}/dungeon-runs/{runId}", func(w http.ResponseWriter, r *http.Request) {
+				botID := chi.URLParam(r, "botId")
+				runID := chi.URLParam(r, "runId")
+
+				runs := dungeonService.ListRunsByCharacter(botID)
+				var selected *dungeons.RunView
+				for index := range runs {
+					if runs[index].RunID == runID {
+						selected = &runs[index]
+						break
+					}
+				}
+				if selected == nil {
+					writeError(w, r, http.StatusNotFound, "DUNGEON_RUN_NOT_FOUND", "dungeon run does not exist")
+					return
+				}
+
+				definition, _ := dungeonService.GetDungeonDefinition(selected.DungeonID)
+				writeEnvelope(w, r, http.StatusOK, map[string]any{
+					"run_id":       selected.RunID,
+					"dungeon_id":   selected.DungeonID,
+					"dungeon_name": definition.Name,
+					"difficulty":   definition.MinRank,
+					"started_at":   selected.StartedAt,
+					"resolved_at":  selected.ResolvedAt,
+					"room_summary": selected.RoomSummary,
+					"battle_state": selected.BattleState,
+					"battle_log":   selected.RecentBattleLog,
+					"milestones": []map[string]any{
+						{
+							"type":    "rating",
+							"rating":  selected.CurrentRating,
+							"message": "rating calculated from auto resolve result",
+						},
+					},
+					"result": map[string]any{
+						"run_status":       selected.RunStatus,
+						"runtime_phase":    selected.RuntimePhase,
+						"reward_claimable": selected.RewardClaimable,
+						"current_rating":   selected.CurrentRating,
+						"projected_rating": selected.ProjectedRating,
+					},
+					"reward_summary": map[string]any{
+						"pending_rating_rewards": selected.PendingRatingRewards,
+						"staged_material_drops":  selected.StagedMaterialDrops,
+					},
 				})
 			})
 		})
@@ -1200,6 +1450,23 @@ func parseLimit(r *http.Request, defaultValue, maxValue int) int {
 	return value
 }
 
+func parseDays(r *http.Request, defaultValue, maxValue int) int {
+	raw := strings.TrimSpace(r.URL.Query().Get("days"))
+	if raw == "" {
+		return defaultValue
+	}
+
+	value, err := strconv.Atoi(raw)
+	if err != nil || value <= 0 {
+		return defaultValue
+	}
+	if value > maxValue {
+		return maxValue
+	}
+
+	return value
+}
+
 func decodeJSONBody(w http.ResponseWriter, r *http.Request, target any) bool {
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
@@ -1240,14 +1507,46 @@ func requireAccount(w http.ResponseWriter, r *http.Request, authService *auth.Se
 	return account, true
 }
 
-func buildCharacterState(account auth.Account, characterService *characters.Service, questService *quests.Service, worldService *world.Service) (characters.StateView, error) {
+func buildCharacterState(account auth.Account, characterService *characters.Service, questService *quests.Service, dungeonService *dungeons.Service, worldService *world.Service) (characters.StateView, error) {
 	state, err := characterService.GetState(account, worldService)
 	if err != nil {
 		return characters.StateView{}, err
 	}
 
 	state.Objectives = questService.ActiveObjectives(state.Character.CharacterID)
+	state.DungeonDaily = buildDungeonDailyHint(state, dungeonService)
 	return state, nil
+}
+
+func buildDungeonDailyHint(state characters.StateView, dungeonService *dungeons.Service) characters.DungeonDailyHint {
+	remaining := state.Limits.DungeonEntryCap - state.Limits.DungeonEntryUsed
+	if remaining < 0 {
+		remaining = 0
+	}
+
+	runs := dungeonService.ListRunsByCharacter(state.Character.CharacterID)
+	pending := make([]string, 0, len(runs))
+	for _, run := range runs {
+		if run.RunStatus == "cleared" && run.RewardClaimable {
+			pending = append(pending, run.RunID)
+		}
+	}
+
+	hint := characters.DungeonDailyHint{
+		HasRemainingQuota:  state.Limits.DungeonEntryUsed < state.Limits.DungeonEntryCap,
+		RemainingClaims:    remaining,
+		HasClaimableRun:    len(pending) > 0,
+		PendingClaimRunIDs: pending,
+		SuggestedAction:    "none",
+	}
+
+	if hint.HasClaimableRun {
+		hint.SuggestedAction = "claim_dungeon_rewards"
+	} else if hint.HasRemainingQuota {
+		hint.SuggestedAction = "enter_dungeon"
+	}
+
+	return hint
 }
 
 func buildPublicWorldState(worldService *world.Service, snapshot characters.RuntimeSnapshot) world.PublicWorldState {
@@ -1509,6 +1808,173 @@ func intPayload(payload map[string]any, key string) int {
 	}
 }
 
+func appendUniqueString(values []string, candidate string) []string {
+	for _, item := range values {
+		if item == candidate {
+			return values
+		}
+	}
+
+	return append(values, candidate)
+}
+
+func buildQuestHistory(events []world.WorldEvent, days int, now time.Time) []map[string]any {
+	windowStart := now.Add(-time.Duration(days) * 24 * time.Hour)
+	items := make([]map[string]any, 0, len(events))
+	for _, event := range events {
+		if event.EventType != "quest.submitted" {
+			continue
+		}
+
+		occurredAt, err := time.Parse(time.RFC3339, event.OccurredAt)
+		if err != nil || occurredAt.Before(windowStart) {
+			continue
+		}
+
+		items = append(items, map[string]any{
+			"quest_id":       stringPayload(event.Payload, "quest_id"),
+			"quest_name":     stringPayload(event.Payload, "quest_title"),
+			"status":         "submitted",
+			"accepted_at":    nil,
+			"submitted_at":   event.OccurredAt,
+			"reward_summary": map[string]any{"gold": intPayload(event.Payload, "reward_gold"), "reputation": intPayload(event.Payload, "reward_reputation")},
+		})
+	}
+
+	return items
+}
+
+func buildDungeonHistory(events []world.WorldEvent, days int, now time.Time, dungeonService *dungeons.Service) []map[string]any {
+	windowStart := now.Add(-time.Duration(days) * 24 * time.Hour)
+	runsByID := make(map[string]dungeons.RunView)
+	for _, event := range events {
+		runID := stringPayload(event.Payload, "run_id")
+		if runID == "" {
+			continue
+		}
+	}
+
+	items := make([]map[string]any, 0)
+	for _, event := range events {
+		if event.EventType != "dungeon.cleared" && event.EventType != "dungeon.loot_granted" {
+			continue
+		}
+
+		occurredAt, err := time.Parse(time.RFC3339, event.OccurredAt)
+		if err != nil || occurredAt.Before(windowStart) {
+			continue
+		}
+
+		runID := stringPayload(event.Payload, "run_id")
+		dungeonID := stringPayload(event.Payload, "dungeon_id")
+		runView, ok := runsByID[runID]
+		if !ok {
+			runView = findRunInServiceByID(dungeonService, runID)
+			runsByID[runID] = runView
+		}
+		definition, _ := dungeonService.GetDungeonDefinition(dungeonID)
+
+		items = append(items, map[string]any{
+			"run_id":         runID,
+			"dungeon_id":     dungeonID,
+			"dungeon_name":   definition.Name,
+			"started_at":     firstNonEmpty(runView.StartedAt, event.OccurredAt),
+			"resolved_at":    firstNonEmpty(runView.ResolvedAt, event.OccurredAt),
+			"result":         stringPayloadFromRun(runView.RunStatus, "cleared"),
+			"reward_summary": map[string]any{"gold": intPayload(event.Payload, "reward_gold"), "rating": event.Payload["current_rating"]},
+		})
+	}
+
+	slices.SortFunc(items, func(left, right map[string]any) int {
+		leftAt, _ := left["resolved_at"].(string)
+		rightAt, _ := right["resolved_at"].(string)
+		return cmp.Compare(rightAt, leftAt)
+	})
+
+	return dedupeDungeonHistory(items)
+}
+
+func filterQuestHistoryByDay(items []map[string]any, now time.Time) []map[string]any {
+	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	filtered := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		submittedAt, _ := item["submitted_at"].(string)
+		parsed, err := time.Parse(time.RFC3339, submittedAt)
+		if err != nil || parsed.Before(start) {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+
+	return filtered
+}
+
+func filterDungeonHistoryByDay(items []map[string]any, now time.Time) []map[string]any {
+	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	filtered := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		resolvedAt, _ := item["resolved_at"].(string)
+		parsed, err := time.Parse(time.RFC3339, resolvedAt)
+		if err != nil || parsed.Before(start) {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+
+	return filtered
+}
+
+func stringPayload(payload map[string]any, key string) string {
+	if payload == nil {
+		return ""
+	}
+	value, _ := payload[key].(string)
+	return strings.TrimSpace(value)
+}
+
+func findRunInServiceByID(dungeonService *dungeons.Service, runID string) dungeons.RunView {
+	allRuns := dungeonService.ListRunsByCharacter("")
+	for _, run := range allRuns {
+		if run.RunID == runID {
+			return run
+		}
+	}
+	return dungeons.RunView{}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func stringPayloadFromRun(value string, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
+}
+
+func dedupeDungeonHistory(items []map[string]any) []map[string]any {
+	seen := make(map[string]struct{}, len(items))
+	unique := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		runID, _ := item["run_id"].(string)
+		if runID == "" {
+			continue
+		}
+		if _, exists := seen[runID]; exists {
+			continue
+		}
+		seen[runID] = struct{}{}
+		unique = append(unique, item)
+	}
+	return unique
+}
+
 func fallbackRegionHighlight(regionType string, population int) string {
 	if population == 0 {
 		return "No public bot activity is visible here yet."
@@ -1561,7 +2027,7 @@ func findBuilding(worldService *world.Service, buildingID string) (world.Buildin
 	return world.Building{}, world.RegionDetail{}, false
 }
 
-func handleBuildingAction(w http.ResponseWriter, r *http.Request, authService *auth.Service, worldService *world.Service, characterService *characters.Service, inventoryService *inventory.Service, questService *quests.Service, actionName string) {
+func handleBuildingAction(w http.ResponseWriter, r *http.Request, authService *auth.Service, worldService *world.Service, characterService *characters.Service, inventoryService *inventory.Service, questService *quests.Service, dungeonService *dungeons.Service, actionName string) {
 	account, ok := requireAccount(w, r, authService)
 	if !ok {
 		return
@@ -1684,7 +2150,7 @@ func handleBuildingAction(w http.ResponseWriter, r *http.Request, authService *a
 		})
 	}
 
-	state, err := buildCharacterState(account, characterService, questService, worldService)
+	state, err := buildCharacterState(account, characterService, questService, dungeonService, worldService)
 	if err != nil {
 		writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to load updated character state")
 		return
@@ -1704,7 +2170,7 @@ func handleBuildingAction(w http.ResponseWriter, r *http.Request, authService *a
 
 func buildingSupportsAction(building world.Building, actionName string) bool {
 	mapping := map[string][]string{
-		"heal":     {"restore_hp_mp"},
+		"heal":     {"restore_hp"},
 		"cleanse":  {"remove_status"},
 		"enhance":  {"enhance_item"},
 		"repair":   {"repair_item"},
@@ -1786,7 +2252,7 @@ func executeAction(account auth.Account, actionType string, actionArgs map[strin
 			})
 		}
 
-		state, err := buildCharacterState(account, characterService, questService, worldService)
+		state, err := buildCharacterState(account, characterService, questService, dungeonService, worldService)
 		if err != nil {
 			return nil, err
 		}
@@ -1851,7 +2317,7 @@ func executeAction(account auth.Account, actionType string, actionArgs map[strin
 		if _, _, _, _, err := characterService.ApplyQuestSubmission(character.CharacterID, quest); err != nil {
 			return nil, err
 		}
-		state, err := buildCharacterState(account, characterService, questService, worldService)
+		state, err := buildCharacterState(account, characterService, questService, dungeonService, worldService)
 		if err != nil {
 			return nil, err
 		}
@@ -1905,6 +2371,7 @@ func executeAction(account auth.Account, actionType string, actionArgs map[strin
 		}
 
 		definition, _ := dungeonService.GetDungeonDefinition(run.DungeonID)
+		_, completedQuests := questService.ProgressDungeonQuests(character, definition.RegionID, limits)
 		_ = characterService.AppendEvents(character.CharacterID,
 			world.WorldEvent{
 				EventID:          fmt.Sprintf("evt_dungeon_enter_%s", run.RunID),
@@ -1936,8 +2403,26 @@ func executeAction(account auth.Account, actionType string, actionArgs map[strin
 				OccurredAt: time.Now().Format(time.RFC3339),
 			},
 		)
+		for _, quest := range completedQuests {
+			_ = characterService.AppendEvents(character.CharacterID, world.WorldEvent{
+				EventID:          fmt.Sprintf("evt_quest_completed_dungeon_%s", quest.QuestID),
+				EventType:        "quest.completed",
+				Visibility:       "public",
+				ActorCharacterID: character.CharacterID,
+				ActorName:        character.Name,
+				RegionID:         definition.RegionID,
+				Summary:          fmt.Sprintf("%s completed %s.", character.Name, quest.Title),
+				Payload: map[string]any{
+					"quest_id":    quest.QuestID,
+					"quest_title": quest.Title,
+					"dungeon_id":  run.DungeonID,
+					"run_id":      run.RunID,
+				},
+				OccurredAt: time.Now().Format(time.RFC3339),
+			})
+		}
 
-		state, err := buildCharacterState(account, characterService, questService, worldService)
+		state, err := buildCharacterState(account, characterService, questService, dungeonService, worldService)
 		if err != nil {
 			return nil, err
 		}
@@ -1960,25 +2445,31 @@ func executeAction(account auth.Account, actionType string, actionArgs map[strin
 			return nil, err
 		}
 
-		run, rewardGold, rating, err := dungeonService.ClaimRunRewards(character.CharacterID, runID, limits)
+		run, claimPackage, err := dungeonService.ClaimRunRewards(character.CharacterID, runID, limits)
 		if err != nil {
 			return nil, err
 		}
 
-		if _, _, _, err := characterService.ApplyDungeonRewardClaim(character.CharacterID, run.RunID, run.DungeonID, rewardGold, rating); err != nil {
+		rewardItemCatalogIDs, err := grantDungeonInventoryRewards(inventoryService, character, claimPackage)
+		if err != nil {
 			return nil, err
 		}
 
-		state, err := buildCharacterState(account, characterService, questService, worldService)
+		if _, _, _, err := characterService.ApplyDungeonRewardClaim(character.CharacterID, run.RunID, run.DungeonID, claimPackage.RewardGold, claimPackage.Rating, rewardItemCatalogIDs, claimPackage.MaterialDrops); err != nil {
+			return nil, err
+		}
+
+		state, err := buildCharacterState(account, characterService, questService, dungeonService, worldService)
 		if err != nil {
 			return nil, err
 		}
 
 		return map[string]any{
 			"action_result": map[string]any{
-				"action_type": "claim_dungeon_rewards",
-				"run_id":      run.RunID,
-				"reward_gold": rewardGold,
+				"action_type":  "claim_dungeon_rewards",
+				"run_id":       run.RunID,
+				"reward_gold":  claimPackage.RewardGold,
+				"reward_items": rewardItemCatalogIDs,
 			},
 			"state": map[string]any{
 				"run":   run,
@@ -2018,7 +2509,15 @@ func executeAction(account auth.Account, actionType string, actionArgs map[strin
 				"supported_actions": building.Actions,
 			},
 		}, nil
-	case "restore_hp_mp", "remove_status", "enhance_item", "sell_item":
+	case "restore_hp":
+		return map[string]any{
+			"action_result": map[string]any{
+				"action_type": "restore_hp",
+				"status":      "success",
+			},
+			"state": map[string]any{},
+		}, nil
+	case "remove_status", "enhance_item", "sell_item":
 		return map[string]any{
 			"action_result": map[string]any{
 				"action_type": actionType,
@@ -2060,4 +2559,26 @@ func executeAction(account auth.Account, actionType string, actionArgs map[strin
 	default:
 		return characterService.ExecuteAction(account, actionType, actionArgs, worldService)
 	}
+}
+
+func grantDungeonInventoryRewards(inventoryService *inventory.Service, character characters.Summary, claimPackage dungeons.ClaimRewardPackage) ([]string, error) {
+	if len(claimPackage.RatingRewards) == 0 {
+		return []string{}, nil
+	}
+
+	grantedCatalogIDs := make([]string, 0, len(claimPackage.RatingRewards))
+	for _, reward := range claimPackage.RatingRewards {
+		catalogID, _ := reward["catalog_id"].(string)
+		catalogID = strings.TrimSpace(catalogID)
+		if catalogID == "" {
+			continue
+		}
+
+		if _, _, err := inventoryService.GrantItemFromCatalog(character, catalogID); err != nil {
+			return nil, err
+		}
+		grantedCatalogIDs = append(grantedCatalogIDs, catalogID)
+	}
+
+	return grantedCatalogIDs, nil
 }

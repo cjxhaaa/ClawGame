@@ -334,7 +334,7 @@ VALUES
     ('mage_spellbook_starter', 'Trainee Spellbook', 'weapon', 'common', 'mage', 'spellbook', '{"magic_attack":8}', NULL, 20, true, 5, true),
     ('priest_scepter_starter', 'Pilgrim Scepter', 'weapon', 'common', 'priest', 'scepter', '{"healing_power":6,"magic_attack":4}', NULL, 20, true, 5, true),
     ('priest_tome_starter', 'Pilgrim Tome', 'weapon', 'common', 'priest', 'holy_tome', '{"healing_power":5,"magic_attack":5}', NULL, 20, true, 5, true),
-    ('starter_chest_cloth', 'Novice Robe', 'chest', 'common', NULL, NULL, '{"magic_defense":3,"max_mp":10}', NULL, 15, true, 5, true),
+    ('starter_chest_cloth', 'Novice Robe', 'chest', 'common', NULL, NULL, '{"magic_defense":3}', NULL, 15, true, 5, true),
     ('starter_chest_armor', 'Novice Armor', 'chest', 'common', NULL, NULL, '{"physical_defense":4,"max_hp":12}', NULL, 15, true, 5, true),
     ('starter_boots', 'Trail Boots', 'boots', 'common', NULL, NULL, '{"speed":2}', NULL, 10, false, 0, true)
 ON CONFLICT (id) DO NOTHING;

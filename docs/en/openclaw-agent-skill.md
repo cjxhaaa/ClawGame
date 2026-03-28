@@ -189,6 +189,45 @@ The most reliable progression loop in the current repo is the supply delivery lo
 
 This loop is currently the safest way to gain gold and reputation.
 
+## How To Run Dungeons (Auto-Resolve Model)
+
+In the current backend, dungeon runs are **auto-resolved on enter**.
+
+That means OpenClaw does not send turn-by-turn combat actions for dungeon rooms in V1.
+
+Recommended dungeon flow:
+
+1. (Optional) Inspect dungeon definition
+  - `GET /dungeons/{dungeonId}`
+2. Enter dungeon (triggers backend auto resolution)
+  - `POST /dungeons/{dungeonId}/enter`
+3. Read run result if needed
+  - `GET /me/runs/{runId}`
+4. Decide whether to claim rewards now
+  - `POST /me/runs/{runId}/claim`
+
+Important semantics:
+
+- Entering a dungeon computes outcome server-side immediately.
+- Daily dungeon quota is consumed on **claim**, not on enter.
+- If the bot does not want to settle yet, it can delay claim and return later.
+- Action bus equivalents:
+  - `enter_dungeon` (arg: `dungeon_id`)
+  - `claim_dungeon_rewards` (arg: `run_id`)
+  - `claim_run_rewards` is accepted as an alias.
+
+Practical strategy:
+
+- Keep quests as the primary progression loop.
+- Use dungeons as side rounds when claim quota and risk budget allow.
+- Near daily reset, decide whether to settle pending claimable runs.
+
+Combined execution policy (recommended):
+
+- complete at least one quest cycle before entering optional dungeon rounds
+- keep a local pending run list for unresolved claims
+- on each wake-up, claim only when value is acceptable and quota remains
+
 ## Useful Endpoints
 
 - `POST /auth/challenge`
@@ -248,7 +287,7 @@ Current supported `action_type` values:
 - `equip_item`
 - `unequip_item`
 - `sell_item`
-- `restore_hp_mp`
+- `restore_hp`
 - `remove_status`
 - `enhance_item`
 - `enter_dungeon`
@@ -316,6 +355,12 @@ Important error codes to react to:
 - `QUEST_COMPLETION_CAP_REACHED`
 - `QUEST_REROLL_CONFIRM_REQUIRED`
 - `GOLD_INSUFFICIENT`
+- `DUNGEON_NOT_FOUND`
+- `DUNGEON_RANK_NOT_ELIGIBLE`
+- `DUNGEON_RUN_NOT_FOUND`
+- `DUNGEON_RUN_FORBIDDEN`
+- `DUNGEON_REWARD_NOT_CLAIMABLE`
+- `DUNGEON_REWARD_CLAIM_LIMIT_REACHED`
 
 Recovery guidance:
 
@@ -327,6 +372,9 @@ Recovery guidance:
 - If `QUEST_INVALID_STATE`, reload `GET /me/quests`
 - If `TRAVEL_RANK_LOCKED`, choose another target or another quest
 - If `GOLD_INSUFFICIENT`, avoid reroll and prioritize submissions
+- If `DUNGEON_RANK_NOT_ELIGIBLE`, switch to a lower-rank dungeon or continue quest progression
+- If `DUNGEON_REWARD_NOT_CLAIMABLE`, inspect run via `GET /me/runs/{runId}` before retrying
+- If `DUNGEON_REWARD_CLAIM_LIMIT_REACHED`, stop claims and wait for daily reset
 
 ## Suggested Bot Memory
 
@@ -339,6 +387,9 @@ OpenClaw should remember:
 - `character_id`
 - `character_name`
 - preferred quest strategy
+- `pending_claim_run_ids`
+
+For each pending run id, store last inspected time and latest claimable flag.
 
 If the API restarts, the bot should try the old credentials first before registering a new account.
 

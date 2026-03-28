@@ -3,6 +3,7 @@ package characters
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -44,7 +45,6 @@ type Summary struct {
 
 type StatsSnapshot struct {
 	MaxHP           int `json:"max_hp"`
-	MaxMP           int `json:"max_mp"`
 	PhysicalAttack  int `json:"physical_attack"`
 	MagicAttack     int `json:"magic_attack"`
 	PhysicalDefense int `json:"physical_defense"`
@@ -88,9 +88,24 @@ type StateView struct {
 	Character    Summary            `json:"character"`
 	Stats        StatsSnapshot      `json:"stats"`
 	Limits       DailyLimits        `json:"limits"`
+	Materials    []MaterialBalance  `json:"materials"`
 	Objectives   []QuestSummary     `json:"objectives"`
+	DungeonDaily DungeonDailyHint   `json:"dungeon_daily"`
 	RecentEvents []world.WorldEvent `json:"recent_events"`
 	ValidActions []ValidAction      `json:"valid_actions"`
+}
+
+type MaterialBalance struct {
+	MaterialKey string `json:"material_key"`
+	Quantity    int    `json:"quantity"`
+}
+
+type DungeonDailyHint struct {
+	HasRemainingQuota  bool     `json:"has_remaining_quota"`
+	RemainingClaims    int      `json:"remaining_claims"`
+	HasClaimableRun    bool     `json:"has_claimable_run"`
+	PendingClaimRunIDs []string `json:"pending_claim_run_ids"`
+	SuggestedAction    string   `json:"suggested_action"`
 }
 
 type TravelResult struct {
@@ -122,6 +137,7 @@ type record struct {
 	stats                StatsSnapshot
 	questCompletionUsed  int
 	dungeonEntryUsed     int
+	materials            map[string]int
 	dailyLimitsResetDate string
 	recentEvents         []world.WorldEvent
 }
@@ -175,6 +191,7 @@ func NewServiceWithRepository(repo Repository) (*Service, error) {
 			stats:                stored.Stats,
 			questCompletionUsed:  stored.QuestCompletionUsed,
 			dungeonEntryUsed:     stored.DungeonEntryUsed,
+			materials:            map[string]int{},
 			dailyLimitsResetDate: strings.TrimSpace(stored.DailyLimitsResetDate),
 			recentEvents:         []world.WorldEvent{},
 		}
@@ -241,6 +258,7 @@ func (s *Service) CreateCharacter(account auth.Account, name, class, weaponStyle
 	entry := record{
 		summary:              summary,
 		stats:                baseStatsByStyle[weaponStyle],
+		materials:            map[string]int{},
 		dailyLimitsResetDate: s.businessDate(),
 		recentEvents:         []world.WorldEvent{s.newEvent(summary, "character.created", "main_city", fmt.Sprintf("%s completed character creation and entered Main City.", name), map[string]any{"class": class, "weapon_style": weaponStyle})},
 	}
@@ -319,7 +337,9 @@ func (s *Service) GetState(account auth.Account, worldService *world.Service) (S
 		Character:    entry.summary,
 		Stats:        entry.stats,
 		Limits:       limits,
+		Materials:    materialBalancesView(entry.materials),
 		Objectives:   []QuestSummary{},
+		DungeonDaily: DungeonDailyHint{HasRemainingQuota: limits.DungeonEntryUsed < limits.DungeonEntryCap, RemainingClaims: max(0, limits.DungeonEntryCap-limits.DungeonEntryUsed), SuggestedAction: "none", PendingClaimRunIDs: []string{}},
 		RecentEvents: recentEvents,
 		ValidActions: validActions,
 	}, nil
@@ -608,7 +628,7 @@ func (s *Service) GrantGold(characterID string, amount int) (Summary, error) {
 	return entry.summary, nil
 }
 
-func (s *Service) ApplyDungeonRewardClaim(characterID, runID, dungeonID string, rewardGold int, rating string) (Summary, DailyLimits, world.WorldEvent, error) {
+func (s *Service) ApplyDungeonRewardClaim(characterID, runID, dungeonID string, rewardGold int, rating string, rewardItemCatalogIDs []string, materialDrops []map[string]any) (Summary, DailyLimits, world.WorldEvent, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -623,14 +643,14 @@ func (s *Service) ApplyDungeonRewardClaim(characterID, runID, dungeonID string, 
 	}
 
 	resetAt := nextDailyReset(s.clock().In(s.loc))
-	limits := LimitsForRank(entry.summary.Rank, resetAt, entry.questCompletionUsed, entry.dungeonEntryUsed)
-	if entry.dungeonEntryUsed >= limits.DungeonEntryCap {
-		return Summary{}, DailyLimits{}, world.WorldEvent{}, ErrDungeonRewardClaimCap
-	}
 
 	if rewardGold > 0 {
 		entry.summary.Gold += rewardGold
 	}
+	if entry.materials == nil {
+		entry.materials = map[string]int{}
+	}
+	applyMaterialDrops(entry.materials, materialDrops)
 	entry.dungeonEntryUsed++
 
 	event := world.WorldEvent{
@@ -642,10 +662,12 @@ func (s *Service) ApplyDungeonRewardClaim(characterID, runID, dungeonID string, 
 		RegionID:         entry.summary.LocationRegionID,
 		Summary:          fmt.Sprintf("%s claimed dungeon rewards from %s.", entry.summary.Name, dungeonID),
 		Payload: map[string]any{
-			"run_id":      runID,
-			"dungeon_id":  dungeonID,
-			"reward_gold": rewardGold,
-			"rating":      rating,
+			"run_id":                  runID,
+			"dungeon_id":              dungeonID,
+			"reward_gold":             rewardGold,
+			"rating":                  rating,
+			"reward_item_catalog_ids": rewardItemCatalogIDs,
+			"material_drops":          materialDrops,
 		},
 		OccurredAt: s.clock().In(s.loc).Format(time.RFC3339),
 	}
@@ -824,6 +846,62 @@ func rankForReputation(reputation int) string {
 	}
 }
 
+func applyMaterialDrops(balance map[string]int, drops []map[string]any) {
+	if balance == nil || len(drops) == 0 {
+		return
+	}
+
+	for _, drop := range drops {
+		key, _ := drop["material_key"].(string)
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+
+		quantity := intFromAny(drop["quantity"])
+		if quantity <= 0 {
+			continue
+		}
+
+		balance[key] += quantity
+	}
+}
+
+func materialBalancesView(balance map[string]int) []MaterialBalance {
+	if len(balance) == 0 {
+		return []MaterialBalance{}
+	}
+
+	items := make([]MaterialBalance, 0, len(balance))
+	for key, quantity := range balance {
+		if quantity <= 0 {
+			continue
+		}
+		items = append(items, MaterialBalance{MaterialKey: key, Quantity: quantity})
+	}
+
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].MaterialKey < items[j].MaterialKey
+	})
+
+	return items
+}
+
+func intFromAny(value any) int {
+	switch cast := value.(type) {
+	case int:
+		return cast
+	case int32:
+		return int(cast)
+	case int64:
+		return int(cast)
+	case float64:
+		return int(cast)
+	default:
+		return 0
+	}
+}
+
 func rankAllows(currentRank, requiredRank string) bool {
 	return rankOrder[currentRank] >= rankOrder[requiredRank]
 }
@@ -880,7 +958,6 @@ var allowedWeaponStyles = map[string][]string{
 var baseStatsByStyle = map[string]StatsSnapshot{
 	"sword_shield": {
 		MaxHP:           132,
-		MaxMP:           34,
 		PhysicalAttack:  24,
 		MagicAttack:     6,
 		PhysicalDefense: 18,
@@ -890,7 +967,6 @@ var baseStatsByStyle = map[string]StatsSnapshot{
 	},
 	"great_axe": {
 		MaxHP:           120,
-		MaxMP:           28,
 		PhysicalAttack:  30,
 		MagicAttack:     4,
 		PhysicalDefense: 14,
@@ -900,7 +976,6 @@ var baseStatsByStyle = map[string]StatsSnapshot{
 	},
 	"staff": {
 		MaxHP:           92,
-		MaxMP:           120,
 		PhysicalAttack:  12,
 		MagicAttack:     34,
 		PhysicalDefense: 9,
@@ -910,7 +985,6 @@ var baseStatsByStyle = map[string]StatsSnapshot{
 	},
 	"spellbook": {
 		MaxHP:           88,
-		MaxMP:           126,
 		PhysicalAttack:  10,
 		MagicAttack:     36,
 		PhysicalDefense: 8,
@@ -920,7 +994,6 @@ var baseStatsByStyle = map[string]StatsSnapshot{
 	},
 	"scepter": {
 		MaxHP:           104,
-		MaxMP:           112,
 		PhysicalAttack:  10,
 		MagicAttack:     26,
 		PhysicalDefense: 11,
@@ -930,7 +1003,6 @@ var baseStatsByStyle = map[string]StatsSnapshot{
 	},
 	"holy_tome": {
 		MaxHP:           98,
-		MaxMP:           118,
 		PhysicalAttack:  8,
 		MagicAttack:     22,
 		PhysicalDefense: 10,

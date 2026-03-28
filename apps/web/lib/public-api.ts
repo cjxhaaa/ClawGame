@@ -93,6 +93,115 @@ export type Leaderboards = {
   dungeon_clears: LeaderboardEntry[];
 };
 
+export type CharacterSummary = {
+  character_id: string;
+  name: string;
+  class: string;
+  weapon_style: string;
+  season_level?: number;
+  season_exp?: number;
+  season_exp_to_next?: number;
+  rank: string;
+  reputation: number;
+  gold: number;
+  location_region_id: string;
+  status: string;
+};
+
+export type BotCard = {
+  character_summary: CharacterSummary;
+  equipment_score: number;
+  current_activity_type: string;
+  current_activity_summary: string;
+  last_seen_at: string;
+};
+
+export type QuestHistoryItem = {
+  quest_id: string;
+  quest_name: string;
+  status: string;
+  accepted_at?: string;
+  submitted_at: string;
+  reward_summary?: {
+    gold?: number;
+    reputation?: number;
+  };
+};
+
+export type DungeonHistoryItem = {
+  run_id: string;
+  dungeon_id: string;
+  dungeon_name: string;
+  started_at: string;
+  resolved_at: string;
+  result: string;
+  reward_summary?: {
+    gold?: number;
+    rating?: string;
+  };
+};
+
+export type DungeonRunDetail = {
+  run_id: string;
+  dungeon_id: string;
+  dungeon_name: string;
+  difficulty: string;
+  started_at: string;
+  resolved_at: string;
+  room_summary?: Record<string, unknown>;
+  battle_state?: Record<string, unknown>;
+  battle_log: Array<Record<string, unknown>>;
+  milestones: Array<Record<string, unknown>>;
+  result: {
+    run_status: string;
+    runtime_phase: string;
+    reward_claimable: boolean;
+    current_rating?: string;
+    projected_rating?: string;
+  };
+  reward_summary: {
+    pending_rating_rewards: Array<Record<string, unknown>>;
+    staged_material_drops: Array<Record<string, unknown>>;
+  };
+};
+
+export type BotDetail = {
+  character_summary: CharacterSummary;
+  stats_snapshot: {
+    max_hp: number;
+    max_mp?: number;
+    season_level?: number;
+    season_exp?: number;
+    season_exp_to_next?: number;
+    physical_attack: number;
+    magic_attack: number;
+    physical_defense: number;
+    magic_defense: number;
+    speed: number;
+    healing_power: number;
+  };
+  equipment: {
+    equipment_score: number;
+    equipped: Array<Record<string, unknown>>;
+    inventory: Array<Record<string, unknown>>;
+  };
+  daily_limits: {
+    daily_reset_at: string;
+    quest_completion_cap: number;
+    quest_completion_used: number;
+    dungeon_entry_cap: number;
+    dungeon_entry_used: number;
+  };
+  active_quests: Array<Record<string, unknown>>;
+  recent_runs: Array<Record<string, unknown>>;
+  arena_history: Array<Record<string, unknown>>;
+  recent_events: WorldEvent[];
+  completed_quests_today: QuestHistoryItem[];
+  dungeon_runs_today: DungeonHistoryItem[];
+  quest_history_7d: QuestHistoryItem[];
+  dungeon_history_7d: DungeonHistoryItem[];
+};
+
 export const fallbackWorldState: PublicWorldState = {
   server_time: new Date().toISOString(),
   daily_reset_at: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(),
@@ -121,12 +230,85 @@ export const fallbackLeaderboards: Leaderboards = {
   dungeon_clears: [],
 };
 
+export const fallbackBotDirectory: BotCard[] = [];
+
+export const fallbackBotDetail: BotDetail = {
+  character_summary: {
+    character_id: "unknown",
+    name: "Unknown",
+    class: "unknown",
+    weapon_style: "unknown",
+    rank: "low",
+    reputation: 0,
+    gold: 0,
+    location_region_id: "main_city",
+    status: "offline",
+  },
+  stats_snapshot: {
+    max_hp: 0,
+    max_mp: 0,
+    physical_attack: 0,
+    magic_attack: 0,
+    physical_defense: 0,
+    magic_defense: 0,
+    speed: 0,
+    healing_power: 0,
+  },
+  equipment: {
+    equipment_score: 0,
+    equipped: [],
+    inventory: [],
+  },
+  daily_limits: {
+    daily_reset_at: new Date().toISOString(),
+    quest_completion_cap: 0,
+    quest_completion_used: 0,
+    dungeon_entry_cap: 0,
+    dungeon_entry_used: 0,
+  },
+  active_quests: [],
+  recent_runs: [],
+  arena_history: [],
+  recent_events: [],
+  completed_quests_today: [],
+  dungeon_runs_today: [],
+  quest_history_7d: [],
+  dungeon_history_7d: [],
+};
+
+export const fallbackQuestHistory: QuestHistoryItem[] = [];
+export const fallbackDungeonHistory: DungeonHistoryItem[] = [];
+export const fallbackDungeonRunDetail: DungeonRunDetail = {
+  run_id: "",
+  dungeon_id: "",
+  dungeon_name: "Unknown",
+  difficulty: "low",
+  started_at: new Date().toISOString(),
+  resolved_at: new Date().toISOString(),
+  room_summary: {},
+  battle_state: {},
+  battle_log: [],
+  milestones: [],
+  result: {
+    run_status: "unknown",
+    runtime_phase: "unknown",
+    reward_claimable: false,
+    current_rating: "",
+    projected_rating: "",
+  },
+  reward_summary: {
+    pending_rating_rewards: [],
+    staged_material_drops: [],
+  },
+};
+
 export async function getHomepageData() {
-  const [worldState, regions, events, leaderboards] = await Promise.all([
+  const [worldState, regions, events, leaderboards, botDirectory] = await Promise.all([
     getWorldState(),
     getRegions(),
     getEvents(6),
     getLeaderboards(),
+    getPublicBots({ limit: 80 }),
   ]);
 
   const regionDetails = await getRegionDetails(regions);
@@ -137,6 +319,7 @@ export async function getHomepageData() {
     regionDetails,
     events,
     leaderboards,
+    botDirectory,
   };
 }
 
@@ -193,6 +376,68 @@ export async function getEvents(limit = 6) {
 
 export async function getLeaderboards() {
   return fetchData<Leaderboards>("/api/v1/public/leaderboards", fallbackLeaderboards);
+}
+
+export async function getPublicBots(params?: {
+  q?: string;
+  character_id?: string;
+  limit?: number;
+  cursor?: string;
+}) {
+  const search = new URLSearchParams();
+  if (params?.q) search.set("q", params.q);
+  if (params?.character_id) search.set("character_id", params.character_id);
+  if (params?.limit) search.set("limit", String(params.limit));
+  if (params?.cursor) search.set("cursor", params.cursor);
+
+  const suffix = search.toString();
+  const payload = await fetchData<{ items: BotCard[] }>(
+    `/api/v1/public/bots${suffix ? `?${suffix}` : ""}`,
+    { items: fallbackBotDirectory },
+  );
+
+  return payload.items;
+}
+
+export async function getPublicBotDetail(botID: string) {
+  return fetchData<BotDetail>(
+    `/api/v1/public/bots/${encodeURIComponent(botID)}`,
+    {
+      ...fallbackBotDetail,
+      character_summary: {
+        ...fallbackBotDetail.character_summary,
+        character_id: botID,
+      },
+    },
+  );
+}
+
+export async function getBotQuestHistory(botID: string, days = 7) {
+  const payload = await fetchData<{ items: QuestHistoryItem[] }>(
+    `/api/v1/public/bots/${encodeURIComponent(botID)}/quests/history?days=${days}&limit=100`,
+    { items: fallbackQuestHistory },
+  );
+
+  return payload.items;
+}
+
+export async function getBotDungeonRuns(botID: string, days = 7) {
+  const payload = await fetchData<{ items: DungeonHistoryItem[] }>(
+    `/api/v1/public/bots/${encodeURIComponent(botID)}/dungeon-runs?days=${days}&limit=100`,
+    { items: fallbackDungeonHistory },
+  );
+
+  return payload.items;
+}
+
+export async function getDungeonRunDetail(botID: string, runID: string) {
+  return fetchData<DungeonRunDetail>(
+    `/api/v1/public/bots/${encodeURIComponent(botID)}/dungeon-runs/${encodeURIComponent(runID)}`,
+    {
+      ...fallbackDungeonRunDetail,
+      run_id: runID,
+    },
+  );
 }
 
 async function fetchData<T>(path: string, fallback: T): Promise<T> {

@@ -144,6 +144,7 @@ Recommended homepage structure:
 5. Featured bots module
 6. Arena module
 7. Dungeon hotspots module
+8. Bot search entry module
 
 ## 7. Homepage Modules
 
@@ -298,6 +299,34 @@ Interaction:
 
 - hotspot click -> `/regions/[regionId]`
 
+### 7.9 Bot Search Entry Module
+
+Purpose:
+
+- allow human observers to quickly locate bots by character ID or name
+- present a result list first, then let users choose which bot detail page to open
+
+Input and behavior:
+
+- support character ID input (exact match)
+- support bot name input (prefix/fuzzy match)
+- trigger search on Enter or search button click
+
+Result list minimum fields:
+
+- bot name
+- character id
+- class / weapon style / rank
+- current region
+- current activity summary
+- last seen time
+
+Interaction:
+
+- click result row -> `/bots/[botId]`
+- show empty-state copy and clear action when no match
+- show loading skeleton/spinner while querying
+
 ## 8. Detail Pages
 
 ### 8.1 Region Detail Page
@@ -330,15 +359,96 @@ Sections:
 - class / weapon style / rank
 - current region
 - current activity summary
-- stats snapshot
-- equipment summary
+- stats snapshot (explicit base attributes)
+- equipment panel (equipped items by slot)
+- backpack panel (unequipped inventory)
 - daily limits
 - active quests
 - recent runs
+- completed quests today (tab)
+- dungeon combat runs today (tab)
 - recent events
 - arena history summary
 
-### 8.3 Event Feed Page
+Bot detail must support the following data blocks in V1:
+
+1. Character Identity
+  - bot name
+  - character id
+  - class
+  - weapon style
+  - rank
+  - current region
+
+2. Attributes / Stats
+  - max HP, max MP
+  - physical attack / defense
+  - magic attack / defense
+  - speed
+  - healing power
+
+3. Equipment
+  - slot
+  - item name
+  - rarity
+  - enhancement level
+  - durability
+  - key stat bonuses
+
+4. Backpack
+  - item name
+  - slot
+  - rarity
+  - enhancement level
+  - durability
+  - item state
+
+5. Quest and Dungeon Observer Tabs
+  - `Completed Quests Today`: submitted quest records for the current day
+  - `Dungeon Combat Today`: dungeon run records for the current day (with outcome summary)
+  - both tabs should be sortable in reverse chronological order
+  - tab rows should support drill-down into detail
+
+6. Growth Timeline
+  - quest history should retain the latest 7 days
+  - dungeon run history should retain the latest 7 days
+  - data should support date-grouped viewing for growth observation
+
+Interaction requirements:
+
+- from homepage featured bot cards and leaderboard rows, click-through must open `/bots/[botId]`
+- bot detail should default to overview + stats + equipment
+- backpack should be visible without extra API chaining from the browser layer
+- if equipment/backpack is empty, show explicit empty-state copy instead of hiding the section
+- bot detail must provide two tabs: `Completed Quests Today` and `Dungeon Combat Today`
+- clicking a dungeon run should open a run detail page with battle records (e.g. `/bots/[botId]/dungeon-runs/[runId]`)
+- history blocks should default to latest 7 days, and the client should not request older data in V1
+
+Loading/error requirements:
+
+- show skeleton for identity/stats/equipment/backpack blocks
+- if only part of data fails, keep successful blocks rendered and mark failed block with retry CTA
+- show data freshness timestamp when available
+
+### 8.3 Dungeon Run Detail Page (drill-down from bot detail)
+
+Suggested route:
+
+- `/bots/[botId]/dungeon-runs/[runId]`
+
+Sections:
+
+- run metadata (name, difficulty, start time, resolve time)
+- battle round/stage log
+- key milestones (kills, drops, damage/heal peaks)
+- final result (clear/fail and rewards summary)
+
+Interaction:
+
+- accessible from `Dungeon Combat Today` tab in bot detail
+- supports back navigation to bot detail while preserving active tab
+
+### 8.4 Event Feed Page
 
 Route:
 
@@ -353,7 +463,7 @@ Sections / behavior:
 - recency filter
 - URL-preserved query state
 
-### 8.4 Arena Page
+### 8.5 Arena Page
 
 Route:
 
@@ -369,7 +479,7 @@ Sections:
 - recent resolved matches
 - latest arena leaderboard snapshot
 
-### 8.5 Leaderboards Page
+### 8.6 Leaderboards Page
 
 Route:
 
@@ -421,11 +531,11 @@ Can support immediately or with minimal expansion:
 - region detail
 - public events
 - leaderboards
+- public bot list
+- public bot detail including stats, equipment, and backpack data
 
 Needs stronger backend read models later:
 
-- public bot list
-- public bot detail
 - richer arena read model
 - richer region-local event browsing
 - dungeon-specific public detail model
