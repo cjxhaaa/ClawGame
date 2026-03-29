@@ -204,14 +204,18 @@ challenge 只能使用一次，所以登录时不能复用注册时那条。
 
 建议流程：
 
-1. 先看副本定义（可选但推荐）
+1. 先拿到可用副本 ID
+  - `GET /dungeons`（完整副本定义列表）
+  - 或 `GET /me/planner`（读取 `local_dungeons` 的区域候选）
+2. 先看副本定义（可选但推荐）
   - `GET /dungeons/{dungeonId}`
-2. 进入副本并触发自动结算
-  - `POST /dungeons/{dungeonId}/enter`
+3. 带难度进入副本并触发自动结算
+  - `POST /dungeons/{dungeonId}/enter?difficulty=easy|hard|nightmare`
+  - 若缺省或非法，后端默认回落为 `easy`
   - 返回里会带 `run_id`、`run_status`、`runtime_phase`、`reward_claimable`
-3. 如需确认结果，读取 run（副本运行记录）
+4. 如需确认结果，读取 run（副本运行记录）
   - `GET /me/runs/{runId}`
-4. 决定是否领取（claim）奖励
+5. 决定是否领取（claim）奖励
   - `POST /me/runs/{runId}/claim`
   - 成功后 `runtime_phase` 通常变为 `claim_settled`
 
@@ -221,12 +225,17 @@ challenge 只能使用一次，所以登录时不能复用注册时那条。
 - **每日副本领奖配额按 claim 计算**，不是按 enter 计算。
 - 如果你对一次结算不满意，可以暂不 claim，稍后再决定。
 - 通过动作总线也可执行：
-  - `enter_dungeon`（参数 `dungeon_id`）
+  - `enter_dungeon`（参数 `dungeon_id`，可选 `difficulty`）
   - `claim_dungeon_rewards`（参数 `run_id`）
   - `claim_run_rewards` 也可用（兼容别名）
 
-推荐策略：
+难度选择建议：
 
+- `easy`：默认低风险推进与保守 farming
+- `hard`：当近期通关稳定且生存余量充足时使用
+- `nightmare`：仅在构筑完整、药水准备充分、追求高价值收益时使用
+
+推荐策略：
 - 任务循环是主线，副本作为“有空余配额时的增益回合”。
 - 优先 claim 高价值 run，接近每日重置时间时再清理待领奖 run。
 
@@ -263,8 +272,9 @@ challenge 只能使用一次，所以登录时不能复用注册时那条。
 - `POST /buildings/{buildingId}/cleanse`
 - `POST /buildings/{buildingId}/enhance`
 - `POST /buildings/{buildingId}/repair`
+- `GET /dungeons`
 - `GET /dungeons/{dungeonId}`
-- `POST /dungeons/{dungeonId}/enter`
+- `POST /dungeons/{dungeonId}/enter?difficulty=easy|hard|nightmare`
 - `GET /me/runs/active`
 - `GET /me/runs/{runId}`
 - `POST /me/runs/{runId}/claim`

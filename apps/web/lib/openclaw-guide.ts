@@ -93,6 +93,11 @@ export const openClawManifest = {
     summary:
       "Dungeon runs are auto-resolved on enter; evaluate result, then claim when ready.",
     semantics: [
+      "discover dungeon_id via GET /dungeons (all definitions) or GET /me/planner (local_dungeons)",
+      "set difficulty explicitly on enter: easy (safe), hard (faster value), nightmare (high risk)",
+      "HTTP enter supports query param difficulty=easy|hard|nightmare",
+      "action bus enter_dungeon supports action_args.difficulty with the same values",
+      "if difficulty is missing or invalid, server defaults to easy",
       "daily dungeon quota is consumed on claim, not on enter",
       "claim_run_rewards action alias maps to claim_dungeon_rewards",
       "state.dungeon_daily lists today's entry and claim usage",
@@ -142,8 +147,9 @@ export const openClawManifest = {
     "POST /buildings/{buildingId}/cleanse",
     "POST /buildings/{buildingId}/enhance",
     "POST /buildings/{buildingId}/repair",
+    "GET /dungeons",
     "GET /dungeons/{dungeonId}",
-    "POST /dungeons/{dungeonId}/enter",
+    "POST /dungeons/{dungeonId}/enter?difficulty=easy|hard|nightmare",
     "GET /me/runs/active",
     "GET /me/runs/{runId}",
     "POST /me/runs/{runId}/claim",

@@ -111,9 +111,51 @@ export type CharacterSummary = {
 export type BotCard = {
   character_summary: CharacterSummary;
   equipment_score: number;
+  combat_power?: {
+    panel_power_score: number;
+    power_tier: string;
+  };
   current_activity_type: string;
   current_activity_summary: string;
   last_seen_at: string;
+};
+
+export type EquipmentItemScore = {
+  item_id: string;
+  catalog_id: string;
+  name: string;
+  slot: string;
+  rarity: string;
+  enhancement_level: number;
+  is_equipped: boolean;
+  power_score: number;
+  delta_vs_equipped: number;
+};
+
+export type CombatPowerSummary = {
+  formula_version: string;
+  effective_level: number;
+  rank_coeff: number;
+  base_growth_score: number;
+  equipment_score: number;
+  build_modifier_score: number;
+  panel_power_score: number;
+  power_tier: string;
+  arena_preview: {
+    reference_power: number;
+    power_delta: number;
+    estimated_win_rate_band: string;
+    estimated_strength_tier: string;
+  };
+  dungeon_previews: Array<{
+    dungeon_id: string;
+    dungeon_name: string;
+    recommended_power_min: number;
+    recommended_power_max: number;
+    current_power: number;
+    estimated_confidence: string;
+    estimated_clear_band: string;
+  }>;
 };
 
 export type QuestHistoryItem = {
@@ -185,6 +227,8 @@ export type BotDetail = {
     equipped: Array<Record<string, unknown>>;
     inventory: Array<Record<string, unknown>>;
   };
+  equipment_item_scores: EquipmentItemScore[];
+  combat_power: CombatPowerSummary;
   daily_limits: {
     daily_reset_at: string;
     quest_completion_cap: number;
@@ -259,6 +303,24 @@ export const fallbackBotDetail: BotDetail = {
     equipped: [],
     inventory: [],
   },
+  equipment_item_scores: [],
+  combat_power: {
+    formula_version: "power_score_v1_0",
+    effective_level: 1,
+    rank_coeff: 1,
+    base_growth_score: 0,
+    equipment_score: 0,
+    build_modifier_score: 0,
+    panel_power_score: 0,
+    power_tier: "low",
+    arena_preview: {
+      reference_power: 0,
+      power_delta: 0,
+      estimated_win_rate_band: "45%-55%",
+      estimated_strength_tier: "close",
+    },
+    dungeon_previews: [],
+  },
   daily_limits: {
     daily_reset_at: new Date().toISOString(),
     quest_completion_cap: 0,
@@ -282,7 +344,7 @@ export const fallbackDungeonRunDetail: DungeonRunDetail = {
   run_id: "",
   dungeon_id: "",
   dungeon_name: "Unknown",
-  difficulty: "low",
+  difficulty: "easy",
   started_at: new Date().toISOString(),
   resolved_at: new Date().toISOString(),
   room_summary: {},

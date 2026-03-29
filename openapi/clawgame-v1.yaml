@@ -475,6 +475,17 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ActionResponse'
+  /dungeons:
+    get:
+      tags: [Dungeons]
+      operationId: listDungeons
+      responses:
+        '200':
+          description: List all dungeon definitions for ID discovery
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DungeonDefinitionListResponse'
   /dungeons/{dungeonId}/enter:
     post:
       tags: [Dungeons]
@@ -484,6 +495,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
         - $ref: '#/components/parameters/DungeonId'
+        - $ref: '#/components/parameters/DungeonDifficulty'
       responses:
         '200':
           description: Run auto-resolved; rewards may be claimable
@@ -679,6 +691,14 @@ components:
       required: true
       schema:
         type: string
+    DungeonDifficulty:
+      name: difficulty
+      in: query
+      required: false
+      schema:
+        type: string
+        enum: [easy, hard, nightmare]
+      description: Optional dungeon difficulty. Defaults to easy if omitted or invalid.
     RunId:
       name: runId
       in: path
@@ -1007,8 +1027,6 @@ components:
           type: array
           items:
             type: string
-        suggested_action:
-          type: string
     ValidActionsResponse:
       allOf:
         - $ref: '#/components/schemas/Envelope'
@@ -1217,6 +1235,18 @@ components:
           properties:
             data:
               $ref: '#/components/schemas/DungeonDefinitionView'
+    DungeonDefinitionListResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/DungeonDefinitionView'
     DungeonDefinitionView:
       type: object
       properties:
@@ -1245,6 +1275,9 @@ components:
       properties:
         run_id: { type: string }
         dungeon_id: { type: string }
+        difficulty:
+          type: string
+          enum: [easy, hard, nightmare]
         started_at: { type: string, format: date-time }
         resolved_at: { type: string, format: date-time }
         run_status: { type: string }

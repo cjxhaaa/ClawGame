@@ -181,9 +181,10 @@ CREATE TABLE IF NOT EXISTS dungeon_definitions (
     name text NOT NULL,
     min_rank text NOT NULL,
     region_id text NOT NULL REFERENCES regions(id),
-    encounter_count integer NOT NULL,
-    boss_encounter_key text NOT NULL,
-    reward_table_json jsonb NOT NULL,
+    room_count integer NOT NULL,
+    boss_room_index integer NOT NULL,
+    rating_reward_profile_id text NOT NULL DEFAULT '',
+    room_config_json jsonb NOT NULL DEFAULT '{}',
     is_active boolean NOT NULL DEFAULT true
 );
 
@@ -192,8 +193,13 @@ CREATE TABLE IF NOT EXISTS dungeon_runs (
     character_id text NOT NULL REFERENCES characters(id),
     dungeon_id text NOT NULL REFERENCES dungeon_definitions(id),
     status text NOT NULL,
-    encounter_index integer NOT NULL DEFAULT 0,
+    runtime_phase text NOT NULL DEFAULT 'queued',
+    current_room_index integer NOT NULL DEFAULT 1,
+    highest_room_cleared integer NOT NULL DEFAULT 0,
+    current_rating text,
     seed bigint NOT NULL,
+    party_snapshot_json jsonb NOT NULL DEFAULT '{}',
+    run_summary_json jsonb NOT NULL DEFAULT '{}',
     started_at timestamptz NOT NULL,
     finished_at timestamptz,
     last_action_at timestamptz NOT NULL
@@ -204,6 +210,7 @@ CREATE INDEX IF NOT EXISTS idx_dungeon_runs_character_status ON dungeon_runs(cha
 
 CREATE TABLE IF NOT EXISTS dungeon_run_states (
     run_id text PRIMARY KEY REFERENCES dungeon_runs(id),
+    state_version integer NOT NULL DEFAULT 1,
     state_json jsonb NOT NULL,
     updated_at timestamptz NOT NULL
 );

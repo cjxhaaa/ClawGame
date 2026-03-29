@@ -2,93 +2,103 @@
 
 ## 1. Goal
 
-This document converts the dungeon, monster, difficulty, combat, and loot specs into table-oriented structures that can be implemented directly.
+This document defines the data structures for the multi-enemy dungeon system, ensuring the following capabilities are configurable:
 
-Goals:
+- multi-enemy compositions per room
+- normal / elite / boss monster tiering
+- easy / hard / nightmare three-tier difficulty
+- boss only in the final room
 
-- define clean dungeon system tables
-- keep monsters and wave layouts data-driven
-- make an escalating run of up to `6` rooms fully data-driven
-- control rating-based gear rewards and monster-kill material drops from tables rather than code branches
+## 2. Data Layers
 
-## 2. Recommended Layers
-
-The dungeon system should be split into:
+Split into seven layers:
 
 1. dungeon definition layer
-2. room config layer
-3. monster template layer
-4. room spawn layer
-5. boss phase and script layer
-6. reward layer
+2. difficulty profile layer
+3. room config layer
+4. monster template layer
+5. room wave layer
+6. boss phase script layer
+7. reward and drop layer
 
 ## 3. Core Table List
 
-Recommended tables:
-
 - `dungeon_definitions`
+- `dungeon_difficulty_profiles`
 - `dungeon_room_configs`
 - `dungeon_monster_templates`
 - `dungeon_monster_skills`
-- `dungeon_rooms`
-- `dungeon_room_monsters`
+- `dungeon_room_waves`
+- `dungeon_wave_slots`
 - `dungeon_boss_phases`
 - `dungeon_boss_phase_actions`
 - `dungeon_rating_reward_tables`
-- `dungeon_rating_reward_entries`
 - `monster_material_drop_tables`
-- `monster_material_drop_entries`
 
-## 4. `dungeon_definitions`
+## 4. dungeon_definitions
 
-Suggested fields:
+Defines the dungeon itself.
 
 | Field | Type | Notes |
 | --- | --- | --- |
 | `id` | text | dungeon ID |
+| `name` | text | display name |
 | `region_id` | text | attached region |
-| `name` | text | public name |
-| `public_name_zh` | text | Chinese display name |
-| `tier` | text | `T1-T5` |
-| `recommended_level_min` | int | recommended minimum |
-| `recommended_level_max` | int | recommended maximum |
-| `entry_rank_requirement` | text | rank gate |
-| `party_size_min` | int | minimum party size |
-| `party_size_max` | int | maximum party size, currently `4` |
-| `room_count` | int | current max is `6` |
-| `round_limit` | int | per-room round cap, currently `10` |
-| `boss_monster_id` | text | main boss template |
-| `is_active` | bool | enabled flag |
+| `room_count` | int | fixed `6` |
+| `boss_room_index` | int | fixed `6` |
+| `min_rank` | text | minimum character rank |
+| `recommended_level_min` | int | recommended minimum level |
+| `recommended_level_max` | int | recommended maximum level |
+| `is_novice` | bool | novice dungeon flag |
 
-## 5. `dungeon_room_configs`
+## 5. dungeon_difficulty_profiles
 
-Suggested fields:
+Defines global multipliers for each of the three difficulty tiers.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | text | profile ID |
+| `dungeon_id` | text | owning dungeon |
+| `difficulty` | text | `easy` / `hard` / `nightmare` |
+| `hp_multiplier` | numeric | global HP multiplier |
+| `damage_multiplier` | numeric | global damage multiplier |
+| `defense_multiplier` | numeric | global defense multiplier |
+| `speed_multiplier` | numeric | global speed multiplier |
+| `elite_spawn_bias` | numeric | elite appearance probability bias |
+| `mechanic_intensity` | text | `low` / `mid` / `high` |
+
+## 6. dungeon_room_configs
+
+Defines the pressure target for each room at each difficulty.
 
 | Field | Type | Notes |
 | --- | --- | --- |
 | `id` | text | room config ID |
 | `dungeon_id` | text | owning dungeon |
-| `room_index` | int | room number, `1-6` |
-| `hp_multiplier` | numeric | monster HP multiplier |
-| `damage_multiplier` | numeric | damage multiplier |
-| `heal_shield_multiplier` | numeric | healing/shield multiplier |
-| `ai_complexity` | text | `basic` / `medium` / `high` |
-| `extra_mechanic_flag` | bool | extra mechanic enabled |
-| `rating_if_failed_here` | text | default rating if the run ends here |
-| `timeout_consumes_entry` | bool | currently `false` |
+| `difficulty` | text | difficulty tier |
+| `room_index` | int | room number `1-6` |
+| `room_type` | text | `normal` / `elite` / `boss` |
+| `target_monster_count_min` | int | minimum monster count |
+| `target_monster_count_max` | int | maximum monster count |
+| `must_have_elite` | bool | whether elite is required |
+| `allow_boss` | bool | only `true` when `room_index = 6` |
+| `rating_if_failed_here` | text | rating if run ends here |
 
-## 6. `dungeon_monster_templates`
+Constraint:
 
-Suggested fields:
+- `allow_boss = true` is only valid when `room_index = 6`
+
+## 7. dungeon_monster_templates
+
+Defines monster templates.
 
 | Field | Type | Notes |
 | --- | --- | --- |
 | `id` | text | monster ID |
 | `dungeon_id` | text | owning dungeon |
-| `name` | text | monster name |
-| `public_name_zh` | text | Chinese display |
-| `monster_role` | text | bruiser/tank/caster/etc |
-| `monster_class` | text | normal / elite / boss / summon |
+| `name` | text | name |
+| `monster_tier` | text | `normal` / `elite` / `boss` |
+| `monster_role` | text | `bruiser` / `caster` / `tank` / `controller` / `assassin` / `summoner` |
 | `base_hp` | int | base HP |
 | `base_physical_attack` | int | base physical attack |
 | `base_magic_attack` | int | base magic attack |
@@ -96,214 +106,136 @@ Suggested fields:
 | `base_magic_defense` | int | base magic defense |
 | `base_speed` | int | base speed |
 | `base_healing_power` | int | base healing power |
-| `ai_profile` | text | AI profile |
-| `flavor_text` | text | short flavor |
-| `is_boss` | bool | boss flag |
+| `ai_profile` | text | AI profile ID |
 
-## 7. `dungeon_monster_skills`
-
-Suggested fields:
+## 8. dungeon_monster_skills
 
 | Field | Type | Notes |
 | --- | --- | --- |
 | `id` | text | skill ID |
-| `monster_id` | text | owner monster |
+| `monster_id` | text | owning monster |
 | `name` | text | skill name |
-| `skill_tier` | text | normal / advanced / ultimate |
-| `action_type` | text | attack/buff/debuff/heal/etc |
-| `target_type` | text | single/all/random/etc |
-| `damage_type` | text | physical/magic/poison/etc |
+| `skill_tier` | text | `normal` / `advanced` / `ultimate` |
+| `action_type` | text | attack / buff / debuff / heal / summon |
+| `target_type` | text | target rule |
+| `damage_type` | text | physical / magic / poison / etc |
 | `cooldown_rounds` | int | cooldown |
 | `skill_power` | int | base power |
 | `atk_ratio` | numeric | attack ratio |
-| `def_ratio` | numeric | defense ratio |
-| `heal_ratio` | numeric | heal ratio |
-| `shield_ratio` | numeric | shield ratio |
-| `status_payload_json` | jsonb | statuses |
-| `priority_weight` | int | AI weight |
+| `status_payload_json` | jsonb | applied statuses |
+| `priority_weight` | int | AI priority weight |
 | `condition_json` | jsonb | trigger conditions |
 
-## 8. `dungeon_rooms`
+## 9. dungeon_room_waves
 
-Suggested fields:
+Defines the waves for each room. V1 starts with single-wave rooms; can expand later.
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `id` | text | room ID |
+| `id` | text | wave ID |
 | `dungeon_id` | text | owning dungeon |
+| `difficulty` | text | difficulty tier |
 | `room_index` | int | room number |
-| `room_type` | text | normal / elite / boss / event |
-| `spawn_rule` | text | spawn mode |
-| `rating_on_clear` | text | base rating after clearing the room |
-| `notes` | text | encounter note |
+| `wave_index` | int | wave number |
+| `is_boss_wave` | bool | whether this is a boss wave |
 
-## 9. `dungeon_room_monsters`
+## 10. dungeon_wave_slots
 
-Suggested fields:
+Defines the specific monster slots within a wave.
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `id` | text | row ID |
-| `room_id` | text | owning room |
-| `monster_id` | text | monster template |
-| `slot_index` | int | slot |
+| `id` | text | slot ID |
+| `wave_id` | text | owning wave |
+| `slot_index` | int | slot position |
+| `monster_id` | text | monster template ID |
 | `count` | int | quantity |
-| `is_elite` | bool | elite flag |
-| `spawn_phase` | text | opening / summoned |
+| `spawn_timing` | text | `start` / `round_2` / `phase_2` |
 
-## 10. `dungeon_boss_phases`
+Constraints:
 
-Suggested fields:
+- when `room_index < 6`, `monster_tier = boss` is forbidden
+- when `room_index = 6`, at least 1 slot must have `monster_tier = boss`
+
+## 11. dungeon_boss_phases
+
+Defines boss phases.
 
 | Field | Type | Notes |
 | --- | --- | --- |
 | `id` | text | phase ID |
 | `dungeon_id` | text | owning dungeon |
-| `boss_monster_id` | text | boss |
-| `room_index` | int | owning room |
+| `difficulty` | text | difficulty tier |
+| `boss_monster_id` | text | boss monster ID |
 | `phase_index` | int | phase number |
-| `trigger_type` | text | hp / round / summon trigger |
-| `trigger_value` | numeric | trigger value |
+| `trigger_type` | text | `hp_threshold` / `round_threshold` |
+| `trigger_value` | numeric | threshold value |
 | `phase_name` | text | phase label |
-| `phase_summary` | text | phase summary |
 
-## 11. `dungeon_boss_phase_actions`
+## 12. dungeon_boss_phase_actions
 
-Suggested fields:
+Defines phase action scripts.
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `id` | text | action row |
+| `id` | text | action ID |
 | `phase_id` | text | owning phase |
-| `round_offset` | int | rounds since phase start |
-| `action_kind` | text | cast/summon/buff/field effect |
-| `skill_id` | text | linked skill |
-| `target_rule` | text | target rule |
-| `payload_json` | jsonb | extra parameters |
+| `round_offset` | int | rounds after phase start |
+| `action_kind` | text | `cast_skill` / `summon` / `field_effect` |
+| `skill_id` | text | linked skill ID |
+| `target_rule` | text | target selection rule |
 
-## 12. `dungeon_rating_reward_tables`
-
-Suggested fields:
+## 13. dungeon_rating_reward_tables
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `id` | text | rating reward table ID |
+| `id` | text | reward table ID |
 | `dungeon_id` | text | owning dungeon |
+| `difficulty` | text | difficulty tier |
 | `rating` | text | `S` / `A` / `B` / `C` / `D` / `E` |
 | `guaranteed_drop_count` | int | guaranteed gear roll count |
-| `bonus_drop_chance` | numeric | extra gear roll chance |
-| `high_quality_bonus_count` | int | extra high-quality roll count |
+| `bonus_drop_chance` | numeric | extra roll chance |
 | `rarity_profile` | text | rarity profile name |
 
-## 13. `dungeon_rating_reward_entries`
-
-Suggested fields:
-
-| Field | Type | Notes |
-| --- | --- | --- |
-| `id` | text | row ID |
-| `reward_table_id` | text | owning rating reward table |
-| `item_template_id` | text | item template |
-| `slot` | text | gear slot |
-| `rarity` | text | rarity |
-| `weight` | int | roll weight |
-| `min_roll` | int | min count |
-| `max_roll` | int | max count |
-| `class_bias` | text | class bias rule |
-
-## 14. `monster_material_drop_tables`
-
-Suggested fields:
+## 14. monster_material_drop_tables
 
 | Field | Type | Notes |
 | --- | --- | --- |
 | `id` | text | table ID |
-| `monster_id` | text | owning monster template |
-| `room_band_min` | int | minimum applicable room |
-| `room_band_max` | int | maximum applicable room |
+| `monster_id` | text | owning monster |
+| `difficulty` | text | difficulty tier |
 | `drop_scope` | text | `on_kill` |
-| `guaranteed_material_count` | int | guaranteed count on kill |
+| `guaranteed_material_count` | int | guaranteed count per kill |
 
-## 15. `monster_material_drop_entries`
+## 15. Rewards And Drops
 
-Suggested fields:
+- equipment rewards are resolved by final clear rating
+- materials drop from monster kills
+- `nightmare` may increase weights for high-tier materials but does not change the boss-only-final-room structure rule
 
-| Field | Type | Notes |
-| --- | --- | --- |
-| `id` | text | row ID |
-| `material_table_id` | text | owning material table |
-| `material_id` | text | material template |
-| `weight` | int | roll weight |
-| `min_count` | int | min count |
-| `max_count` | int | max count |
-| `is_boss_exclusive` | bool | boss-exclusive flag |
+## 16. Enforced Constraints (must be validated in code)
 
-## 16. Ancient Catacomb Example
+1. every dungeon must have three difficulty profiles: `easy`, `hard`, and `nightmare`
+2. every difficulty must have a complete room config for `room_index = 1..6`
+3. `room_index = 6` must contain a boss
+4. `room_index < 6` must not contain a boss
+5. `nightmare` room monster counts, elite density, or mechanic density must be higher than `hard`
 
-### 16.1 `dungeon_definitions`
+## 17. Relation To Balance Sheet Document
 
-| Field | Example |
-| --- | --- |
-| `id` | `dng_ancient_catacomb` |
-| `region_id` | `ancient_catacomb` |
-| `name` | `Ancient Catacomb` |
-| `public_name_zh` | `远古墓窟` |
-| `tier` | `T1` |
-| `recommended_level_min` | `1` |
-| `recommended_level_max` | `20` |
-| `entry_rank_requirement` | `low` |
-| `party_size_min` | `1` |
-| `party_size_max` | `4` |
-| `round_limit` | `10` |
-| `boss_monster_id` | `boss_morthis` |
-
-### 16.2 `dungeon_room_configs`
-
-| room_index | hp_multiplier | damage_multiplier | extra_mechanic_flag | rating_if_failed_here |
-| --- | --- | --- | --- | --- |
-| `1` | `1.00` | `1.00` | `false` | `E` |
-| `2` | `1.10` | `1.05` | `false` | `D` |
-| `3` | `1.22` | `1.12` | `false` | `C` |
-| `4` | `1.36` | `1.20` | `true` | `B` |
-| `5` | `1.52` | `1.30` | `true` | `A` |
-| `6` | `1.72` | `1.42` | `true` | `S` |
-
-### 16.3 `dungeon_rooms`
-
-| room_index | room_type | rating_on_clear | notes |
-| --- | --- | --- | --- |
-| `1` | `normal` | `E` | 2 normal monsters |
-| `2` | `normal` | `D` | 3 normal monsters |
-| `3` | `elite` | `C` | 1 normal monster + 1 elite |
-| `4` | `normal` | `B` | 2 normal monsters + 1 controller |
-| `5` | `elite` | `A` | 2 elites |
-| `6` | `boss` | `S` | two-phase boss |
-
-## 17. Naming Rules
-
-Recommended ID prefixes:
-
-- dungeon: `dng_*`
-- room config: `drc_*`
-- monster: `mon_*`
-- boss: `boss_*`
-- room: `room_*`
-- phase: `phase_*`
-- rating reward table: `reward_*`
-- material table: `mat_*`
-
-## 18. Suggested Implementation Order
-
-1. `dungeon_definitions` + `dungeon_room_configs`
-2. `dungeon_monster_templates` + `dungeon_monster_skills`
-3. `dungeon_rooms` + `dungeon_room_monsters`
-4. `dungeon_boss_phases` + `dungeon_boss_phase_actions`
-5. `dungeon_rating_reward_tables` + `monster_material_drop_tables`
-
-## 19. Next Step
-
-The cleanest follow-up document is:
+Specific monster compositions and three-tier per-room tables are in:
 
 - `14-first-batch-dungeon-balance-sheets.md`
 
-That file can contain concrete monster stats, skills, room configs, rating rewards, and kill-drop weights for Ancient Catacomb and Thorned Hollow.
+## 18. ID Prefix Conventions
+
+- dungeon: `dng_*`
+- difficulty profile: `ddp_*`
+- room config: `drc_*`
+- monster template: `mon_*`
+- boss: `boss_*`
+- wave: `wave_*`
+- wave slot: `slot_*`
+- phase: `phase_*`
+- reward table: `reward_*`
+- material table: `mat_*`

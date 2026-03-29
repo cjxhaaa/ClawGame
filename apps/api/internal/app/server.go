@@ -963,6 +963,29 @@ func NewServer(cfg config.API) *Server {
 			writeEnvelope(w, r, http.StatusOK, map[string]any{"entries": arenaService.GetLeaderboard()})
 		})
 
+		r.Get("/arena/duel", func(w http.ResponseWriter, r *http.Request) {
+			charAID := strings.TrimSpace(r.URL.Query().Get("char_a_id"))
+			charBID := strings.TrimSpace(r.URL.Query().Get("char_b_id"))
+			if charAID == "" || charBID == "" {
+				writeError(w, r, http.StatusBadRequest, "DUEL_MISSING_PARAMS", "char_a_id and char_b_id are required")
+				return
+			}
+			summaryA, _, _, _, okA := characterService.GetRuntimeDetailByCharacterID(charAID)
+			summaryB, _, _, _, okB := characterService.GetRuntimeDetailByCharacterID(charBID)
+			if !okA || !okB {
+				writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "one or both characters not found")
+				return
+			}
+			result := arenaService.SimulateDuel(summaryA, summaryB)
+			writeEnvelope(w, r, http.StatusOK, result)
+		})
+
+		r.Get("/dungeons", func(w http.ResponseWriter, r *http.Request) {
+			writeEnvelope(w, r, http.StatusOK, map[string]any{
+				"items": dungeonService.ListDungeonDefinitions(),
+			})
+		})
+
 		r.Get("/dungeons/{dungeonId}", func(w http.ResponseWriter, r *http.Request) {
 			dungeonID := chi.URLParam(r, "dungeonId")
 			definition, ok := dungeonService.GetDungeonDefinition(dungeonID)
@@ -986,7 +1009,8 @@ func NewServer(cfg config.API) *Server {
 				return
 			}
 
-			run, err := dungeonService.EnterDungeon(character, limits, chi.URLParam(r, "dungeonId"))
+			difficulty := strings.TrimSpace(r.URL.Query().Get("difficulty"))
+			run, err := dungeonService.EnterDungeon(character, limits, chi.URLParam(r, "dungeonId"), difficulty)
 			if err != nil {
 				switch {
 				case errors.Is(err, dungeons.ErrDungeonNotFound):
@@ -1222,7 +1246,7 @@ func NewServer(cfg config.API) *Server {
 				queryName := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
 				queryCharacterID := strings.TrimSpace(r.URL.Query().Get("character_id"))
 				snapshot := characterService.SnapshotRuntime()
-				items := buildPublicBots(snapshot.Characters, inventoryService)
+				items := buildPublicBots(snapshot.Characters, characterService, inventoryService, dungeonService)
 				if queryName != "" || queryCharacterID != "" {
 					filtered := make([]map[string]any, 0, len(items))
 					for _, item := range items {
@@ -1277,10 +1301,15 @@ func NewServer(cfg config.API) *Server {
 					recentRuns = recentRuns[:5]
 				}
 
+				inventoryView := inventoryService.GetInventory(summary)
+				combatPower, itemScores := buildCombatPower(summary, stats, inventoryView, dungeonService)
+
 				writeEnvelope(w, r, http.StatusOK, map[string]any{
 					"character_summary":      summary,
 					"stats_snapshot":         stats,
-					"equipment":              inventoryService.GetInventory(summary),
+					"equipment":              inventoryView,
+					"equipment_item_scores":  itemScores,
+					"combat_power":           combatPower,
 					"daily_limits":           limits,
 					"active_quests":          []any{},
 					"recent_runs":            recentRuns,
@@ -1357,7 +1386,7 @@ func NewServer(cfg config.API) *Server {
 					"run_id":       selected.RunID,
 					"dungeon_id":   selected.DungeonID,
 					"dungeon_name": definition.Name,
-					"difficulty":   definition.MinRank,
+					"difficulty":   selected.Difficulty,
 					"started_at":   selected.StartedAt,
 					"resolved_at":  selected.ResolvedAt,
 					"room_summary": selected.RoomSummary,
@@ -1537,13 +1566,6 @@ func buildDungeonDailyHint(state characters.StateView, dungeonService *dungeons.
 		RemainingClaims:    remaining,
 		HasClaimableRun:    len(pending) > 0,
 		PendingClaimRunIDs: pending,
-		SuggestedAction:    "none",
-	}
-
-	if hint.HasClaimableRun {
-		hint.SuggestedAction = "claim_dungeon_rewards"
-	} else if hint.HasRemainingQuota {
-		hint.SuggestedAction = "enter_dungeon"
 	}
 
 	return hint
@@ -2194,12 +2216,23 @@ func buildingSupportsAction(building world.Building, actionName string) bool {
 	return false
 }
 
-func buildPublicBots(charactersList []characters.Summary, inventoryService *inventory.Service) []map[string]any {
+func buildPublicBots(charactersList []characters.Summary, characterService *characters.Service, inventoryService *inventory.Service, dungeonService *dungeons.Service) []map[string]any {
 	items := make([]map[string]any, 0, len(charactersList))
 	for _, character := range charactersList {
+		combatPowerSummary := map[string]any{}
+		if summary, stats, _, _, ok := characterService.GetRuntimeDetailByCharacterID(character.CharacterID); ok {
+			inventoryView := inventoryService.GetInventory(summary)
+			combatPower, _ := buildCombatPower(summary, stats, inventoryView, dungeonService)
+			combatPowerSummary = map[string]any{
+				"panel_power_score": combatPower.PanelPowerScore,
+				"power_tier":        combatPower.PowerTier,
+			}
+		}
+
 		items = append(items, map[string]any{
 			"character_summary":        character,
 			"equipment_score":          inventoryService.ComputeEquipmentScore(character),
+			"combat_power":             combatPowerSummary,
 			"current_activity_type":    activityTypeFromRegion(character.LocationRegionID),
 			"current_activity_summary": fmt.Sprintf("Active in %s", character.LocationRegionID),
 			"last_seen_at":             time.Now().Format(time.RFC3339),
@@ -2360,12 +2393,13 @@ func executeAction(account auth.Account, actionType string, actionArgs map[strin
 		}, nil
 	case "enter_dungeon":
 		dungeonID, _ := actionArgs["dungeon_id"].(string)
+		difficulty, _ := actionArgs["difficulty"].(string)
 		character, limits, err := currentCharacterWithLimits(account, characterService, worldService)
 		if err != nil {
 			return nil, err
 		}
 
-		run, err := dungeonService.EnterDungeon(character, limits, dungeonID)
+		run, err := dungeonService.EnterDungeon(character, limits, dungeonID, difficulty)
 		if err != nil {
 			return nil, err
 		}

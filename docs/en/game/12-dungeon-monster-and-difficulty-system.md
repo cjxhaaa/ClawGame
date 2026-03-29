@@ -2,445 +2,149 @@
 
 ## 1. Design Goals
 
-This document defines the dungeon monster system together with the room-by-room challenge and rating model.
+This document defines the dungeon monster composition, room progression, and three-tier difficulty rules. It upgrades dungeon combat from single-enemy fights to multi-enemy group encounters.
 
-Goals:
+Core goals:
 
-- give every dungeon a uniform difficulty expansion framework
-- make dungeons feel like escalating room challenges with up to `6` rooms per run
-- make equipment rewards depend on the final rating rather than a fixed final-boss chest
-- make material output mainly driven by monster kills
-- allow bots to clearly choose how deep they should reliably farm based on growth stage and team composition
-- make the website readable for human observers
+- rooms default to multi-enemy compositions, not single enemies
+- monsters are tiered: normal, elite, boss
+- each room has a clear tactical theme with escalating pressure
+- boss only appears in the final room (room 6)
+- three difficulty tiers (easy / hard / nightmare) have clear stat and mechanic differences
+- nightmare must noticeably raise the bar, requiring better gear and build completeness
 
-## 2. Room Challenge Overview
+## 2. Room Structure
 
-Every dungeon run contains up to `6` consecutive rooms:
+Every dungeon run has exactly `6` rooms:
 
-| Room | Identity | Primary Use |
-| --- | --- | --- | --- |
-| 1 | entry room | baseline validation and onboarding |
-| 2 | transition room | early mechanic and sustain checks |
-| 3 | elite room | first meaningful survival pressure |
-| 4 | pressure room | tests build stability and rotation quality |
-| 5 | push room | main high-value farming gate |
-| 6 | finale room | determines `S` rating and top-end rewards |
+| Room | Role | Design Intent |
+| --- | --- | --- |
+| 1 | entry room | set the pace, allow warm-up |
+| 2 | pressure room | introduce two-core enemy combinations |
+| 3 | elite room | first elite-anchored pressure check |
+| 4 | mechanic room | elite + control or summon synergy |
+| 5 | high-pressure room | resource check, forces potions and cooldown management |
+| 6 | boss room | boss finale (may include adds), determines clear rating |
 
-Core rules:
+Hard constraints:
 
-- later rooms increase stat pressure, skill pressure, and mechanic complexity
-- later rooms increase the quality of kill-based material drops
-- final equipment rewards are granted by rating
-- room `6` must add clear finale mechanics, not just larger numbers
+- rooms `1` to `5` must not contain boss-tier monsters
+- boss is only allowed in room `6`
+- room `6` may include boss + adds, but boss must be the primary target
 
-## 3. Shared Dungeon Structure
+## 3. Monster Tiers And Roles
 
-Each dungeon should define:
+## 3.1 Normal Monster
 
-- `dungeon_id`
-- `name`
-- `recommended_level_band`
-- `room_count`
-- `entry_requirements`
-- `rooms`
-- `boss_definition`
-- `rating_reward_table`
-- `monster_drop_table`
+Role: fill squad slots, apply sustained pressure, consume player skill cooldowns.
 
-Standard flow:
+Design requirements:
 
-1. form a `1-4` bot party
-2. choose a dungeon and enter room `1`
-3. lock loadouts and gear
-4. resolve combat room by room as pressure escalates
-5. clear the current room and advance, or fail and end the run
-6. grant rating-based gear rewards, kill-based materials, and observer events
+- `1-2` skills
+- single-target or light AoE
+- clear position identity (frontline, backline DPS, harasser, status applier)
 
-## 4. Room Scaling Rules
+## 3.2 Elite Monster
 
-Room escalation should be controlled through:
+Role: serves as the tactical anchor of a room, forcing players to adjust skill priorities.
 
-1. monster base stat multipliers
-2. monster skill multipliers
-3. room mechanic complexity
+Design requirements:
 
-Recommended scaling:
+- `2-4` skills
+- at least 1 mechanic skill (control, shield, debuff, summon, burst telegraphing)
+- must provide combo value with normal monsters
 
-| Room | HP Multiplier | Damage Multiplier | Heal/Shield Multiplier | Behavior Complexity |
+## 3.3 Boss
+
+Role: dungeon finale target.
+
+Design requirements:
+
+- only in room `6`
+- at least 2 phases
+- each phase has a recognizable mechanic theme
+- nightmare adds new mechanics or increases key skill frequency
+
+## 4. Multi-Enemy Composition Rules
+
+## 4.1 Monster Count Per Room
+
+| Difficulty | Rooms 1-2 | Rooms 3-4 | Room 5 | Room 6 |
 | --- | --- | --- | --- | --- |
-| 1 | 1.00x | 1.00x | 1.00x | basic |
-| 2 | 1.10x | 1.05x | 1.05x | basic+ |
-| 3 | 1.22x | 1.12x | 1.10x | medium |
-| 4 | 1.36x | 1.20x | 1.16x | medium-high |
-| 5 | 1.52x | 1.30x | 1.22x | high |
-| 6 | 1.72x | 1.42x | 1.30x | finale |
+| easy | 2-3 | 2-3 | 2-3 | Boss + 0-1 adds |
+| hard | 3-4 | 3-4 | 3-4 | Boss + 1-2 adds |
+| nightmare | 4-5 | 4-5 | 4-5 | Boss + 2 adds (or phase summons) |
 
-Extra rules:
+## 4.2 Composition Guidelines
 
-- room `3` onward should add more group pressure and status synergy
-- room `5` onward should add phase shifts, summon pressure, marked-target attacks, and linked skills
-- room `6` must be observer-readable as a proper end-stage encounter
+- easy: normal monsters dominate; elites only appear in rooms 3/4/5
+- hard: room 3 onward must include at least 1 elite per room
+- nightmare: elites can appear from room 2 onward; rooms 4-5 commonly feature double-elite setups
 
-## 5. Monster Template Layers
+## 5. Three-Difficulty Framework
 
-Monsters should be divided into four layers:
+## 5.1 Stat Multipliers
 
-### 5.1 Normal monster
+Multipliers are relative to the easy baseline for the same dungeon:
 
-- fills standard waves
-- consumes cooldowns and party health
-- usually carries `1-2` skills
+| Difficulty | HP | Damage | Defense | Speed |
+| --- | --- | --- | --- | --- |
+| easy | 1.00x | 1.00x | 1.00x | 1.00x |
+| hard | 1.28x | 1.22x | 1.15x | 1.08x |
+| nightmare | 1.62x | 1.50x | 1.35x | 1.16x |
 
-### 5.2 Elite monster
+## 5.2 Mechanic Density
 
-- acts as a room-level mechanic anchor
-- becomes a real threat in later rooms
-- usually carries `2-4` skills
+| Difficulty | Control Density | AoE Density | Summon/Synergy Density |
+| --- | --- | --- | --- |
+| easy | low | low | low |
+| hard | medium | medium | medium |
+| nightmare | high | high | high |
 
-### 5.3 Boss
+Nightmare constraints:
 
-- primary narrative and reward source
-- usually carries `4-6` skills
-- should have at least `2` phases
-- should have a clearly readable signature mechanic in room `6`
+- difficulty must not come only from stat inflation
+- must include composition synergies (for example: frontline damage reduction + backline burst, elite applies vulnerable + AoE follow-up)
+- expected to require good gear + reasonable potions + complete build to clear reliably
 
-### 5.4 Summon / support add
+## 6. Room Progression Design Rules
 
-- exists to support boss mechanics
-- not the primary loot source
-- should be short-lived and readable
+## 6.1 General Escalation Logic
 
-## 6. Shared Monster Fields
+1. room 1: single-mechanic warm-up (for example pure frontline + one backline)
+2. room 2: two-mechanic combination (for example slow + burst)
+3. room 3: first elite mechanic check
+4. room 4: control or summon mixed pressure
+5. room 5: resource drain room (force potions, force cooldown rotation)
+6. room 6: boss phase encounter
 
-Each monster template should include:
+## 6.2 Boss Room Rules
 
-- `monster_id`
-- `name`
-- `dungeon_id`
-- `room_index`
-- `monster_role`
-- `level_band`
-- `stats`
-- `skill_ids`
-- `ai_profile`
-- `phase_rules`
-- `loot_weight`
-- `material_tags`
+- boss must have a phase-switch trigger (HP threshold or round threshold)
+- adds in the boss room exist only to reinforce boss mechanics
+- boss defeat ends the dungeon run
 
-Recommended roles:
+## 7. Drops And Difficulty
 
-- `bruiser`
-- `tank`
-- `caster`
-- `healer`
-- `controller`
-- `assassin`
-- `summoner`
-- `boss`
+- equipment rewards are resolved by final clear rating
+- materials drop from monster kills
+- higher difficulty increases weight of rare materials
+- nightmare improves access to red and prismatic material resources, but should correspond to higher fail risk
 
-## 7. Rating And Drop Principles
+## 8. Current Dungeon Coverage
 
-### 7.1 Rating Rules
+This spec currently covers and requires implementation for:
 
-| Highest Completed Room | Rating | Use |
-| --- | --- | --- |
-| 6 | `S` | full clear and top-end chase |
-| 5 | `A` | high-performance stable farming |
-| 4 | `B` | mainstream progression and pre-endgame grind |
-| 3 | `C` | mid-run progression |
-| 2 | `D` | low-depth fallback |
-| 1 or failed before clearing room 1 | `E` | fail-state payout |
+- `ancient_catacomb_v1`
+- `sandworm_den_v1`
 
-### 7.2 Equipment Rewards
+Each dungeon must provide:
 
-| Rating | Main Qualities | Use |
-| --- | --- | --- |
-| `S` | gold, red, prismatic | top-end chase and set completion |
-| `A` | purple, gold, red | high-efficiency farming |
-| `B` | blue, purple, gold | core progression lane |
-| `C` | blue, purple | transitional slot filling |
-| `D` / `E` | mostly blue | minimum fallback payout |
+- a named normal / elite / boss monster list
+- easy / hard / nightmare complete 6-room composition tables
+- explicit annotation that boss only appears in room 6
 
-### 7.3 Material Rewards
+## 9. Implementation Document Links
 
-| Kill Target | Material Class | Use |
-| --- | --- | --- |
-| normal monsters | base materials | steady sinks and low-tier crafting |
-| elite monsters | base + advanced materials | main mid-run reinforcement lane |
-| bosses / finale enemies | advanced + boss-specific rare materials | top-tier crafting and rerolling |
-
-## 8. Ancient Catacomb Monster System
-
-Dungeon identity:
-
-- T1 dungeon
-- recommended level `1-20`
-- theme: sealed tomb, undead, necromancy
-
-### Room structure
-
-- Room 1: 2 normal monsters
-- Room 2: 3 normal monsters
-- Room 3: 1 normal monster + 1 elite
-- Room 4: 2 normal monsters + 1 controller
-- Room 5: 2 elites
-- Room 6: 2-phase necromancer priest with tomb-lantern summons
-
-### Monster list
-
-#### Normal monsters
-
-- `Catacomb Boneguard`
-- `Ashen Skull Caster`
-- `Grave Rat Swarm`
-
-#### Elites
-
-- `Warden of Seals`
-- `Tomb Hexer`
-
-#### Boss
-
-- `Morthis, Chapel Keeper`
-
-### Material drops
-
-Materials drop directly from monster kills:
-
-- `Catacomb Boneguard`
-  - main drops: Grave Dust, Bone Splinter
-- `Ashen Skull Caster`
-  - main drops: Dim Candle Wax, Necro Ink
-- `Grave Rat Swarm`
-  - main drops: Burial Cloth, Grave Dust
-- `Warden of Seals`
-  - main drops: Warden Iron Shard, Sealed Bone Core
-- `Tomb Hexer`
-  - main drops: Necro Ink, Chapel Sigil Fragment
-- `Morthis, Chapel Keeper`
-  - main drops: Gravewake Ember, Dusk Reliquary Fragment, Sealed Bone Core
-
-Additional rules:
-
-- later rooms should increase the weight of advanced materials
-- the same monster can gain higher rare-material weights in later rooms
-- boss-exclusive materials should only come from the room `6` finale enemy
-
-### Equipment reward bias
-
-Equipment is granted from final rating:
-
-- `S`: mainly `Gold` and `Red`, with a small `Prismatic` chance
-- `A`: mainly `Purple`, `Gold`, and a small `Red` chance
-- `B`: mainly `Blue` and `Purple`, with a small `Gold` chance
-- `C` and below: mostly `Blue` and `Purple` progression pieces
-
-## 9. Thorned Hollow Monster System
-
-Dungeon identity:
-
-- T2 dungeon
-- recommended level `21-40`
-- theme: thorn ruin, venom roots, corrupted altar
-
-Normal monsters:
-
-- `Rootfang Stalker`
-- `Poison Bark Hound`
-- `Hollow Thornling`
-
-Elites:
-
-- `Blightbranch Guardian`
-- `Vine Hexcaller`
-
-Boss:
-
-- `Eldra, Heart of the Hollow`
-
-Material direction:
-
-- normal monsters:
-  - Thorn Resin
-  - Hollow Bark
-  - Venom Sap
-- elite monsters:
-  - Thorn Resin
-  - Venom Sap
-  - Briar Heartwood
-  - Corrupted Bloom
-- boss:
-  - Briar Heartwood
-  - Corrupted Bloom
-  - Briarbound Ember
-  - Hollow Core Pod
-
-## 10. Sunscar Warvault Monster System
-
-Dungeon identity:
-
-- T3 dungeon
-- recommended level `41-60`
-- theme: buried armory, heat automata, war relics
-
-Normal monsters:
-
-- `Warvault Sentry`
-- `Scorched Rifle Husk`
-- `Brass Flame Drone`
-
-Elites:
-
-- `Siege Automaton`
-- `Burned Standard Bearer`
-
-Boss:
-
-- `General Icar Voss`
-
-Material direction:
-
-- normal monsters:
-  - Heatworn Brass
-  - Ash Canvas
-  - Cracked Gear Core
-- elite monsters:
-  - Heatworn Brass
-  - Warvault Alloy
-  - Signal Igniter
-  - Scorched Command Seal
-- boss:
-  - Warvault Alloy
-  - Signal Igniter
-  - Sunscar Ember
-  - General Crest Fragment
-
-## 11. Obsidian Spire Monster System
-
-Dungeon identity:
-
-- T4 dungeon
-- recommended level `61-80`
-- theme: obsidian tower, void priests, mirror curses
-
-Normal monsters:
-
-- `Spire Glassling`
-- `Obsidian Acolyte`
-- `Mirror Lash Shade`
-
-Elites:
-
-- `Void Mirror Knight`
-- `Eclipse Channeler`
-
-Boss:
-
-- `Seraphax, the Black Reflection`
-
-Material direction:
-
-- normal monsters:
-  - Blackglass Shard
-  - Ritual Thread
-  - Dull Mirror Dust
-- elite monsters:
-  - Blackglass Shard
-  - Ritual Thread
-  - Nightglass Prism
-  - Abyss Script Roll
-- boss:
-  - Nightglass Prism
-  - Abyss Script Roll
-  - Nightglass Ember
-  - Eclipse Lens Fragment
-
-## 12. Sandworm Den Monster System
-
-Dungeon identity:
-
-- T5 dungeon
-- recommended level `81-100`
-- theme: giant worm burrows, venom pressure, matriarch ambushes
-
-Normal monsters:
-
-- `Sand Broodling`
-- `Venom Burrower`
-- `Duneshred Hunter`
-
-Elites:
-
-- `Brood Guard`
-- `Acid Spitter Matron`
-
-Boss:
-
-- `The Sandworm Matriarch`
-
-Material direction:
-
-- normal monsters:
-  - Worm Chitin
-  - Venom Sac
-  - Burrow Sandglass
-- elite monsters:
-  - Worm Chitin
-  - Venom Sac
-  - Matriarch Spine Dust
-  - Hardened Carapace Plate
-- boss:
-  - Matriarch Spine Dust
-  - Hardened Carapace Plate
-  - Dunescourge Ember
-  - Royal Venom Gland
-
-## 13. Suggested Rating And Drop Split
-
-### Rating-based equipment split
-
-- `S`
-  - 2 gear rolls, with at least 1 from the high-quality pool
-- `A`
-  - 1 stable gear roll, plus a 35% chance for 1 extra roll
-- `B`
-  - 1 stable gear roll
-- `C`
-  - 75% chance for 1 gear roll
-- `D`
-  - 45% chance for 1 gear roll
-- `E`
-  - 20% chance for 1 gear roll
-
-### Kill-based material split
-
-- rooms 1-2:
-  - mostly base material pools
-- rooms 3-4:
-  - base pools plus advanced pools
-- room 5:
-  - advanced pools dominate
-- room 6:
-  - advanced pools plus boss-exclusive rare pools
-
-## 14. Observer-facing Fields
-
-Useful website fields:
-
-- current room
-- living monster distribution
-- current boss phase
-- current projected rating
-- timeout risk state
-- latest key monster skill
-- highest-value drop this run
-
-## 15. Recommended Next Step
-
-The cleanest implementation order after this document is:
-
-1. dungeon definition table
-2. monster template table
-3. room configuration table for rooms `1-6`
-4. boss skill and AI script table
-5. rating reward tables and monster material drop tables
+- per-room composition and balance tables: `14-first-batch-dungeon-balance-sheets.md`
+- data fields and schema: `13-dungeon-data-tables-and-template-spec.md`

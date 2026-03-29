@@ -841,6 +841,131 @@ func TestDungeonAutoResolveAndClaimFlow(t *testing.T) {
 	}
 }
 
+func TestDungeonEnterDifficultyQueryAndFallback(t *testing.T) {
+	server := NewServer(config.API{Port: "8080"})
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "bot-dungeon-diff-query",
+		"password": "verysecure",
+	}), "", http.StatusOK, nil)
+
+	var loginResponse struct {
+		Data struct {
+			AccessToken string `json:"access_token"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "bot-dungeon-diff-query",
+		"password": "verysecure",
+	}), "", http.StatusOK, &loginResponse)
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
+		"name":         "DiffQueryRunner",
+		"class":        "warrior",
+		"weapon_style": "sword_shield",
+	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+
+	var hardEnter struct {
+		Data struct {
+			RunID        string `json:"run_id"`
+			Difficulty   string `json:"difficulty"`
+			RunStatus    string `json:"run_status"`
+			RuntimePhase string `json:"runtime_phase"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/dungeons/ancient_catacomb_v1/enter?difficulty=hard", nil, loginResponse.Data.AccessToken, http.StatusOK, &hardEnter)
+
+	if hardEnter.Data.RunID == "" {
+		t.Fatal("expected hard difficulty run_id")
+	}
+	if hardEnter.Data.Difficulty != "hard" {
+		t.Fatalf("expected difficulty hard, got %q", hardEnter.Data.Difficulty)
+	}
+
+	var hardPublicDetail struct {
+		Data struct {
+			RunID      string `json:"run_id"`
+			Difficulty string `json:"difficulty"`
+		} `json:"data"`
+	}
+
+	var state struct {
+		Data struct {
+			Character struct {
+				CharacterID string `json:"character_id"`
+			} `json:"character"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/state", nil, loginResponse.Data.AccessToken, http.StatusOK, &state)
+
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/public/bots/"+state.Data.Character.CharacterID+"/dungeon-runs/"+hardEnter.Data.RunID, nil, "", http.StatusOK, &hardPublicDetail)
+	if hardPublicDetail.Data.Difficulty != "hard" {
+		t.Fatalf("expected public run detail difficulty hard, got %q", hardPublicDetail.Data.Difficulty)
+	}
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/runs/"+hardEnter.Data.RunID+"/claim", nil, loginResponse.Data.AccessToken, http.StatusOK, nil)
+
+	var fallbackEnter struct {
+		Data struct {
+			Difficulty string `json:"difficulty"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/dungeons/ancient_catacomb_v1/enter?difficulty=invalid_value", nil, loginResponse.Data.AccessToken, http.StatusOK, &fallbackEnter)
+	if fallbackEnter.Data.Difficulty != "easy" {
+		t.Fatalf("expected invalid difficulty to fallback to easy, got %q", fallbackEnter.Data.Difficulty)
+	}
+}
+
+func TestActionEnterDungeonWithDifficulty(t *testing.T) {
+	server := NewServer(config.API{Port: "8080"})
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "bot-dungeon-diff-action",
+		"password": "verysecure",
+	}), "", http.StatusOK, nil)
+
+	var loginResponse struct {
+		Data struct {
+			AccessToken string `json:"access_token"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "bot-dungeon-diff-action",
+		"password": "verysecure",
+	}), "", http.StatusOK, &loginResponse)
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
+		"name":         "DiffActionRunner",
+		"class":        "warrior",
+		"weapon_style": "sword_shield",
+	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+
+	var actionResponse struct {
+		Data struct {
+			State struct {
+				Run struct {
+					RunID      string `json:"run_id"`
+					Difficulty string `json:"difficulty"`
+				} `json:"run"`
+			} `json:"state"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/actions", map[string]any{
+		"action_type": "enter_dungeon",
+		"action_args": map[string]any{
+			"dungeon_id": "ancient_catacomb_v1",
+			"difficulty": "nightmare",
+		},
+	}, loginResponse.Data.AccessToken, http.StatusOK, &actionResponse)
+
+	if actionResponse.Data.State.Run.RunID == "" {
+		t.Fatal("expected run_id from action enter_dungeon")
+	}
+	if actionResponse.Data.State.Run.Difficulty != "nightmare" {
+		t.Fatalf("expected action difficulty nightmare, got %q", actionResponse.Data.State.Run.Difficulty)
+	}
+}
+
 func TestActionAliasClaimRunRewards(t *testing.T) {
 	server := NewServer(config.API{Port: "8080"})
 
@@ -1226,7 +1351,6 @@ func TestStateIncludesDungeonDailyHints(t *testing.T) {
 			DungeonDaily struct {
 				HasRemainingQuota bool     `json:"has_remaining_quota"`
 				HasClaimableRun   bool     `json:"has_claimable_run"`
-				SuggestedAction   string   `json:"suggested_action"`
 				PendingRunIDs     []string `json:"pending_claim_run_ids"`
 			} `json:"dungeon_daily"`
 		} `json:"data"`
@@ -1238,9 +1362,6 @@ func TestStateIncludesDungeonDailyHints(t *testing.T) {
 	}
 	if initialState.Data.DungeonDaily.HasClaimableRun {
 		t.Fatal("expected no claimable runs before entering dungeon")
-	}
-	if initialState.Data.DungeonDaily.SuggestedAction != "enter_dungeon" {
-		t.Fatalf("expected suggested_action enter_dungeon, got %q", initialState.Data.DungeonDaily.SuggestedAction)
 	}
 
 	var enterResponse struct {
@@ -1254,7 +1375,6 @@ func TestStateIncludesDungeonDailyHints(t *testing.T) {
 		Data struct {
 			DungeonDaily struct {
 				HasClaimableRun bool     `json:"has_claimable_run"`
-				SuggestedAction string   `json:"suggested_action"`
 				PendingRunIDs   []string `json:"pending_claim_run_ids"`
 			} `json:"dungeon_daily"`
 		} `json:"data"`
@@ -1263,9 +1383,6 @@ func TestStateIncludesDungeonDailyHints(t *testing.T) {
 
 	if !pendingState.Data.DungeonDaily.HasClaimableRun {
 		t.Fatal("expected claimable run after dungeon auto-resolve")
-	}
-	if pendingState.Data.DungeonDaily.SuggestedAction != "claim_dungeon_rewards" {
-		t.Fatalf("expected suggested_action claim_dungeon_rewards, got %q", pendingState.Data.DungeonDaily.SuggestedAction)
 	}
 	if len(pendingState.Data.DungeonDaily.PendingRunIDs) == 0 || pendingState.Data.DungeonDaily.PendingRunIDs[0] != enterResponse.Data.RunID {
 		t.Fatalf("expected pending_claim_run_ids to include %q, got %#v", enterResponse.Data.RunID, pendingState.Data.DungeonDaily.PendingRunIDs)

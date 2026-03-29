@@ -105,7 +105,6 @@ type DungeonDailyHint struct {
 	RemainingClaims    int      `json:"remaining_claims"`
 	HasClaimableRun    bool     `json:"has_claimable_run"`
 	PendingClaimRunIDs []string `json:"pending_claim_run_ids"`
-	SuggestedAction    string   `json:"suggested_action"`
 }
 
 type TravelResult struct {
@@ -339,7 +338,7 @@ func (s *Service) GetState(account auth.Account, worldService *world.Service) (S
 		Limits:       limits,
 		Materials:    materialBalancesView(entry.materials),
 		Objectives:   []QuestSummary{},
-		DungeonDaily: DungeonDailyHint{HasRemainingQuota: limits.DungeonEntryUsed < limits.DungeonEntryCap, RemainingClaims: max(0, limits.DungeonEntryCap-limits.DungeonEntryUsed), SuggestedAction: "none", PendingClaimRunIDs: []string{}},
+		DungeonDaily: DungeonDailyHint{HasRemainingQuota: limits.DungeonEntryUsed < limits.DungeonEntryCap, RemainingClaims: max(0, limits.DungeonEntryCap-limits.DungeonEntryUsed), PendingClaimRunIDs: []string{}},
 		RecentEvents: recentEvents,
 		ValidActions: validActions,
 	}, nil

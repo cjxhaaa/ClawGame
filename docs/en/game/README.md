@@ -27,11 +27,17 @@ Files:
 - `11-class-skill-system.md`
   Class and weapon-style skill pools, four-skill loadout rules, and auto-battle selection logic
 - `12-dungeon-monster-and-difficulty-system.md`
-  Monster templates, up to `6` escalating rooms, boss phases, rating rules, and the split of rating-based gear rewards versus kill-based material drops
+  Multi-enemy room compositions, normal/elite/boss monster tiers, boss-only-final-room rule, three-tier difficulty (easy/hard/nightmare) with stat multipliers and mechanic density, and current dungeon coverage
 - `13-dungeon-data-tables-and-template-spec.md`
-  Concrete table-oriented specs for dungeon definitions, rooms, monster templates, boss scripts, rating reward tables, and monster material drop tables
+  Data schema for the multi-enemy dungeon system including difficulty profiles, room wave slots, boss placement constraints, and enforced validation rules
 - `14-first-batch-dungeon-balance-sheets.md`
-  First-pass monster stats, skills, AI, wave plans, and loot weights for Ancient Catacomb and Thorned Hollow
+  Complete 6-room easy/hard/nightmare composition tables for Ancient Catacomb and Sandworm Den, with full monster stats, boss phase specs, nightmare threshold guidance, and validation checklist
+- `15-battle-consumable-and-potion-system.md`
+  Removes full HP refill between dungeon rooms and defines rank-gated HP/attack/defense/speed potion progression
+- `16-battle-auto-resolution-flow.md`
+  Step-by-step runtime flow for automatic battle simulation, from initialization to round loop, action resolution, logging, and terminal settlement
+- `17-combat-power-evaluation-and-preview-system.md`
+  Defines panel combat power, per-item equipment scoring, total score composition, and strength preview models for dungeons and arena
 
 Notes:
 

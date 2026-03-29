@@ -1,69 +1,56 @@
-# Combat System Framework
+# Combat System Document
 
-## 1. Design Goals
+## 1. Document Goal
 
-This document defines the full battle foundation that dungeon monsters and encounter scripts will use later.
+This document defines the complete combat specification used by design, implementation, testing, structured logging, and observer-facing presentation.
 
-Goals:
+It describes official current rules only, without phase labels, version-stage wording, or open discussion placeholders.
 
-- make combat deterministic enough for bots to plan around
-- keep enough variation to make enemy identity matter
-- expose all important decisions through structured logs
-- support dungeon parties of up to `4` bots from the first playable version
-- make combat fully auto-executed but still explainable
-- align with the seasonal stat system and dungeon gear system already defined
+## 2. Combat Overview
 
-## 2. Combat Model
+Combat is a server-authoritative turn-based system. Player entities and monster entities are resolved under the same execution framework.
 
-Combat in V1 is:
+Core characteristics:
 
-- fully server-authoritative
-- fully turn-based
-- menu-driven, not positional action combat
-- deterministic except for explicitly declared roll points
-- logged step by step for debugging, spectator viewing, and bot learning
+- server-authoritative resolution
+- turn-based execution
+- automatic action selection
+- controlled randomness with explicit roll points
+- full structured battle logs
 
-Every battle is resolved as a sequence of:
+Standard execution chain:
 
 1. battle initialization
 2. round start
-3. entity turn loop
-4. round end effects
+3. in-round action loop
+4. round end
 5. victory or defeat resolution
 
-## 3. Battle Scope
+## 3. Combat Scopes and Types
 
-V1 should support these battle scopes:
+The unified combat engine supports these combat types:
 
-- `field_skirmish`
-  - short encounters used for quest, material, and XP loops
-- `elite_encounter`
-  - tougher single-wave or double-wave fights
-- `dungeon_wave`
-  - standard dungeon room combat
-- `boss_phase`
-  - named boss fight or a phase of one
-- `arena_duel`
-  - bot versus bot future mode
+- `field_skirmish`: short field combat
+- `elite_encounter`: elite combat
+- `dungeon_wave`: dungeon room combat
+- `boss_phase`: boss phase combat
+- `arena_duel`: arena combat
 
-The battle engine should be the same across all scopes. What changes is:
+The same engine is reused for all types. Differences are configuration-driven:
 
-- participant template
-- wave count
-- reward package
-- AI script
-- fail conditions
+- participant templates
+- wave structure
+- AI scripts
+- failure conditions
+- reward packages
 
-## 4. Entity Model
+## 4. Battle Entity Model
 
-Every battle entity should expose:
+Each battle entity must include:
 
 - `entity_id`
 - `team_id`
-- `entity_type`
-  - `player`
-  - `monster`
-  - `summon`
+- `entity_type` (`player` / `monster` / `summon`)
 - `template_id`
 - `name`
 - `level`
@@ -76,7 +63,7 @@ Every battle entity should expose:
 - `equipped_skills`
 - `alive`
 
-Recommended stat payload:
+Unified `stats` payload:
 
 - `max_hp`
 - `physical_attack`
@@ -85,79 +72,73 @@ Recommended stat payload:
 - `magic_defense`
 - `speed`
 - `healing_power`
-- optional future stats:
-  - `accuracy`
-  - `status_mastery`
-  - `status_resistance`
 
-## 5. Battle Start Rules
+## 5. Battle Initialization Rules
 
-On battle start:
+Initialization must perform:
 
-- all entities are instantiated from templates plus runtime modifiers
-- current HP is set to max unless the encounter says otherwise
-- pre-battle passives and set effects are applied
-- the party roster and the `4` equipped active skills per bot are locked for the run
-- a first-round turn order preview can be calculated and stored
-- battle metadata is emitted for observer and replay systems
+- instantiation of all entities from templates plus runtime modifiers
+- setting initial HP (full by default unless overridden by encounter config)
+- application of pre-battle passives and gear effects
+- locking battle loadouts (up to 4 active skills per character)
+- optional first-round order preview emission
+- battle metadata emission
 
-Required battle metadata:
+Battle metadata fields:
 
 - `battle_id`
 - `battle_type`
 - `encounter_id`
 - `region_id`
-- `dungeon_id` if present
+- `dungeon_id` (if present)
 - `party_size`
 - `wave_index`
 - `started_at`
 
-## 6. Round Structure
+## 6. Round Flow
 
-Each round follows this sequence:
+Each round executes in fixed order:
 
-1. round start effects
-2. turn order calculation
-3. one turn per living entity
-4. round end effects
+1. round-start effects
+2. turn-order calculation
+3. per-entity action loop for living entities
+4. round-end effects
 5. win/loss check
 
-Dungeon round-limit rule:
+Round-start effects:
 
-- a dungeon battle may last at most `10` rounds
-- if enemies are still alive after round `10`, the battle is a failure
-- this timeout failure does not consume a dungeon entry
-- other failure modes may still consume the entry depending on mode rules
+- resolve statuses and delayed effects that trigger at round start
+- clear temporary locks that expire at round start
+- emit round header log event
 
-Round start effects include:
+Round-end effects:
 
-- decrementing temporary locks that expire at round start
-- resolving start-of-round regen or delayed triggers if defined by skill
-- emitting a round header log entry
+- periodic damage (for example `poison`, `burn`)
+- periodic healing (for example `regen`)
+- status duration countdown
+- expired status cleanup
 
-Round end effects include:
+Dungeon battle round cap:
 
-- poison and burn damage
-- regen healing
-- duration countdowns
-- expiry cleanup
+- one dungeon battle is capped at `10` rounds
+- if enemies are still alive at cap, the battle is a defeat
 
 ## 7. Turn Order Rules
 
-Turn order is determined by:
+Turn order priority:
 
 1. higher `speed`
 2. lower `entity_id`
 
-Rules:
+Additional rules:
 
-- turn order is recalculated at the start of every round
-- effects that change `speed` can shift the next round order
-- stun, freeze-like skip, or hard crowd control do not remove an entity from order; they consume its turn
+- order is recalculated at the start of each round
+- speed changes affect the next round order
+- skip-turn crowd control does not remove an entity from order; it consumes that entity turn
 
-## 8. Action Types
+## 8. Action System
 
-V1 supports these action families:
+Action families:
 
 - `basic_attack`
 - `skill_attack`
@@ -170,13 +151,11 @@ V1 supports these action families:
 - `wait`
 - `escape`
 
-For the first dungeon release, `summon` and `escape` can remain engine-supported but content-unused.
+Auto-action rules:
 
-Action selection rule:
-
-- player-side entities are never manually piloted during battle
-- each entity acts from its `4` equipped skills plus the always-available basic attack
-- the action chosen each turn must be explainable by the auto-battle priority rules
+- both player and monster sides execute automatically
+- player-side selection is from `4` equipped active skills plus basic attack
+- illegal actions (cooldown, invalid target, unmet condition) cannot be executed
 
 ## 9. Targeting Rules
 
@@ -192,59 +171,50 @@ Target types:
 - `highest_threat_enemy`
 - `random_enemy`
 
-V1 targeting principles:
+Principles:
 
-- player skills should avoid ambiguous targeting
-- monster AI can use simple scripted priorities
-- any random target selection must be explicitly logged
+- player skill targeting must be explicit
+- monster targeting must follow scripted priority
+- random target decisions must be logged
 
 ## 10. Threat and Target Priority
 
-To support dungeon monsters cleanly, the combat system should include a lightweight threat model.
+Monsters maintain a threat table against player-side entities.
 
-Every monster tracks a threat table against player-side entities.
+Threat generation:
 
-Threat generated:
+- dealt damage: `1.0x` final damage
+- effective healing: `0.45x` effective heal
+- granted shield: `0.35x` shield amount
+- taunt: fixed threat injection
 
-- direct damage dealt: `1.0x` final damage
-- direct healing performed: `0.45x` effective healing, split to visible enemies if needed
-- shielding granted: `0.35x` shield amount
-- taunt skill: fixed threat injection
+Default target chain:
 
-Monster default target logic:
+1. forced target (script or taunt)
+2. highest-threat living target
+3. lowest-current-HP target for execution-style scripts
+4. random living target as fallback
 
-1. forced target from taunt or script
-2. highest threat living target
-3. lowest current HP target if the script prefers execution behavior
-4. random living target if no other condition applies
+## 11. Hit and Randomness Rules
 
-Reason:
-
-- this keeps tank-like roles meaningful later
-- it also keeps monster behavior explainable rather than arbitrary
-
-## 11. Hit, Randomness, and Variance
-
-Bot-friendly combat should keep randomness controlled.
+Randomness must remain controlled and replayable.
 
 Rules:
 
-- basic attacks hit at `100%`
-- each skill defines its hit chance if not guaranteed
-- no hidden dodge stat in the first combat release
-- no random crits on basic attacks
+- basic attack hit chance is `100%`
+- skill hit chance is defined per skill
 - damage variance is `+/- 5%`
-- all roll points must be logged
+- all roll points must be emitted in logs
 
 Allowed roll points:
 
 - hit or miss
-- status application success
+- status apply success or failure
 - random target selection
 - damage variance
-- loot rolls after battle
+- post-battle loot roll
 
-## 12. Damage and Healing Formula Family
+## 12. Formula and Resolution Order
 
 Physical damage:
 
@@ -262,17 +232,17 @@ Shield:
 
 `final_shield = max(1, skill_power + actor.healing_power * shield_ratio)`
 
-Damage processing order:
+Resolution order:
 
-1. raw effect calculated
-2. multiplicative bonuses applied
-3. shield absorbs damage first
-4. remaining damage reduces HP
-5. on-hit status checks resolve
+1. calculate raw effect value
+2. apply multipliers
+3. absorb damage with shield first
+4. reduce HP by remaining damage
+5. resolve follow-up statuses
 
 ## 13. Damage Types
 
-V1 damage types:
+Damage types:
 
 - `physical`
 - `magic`
@@ -285,90 +255,72 @@ Defense interaction:
 
 - `physical` uses `physical_defense`
 - `magic` and `holy` use `magic_defense`
-- `poison` and `burn` ignore a portion of defense only if the skill explicitly says so
-- `true` damage ignores both defenses
+- `poison` and `burn` defense bypass is skill-defined
+- `true` ignores both defenses
 
 ## 14. Status System
 
-Statuses should be explicit, short-lived, and machine-readable.
+Status payload fields:
 
-V1 primary statuses:
+- `status_id`
+- `status_type`
+- `source_entity_id`
+- `duration_rounds`
+- `stacks`
+- `potency`
+
+Core statuses:
 
 - `poison`
-  - end-of-round damage
 - `burn`
-  - end-of-round damage
 - `stun`
-  - skip next turn
 - `silence`
-  - cannot cast magic-tagged skills
 - `regen`
-  - end-of-round healing
 - `shielded`
-  - absorbs incoming damage first
 - `defense_up`
-  - percentage bonus to physical and magic defense
 - `defense_down`
-  - percentage reduction to physical and magic defense
 - `attack_up`
-  - percentage bonus to main attack stats
 - `attack_down`
-  - percentage reduction to main attack stats
 - `speed_up`
-  - percentage bonus to speed
 - `speed_down`
-  - percentage reduction to speed
 - `vulnerable`
-  - target takes increased incoming damage
 
 Status rules:
 
-- every status has:
-  - `status_id`
-  - `status_type`
-  - `source_entity_id`
-  - `duration_rounds`
-  - `stacks`
-  - `potency`
-- unless marked stackable, reapplying the same status refreshes duration only
-- status resolution timing must be part of the status definition
+- non-stackable statuses refresh duration on reapply
+- each status must declare its resolution timing
 
-## 15. Cooldowns and Action Gating
+## 15. Cooldowns and Action Legality
 
-Every skill should define:
+Skill tiers:
 
-- skill tier
-  - `normal`
-  - `advanced`
-  - `ultimate`
-- cooldown
-- target type
-- damage or healing family
-- status effects if any
+- `normal`
+- `advanced`
+- `ultimate`
 
-Cooldown tier rules:
+Cooldown rules:
 
-- normal skill: `1` round cooldown
-- advanced skill: `2` round cooldown
-- ultimate skill: `3` round cooldown
-- basic attack: `0` round cooldown
+- `normal`: `1` round
+- `advanced`: `2` rounds
+- `ultimate`: `3` rounds
+- basic attack: `0` rounds
 
-Action gating rules:
+Action legality:
 
-- if cooldown is active, the action is illegal
-- if target requirement is not met, the action is illegal
-- if the actor is stunned, only skip-turn resolution happens
-- if the actor is silenced, only non-magic actions remain valid
-- if the skill is not part of the active `4`-skill loadout, it is illegal for that battle
+- active cooldown: illegal
+- no valid target: illegal
+- under `stun`: turn is skipped
+- under `silence`: magic-tagged skills are illegal
+- non-equipped skill: illegal
 
-## 16. Player-side Skill Structure
+## 16. Skill Schema and Auto Priority
 
-A skill definition should include:
+Unified skill schema fields:
 
 - `skill_id`
 - `name`
 - `class`
-- `weapon_style` if restricted
+- `weapon_style` (if restricted)
 - `action_type`
 - `target_type`
 - `damage_type`
@@ -382,47 +334,39 @@ A skill definition should include:
 - `status_payloads`
 - `ai_tags`
 
-This shape should be shared by player and monster active skills where possible.
+Loadout rules:
 
-Dungeon loadout rules:
+- each character equips up to `4` active skills before battle
+- basic attack does not consume a slot
+- equipped skills must match current weapon style restrictions
 
-- each character can equip up to `4` active skills before entering a dungeon
-- the basic attack does not consume a skill slot
-- only skills valid for the currently equipped weapon style may be loaded
-- bots should be able to save loadout presets per dungeon or role
+Recommended auto priority:
 
-Recommended auto-battle priority:
-
-1. use emergency survival skills if needed
-2. use healing or shielding if allies are in danger
-3. use control or AoE when the battlefield state favors it
-4. use an available ultimate or the strongest single-target finisher
-5. fall back to the basic attack if all skills are on cooldown
+1. emergency survival
+2. team sustain and shielding
+3. control or AoE
+4. finisher or high-multiplier damage
+5. basic attack fallback
 
 ## 17. Monster AI Rules
 
-Monster AI in V1 should be scripted and explainable, not emergent.
+Monster AI uses an explainable scripted chain:
 
-Recommended decision ladder:
+1. forced-skill instruction
+2. phase-threshold branch
+3. high-priority skill condition check
+4. default attack fallback
 
-1. if a phase script says "use forced skill", do that
-2. if HP threshold behavior is active, follow that branch
-3. if a high-priority skill is off cooldown and condition is met, use it
-4. else use the strongest legal default attack
+Common condition dimensions:
 
-Condition examples:
+- self HP threshold
+- enemy alive count threshold
+- phase switch marker
+- target status (for example shield, silence)
 
-- target is silenced
-- self HP below `50%`
-- at least `2` enemies alive
-- boss phase changed this round
-- highest threat target has shield active
+## 18. Wave and Encounter Structure
 
-This allows monsters to feel intelligent without making behavior opaque.
-
-## 18. Encounter and Wave Structure
-
-Encounter container should support:
+Encounter fields:
 
 - `encounter_id`
 - `battle_type`
@@ -432,38 +376,32 @@ Encounter container should support:
 - `victory_rewards`
 - `failure_outcome`
 
-Wave rules:
+Wave constraints:
 
-- field encounters usually use `1` wave
-- elites can use `1-2` waves
-- dungeons can use `1-3` regular waves plus a boss wave
-- boss fights can have `2-3` internal phases while still remaining one encounter
+- field encounters are usually `1` wave
+- elite encounters are usually `1-2` waves
+- dungeons usually use regular waves plus a boss wave
+- a boss may have multiple internal phases inside one encounter
 
-## 19. Victory and Defeat Resolution
+## 19. Win and Loss Resolution
 
 Victory:
 
 - all hostile entities are defeated
 - rewards are granted
-- quest and seasonal XP progress is updated
+- quest and progression updates are applied
 - battle summary is emitted
 
 Defeat:
 
-- all player-side entities are defeated
-- encounter marked failed
-- dungeon failure logic or retreat logic resolves
-- partial reward is only granted if the encounter definition allows it
+- player-side wipe or configured failure condition
+- configured failure outcomes are applied
 
 Retreat:
 
-- not allowed in arena
-- allowed in some field encounters
-- in dungeons, retreat rules should be defined per mode
+- retreat availability is controlled by combat-type configuration
 
 ## 20. Battle Log Contract
-
-Every battle must emit a structured log sequence.
 
 Required event families:
 
@@ -481,7 +419,7 @@ Required event families:
 - `wave.cleared`
 - `battle.finished`
 
-Each log entry should expose:
+Required fields per log entry:
 
 - `battle_id`
 - `round`
@@ -496,49 +434,38 @@ Each log entry should expose:
 - `status_changes`
 - `timestamp`
 
-## 21. Observer-facing Summary
+## 21. Observer Summary Contract
 
-For the website, every battle should also produce a compact summary:
+Each battle also emits a compact summary:
 
 - winner
-- rounds taken
-- total damage dealt
-- total healing done
-- key statuses applied
+- total rounds
+- total damage
+- total healing
+- key statuses
 - finishing action
-- notable drops or rewards
+- key rewards
 
-This allows the observer website to show bot activity without dumping raw logs by default.
+## 22. Integration With Progression
 
-## 22. Integration With Progression and Equipment
-
-Combat power should resolve from:
+Combat power aggregation:
 
 `base_template + season_level_growth + equipment_bonus + temporary_modifiers`
 
-Battle rewards should later feed:
+Combat result outputs:
 
-- seasonal XP
-- adventurer reputation if tied to quests or contracts
-- material drops
-- equipment drops
-- dungeon clear metrics
+- experience
+- reputation
+- materials
+- equipment
+- dungeon metrics
 
-## 23. Rules for the First Playable Release
+## 23. Integration With Potion System
 
-To keep the first combat implementation shippable, the initial scope should be:
+Battle sustain and potion behavior is defined by:
 
-- `1-4` bots per dungeon party
-- one to four monsters per wave
-- no summons in shipping content
-- no escape in boss battles
-- no hidden stats
-- no proc chains
-- no reactive counterattack system yet
+- `15-battle-consumable-and-potion-system.md`
 
-## 24. Open Tuning Decisions
+Execution flow and runtime sequencing are defined by:
 
-- whether `holy` should remain separate from general magic in later formulas
-- whether threat should be exposed to bots numerically or only indirectly
-- whether `accuracy`, `status_mastery`, and `status_resistance` should launch with combat or with the gear expansion
-- whether elite encounters should always include one script-driven mechanic for observer interest
+- `16-battle-auto-resolution-flow.md`

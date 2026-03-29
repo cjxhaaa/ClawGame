@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import type {
   BotDetail,
   DungeonHistoryItem,
+  EquipmentItemScore,
   PublicWorldState,
   QuestHistoryItem,
 } from "../lib/public-api";
@@ -71,14 +72,28 @@ export default function BotDetailConsole({
     [detail.stats_snapshot, language],
   );
 
+  const itemScoreByID = useMemo(() => {
+    const map = new Map<string, EquipmentItemScore>();
+    for (const item of detail.equipment_item_scores) {
+      map.set(item.item_id, item);
+    }
+    return map;
+  }, [detail.equipment_item_scores]);
+
   const equippedViews = useMemo(
-    () => detail.equipment.equipped.map((item, index) => toEquipmentView(item, index, language)),
-    [detail.equipment.equipped, language],
+    () =>
+      detail.equipment.equipped.map((item, index) =>
+        toEquipmentView(item, index, language, itemScoreByID),
+      ),
+    [detail.equipment.equipped, itemScoreByID, language],
   );
 
   const backpackViews = useMemo(
-    () => detail.equipment.inventory.map((item, index) => toEquipmentView(item, index, language)),
-    [detail.equipment.inventory, language],
+    () =>
+      detail.equipment.inventory.map((item, index) =>
+        toEquipmentView(item, index, language, itemScoreByID),
+      ),
+    [detail.equipment.inventory, itemScoreByID, language],
   );
 
   const equippedBySlot = useMemo(() => {
@@ -157,6 +172,10 @@ export default function BotDetailConsole({
         }
         stats={[
           {
+            label: language === "zh-CN" ? "战斗力" : "Combat Power",
+            value: formatMetric(detail.combat_power.panel_power_score, language, ""),
+          },
+          {
             label: language === "zh-CN" ? "当前区域" : "Current Region",
             value: localizeRegionName(
               detail.character_summary.location_region_id,
@@ -181,6 +200,42 @@ export default function BotDetailConsole({
           <section className="detail-block profile-summary-block">
             <h3>{language === "zh-CN" ? "角色ID" : "Character ID"}</h3>
             <p className="profile-id-row">{detail.character_summary.character_id}</p>
+
+            <div className="profile-kv-grid" style={{ marginBottom: 12 }}>
+              <p className="profile-kv-row">
+                <span>{language === "zh-CN" ? "总战斗力" : "Panel Combat Power"}</span>
+                <strong>{formatMetric(detail.combat_power.panel_power_score, language, "")}</strong>
+              </p>
+              <p className="profile-kv-row">
+                <span>{language === "zh-CN" ? "基础成长分" : "Base Growth"}</span>
+                <strong>{formatMetric(detail.combat_power.base_growth_score, language, "")}</strong>
+              </p>
+              <p className="profile-kv-row">
+                <span>{language === "zh-CN" ? "装备总分" : "Equipment Score"}</span>
+                <strong>{formatMetric(detail.combat_power.equipment_score, language, "")}</strong>
+              </p>
+              <p className="profile-kv-row">
+                <span>{language === "zh-CN" ? "构筑修正" : "Build Modifier"}</span>
+                <strong>
+                  {detail.combat_power.build_modifier_score >= 0 ? "+" : ""}
+                  {formatMetric(detail.combat_power.build_modifier_score, language, "")}
+                </strong>
+              </p>
+              <p className="profile-kv-row">
+                <span>{language === "zh-CN" ? "竞技场预估" : "Arena Preview"}</span>
+                <strong>{detail.combat_power.arena_preview.estimated_win_rate_band}</strong>
+              </p>
+              <p className="profile-kv-row">
+                <span>{language === "zh-CN" ? "建议副本" : "Suggested Dungeon"}</span>
+                <strong>
+                  {detail.combat_power.dungeon_previews[0]
+                    ? `${detail.combat_power.dungeon_previews[0].dungeon_name} (${detail.combat_power.dungeon_previews[0].estimated_clear_band})`
+                    : language === "zh-CN"
+                      ? "暂无"
+                      : "N/A"}
+                </strong>
+              </p>
+            </div>
 
             <div className="profile-main-grid">
               <section className="profile-side-block">
@@ -271,7 +326,7 @@ export default function BotDetailConsole({
                   </div>
                   <p className="gear-slot-name">
                     {item
-                      ? item.name
+                      ? `${item.name} · ${language === "zh-CN" ? "战力" : "Power"} ${item.powerScore}`
                       : language === "zh-CN"
                         ? "该槽位暂无装备"
                         : "Empty slot"}
@@ -530,6 +585,8 @@ type EquipmentView = {
   slotLabel: string;
   meta: string;
   extra: string;
+  powerScore: number;
+  deltaVsEquipped: number;
   statsEntries: Array<{ key: string; value: number }>;
 };
 
@@ -554,7 +611,12 @@ function pickNumber(value: unknown): number | undefined {
   return undefined;
 }
 
-function toEquipmentView(item: Record<string, unknown>, index: number, language: string) {
+function toEquipmentView(
+  item: Record<string, unknown>,
+  index: number,
+  language: string,
+  itemScoreByID: Map<string, EquipmentItemScore>,
+) {
   const itemID = String(item.item_id ?? item.catalog_id ?? `item-${index}`);
   const name = String(item.name ?? (language === "zh-CN" ? "未知物品" : "Unknown item"));
   const slot = String(item.slot ?? "-");
@@ -565,6 +627,9 @@ function toEquipmentView(item: Record<string, unknown>, index: number, language:
   const state = String(item.state ?? "-");
   const statsEntries = toStatsEntries(item.stats);
   const stats = statsEntries.map((entry) => `${localizeStatKey(entry.key, language)}+${entry.value}`).join(", ");
+  const score = itemScoreByID.get(itemID);
+  const powerScore = score?.power_score ?? 0;
+  const deltaVsEquipped = score?.delta_vs_equipped ?? 0;
 
   return {
     key: `${itemID}-${index}`,
@@ -572,14 +637,16 @@ function toEquipmentView(item: Record<string, unknown>, index: number, language:
     slot,
     slotLabel,
     statsEntries,
+    powerScore,
+    deltaVsEquipped,
     meta:
       language === "zh-CN"
-        ? `槽位: ${slotLabel} · 稀有度: ${rarity} · 强化: +${enhancement}`
-        : `Slot: ${slotLabel} · Rarity: ${rarity} · Enhance: +${enhancement}`,
+        ? `槽位: ${slotLabel} · 稀有度: ${rarity} · 强化: +${enhancement} · 战力: ${powerScore}`
+        : `Slot: ${slotLabel} · Rarity: ${rarity} · Enhance: +${enhancement} · Power: ${powerScore}`,
     extra:
       language === "zh-CN"
-        ? `耐久: ${durability} · 状态: ${state}${stats ? ` · 属性: ${stats}` : ""}`
-        : `Durability: ${durability} · State: ${state}${stats ? ` · Stats: ${stats}` : ""}`,
+        ? `耐久: ${durability} · 状态: ${state} · 相对当前: ${deltaVsEquipped >= 0 ? "+" : ""}${deltaVsEquipped}${stats ? ` · 属性: ${stats}` : ""}`
+        : `Durability: ${durability} · State: ${state} · Delta vs equipped: ${deltaVsEquipped >= 0 ? "+" : ""}${deltaVsEquipped}${stats ? ` · Stats: ${stats}` : ""}`,
   };
 }
 

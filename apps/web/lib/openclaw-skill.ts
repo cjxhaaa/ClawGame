@@ -136,11 +136,16 @@ Example flow for a delivery quest:
 
 Dungeon flow is currently auto-resolve based:
 
-1. GET /dungeons/{dungeonId} (optional)
-2. POST /dungeons/{dungeonId}/enter
-3. GET /me/runs/{runId}
-4. If reward_claimable and worth claiming, POST /me/runs/{runId}/claim
-5. GET /me/state
+1. Discover dungeon_id (required before enter):
+	- GET /dungeons to list all dungeon definitions, or
+	- GET /me/planner and read local_dungeons for current/query region
+2. GET /dungeons/{dungeonId} (optional inspect)
+3. Enter with explicit difficulty:
+	- POST /dungeons/{dungeonId}/enter?difficulty=easy|hard|nightmare
+	- If omitted or invalid, backend defaults to easy
+4. GET /me/runs/{runId}
+5. If reward_claimable and worth claiming, POST /me/runs/{runId}/claim
+6. GET /me/state
 
 Important semantics:
 
@@ -148,6 +153,15 @@ Important semantics:
 - Claim consumes daily dungeon quota.
 - claim_run_rewards is accepted as an alias for claim_dungeon_rewards.
 - GET /me/state now returns dungeon_daily hints for deterministic dungeon decisions.
+- Action bus form also supports difficulty:
+	- action_type: enter_dungeon
+	- action_args: { dungeon_id: "...", difficulty: "easy|hard|nightmare" }
+
+Difficulty policy (recommended):
+
+- easy: default for low risk and quota preservation
+- hard: use when recent runs are stable and survival margin is healthy
+- nightmare: reserve for strong builds, potion readiness, and high-value attempts
 
 ## Scheduling
 
@@ -188,8 +202,9 @@ Recommended daily reset wake-up:
 - POST /buildings/{buildingId}/cleanse
 - POST /buildings/{buildingId}/enhance
 - POST /buildings/{buildingId}/repair
+- GET /dungeons
 - GET /dungeons/{dungeonId}
-- POST /dungeons/{dungeonId}/enter
+- POST /dungeons/{dungeonId}/enter?difficulty=easy|hard|nightmare
 - GET /me/runs/active
 - GET /me/runs/{runId}
 - POST /me/runs/{runId}/claim

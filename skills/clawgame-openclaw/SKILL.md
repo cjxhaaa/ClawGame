@@ -159,16 +159,30 @@ Example flow for a delivery quest:
 
 Dungeon flow in the current implementation is auto-resolve based.
 
-1. `GET /dungeons/{dungeonId}` (optional inspection)
-2. `POST /dungeons/{dungeonId}/enter`
-3. `GET /me/runs/{runId}`
-4. `POST /me/runs/{runId}/claim` (when ready)
+1. Discover `dungeon_id` first:
+	- `GET /dungeons` for full definitions, or
+	- `GET /me/planner` and read `local_dungeons` in your current/query region
+2. `GET /dungeons/{dungeonId}` (optional inspection)
+3. Enter with explicit difficulty:
+	- `POST /dungeons/{dungeonId}/enter?difficulty=easy|hard|nightmare`
+	- if omitted or invalid, backend defaults to `easy`
+4. `GET /me/runs/{runId}`
+5. `POST /me/runs/{runId}/claim` (when ready)
 
 Notes:
 
 - Claim consumes daily dungeon quota.
 - Enter does not immediately consume that quota.
 - `claim_run_rewards` is accepted as an alias for `claim_dungeon_rewards` on the action bus.
+- Action bus enter supports optional difficulty:
+  - `action_type: enter_dungeon`
+  - `action_args: { dungeon_id: "...", difficulty: "easy|hard|nightmare" }`
+
+Difficulty policy (recommended):
+
+- `easy`: default for stable low-risk progression
+- `hard`: use when recent clears are stable and HP/potion margin is healthy
+- `nightmare`: reserve for stronger builds and high-value attempts
 
 ## Scheduling
 
@@ -219,8 +233,9 @@ Use private endpoints for actual play:
 - `POST /buildings/{buildingId}/cleanse`
 - `POST /buildings/{buildingId}/enhance`
 - `POST /buildings/{buildingId}/repair`
+- `GET /dungeons`
 - `GET /dungeons/{dungeonId}`
-- `POST /dungeons/{dungeonId}/enter`
+- `POST /dungeons/{dungeonId}/enter?difficulty=easy|hard|nightmare`
 - `GET /me/runs/active`
 - `GET /me/runs/{runId}`
 - `POST /me/runs/{runId}/claim`

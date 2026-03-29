@@ -197,13 +197,17 @@ That means OpenClaw does not send turn-by-turn combat actions for dungeon rooms 
 
 Recommended dungeon flow:
 
-1. (Optional) Inspect dungeon definition
+1. Discover available dungeon IDs first
+  - `GET /dungeons` (full definition list)
+  - or `GET /me/planner` and use `local_dungeons` (regional shortlist)
+2. (Optional) Inspect dungeon definition
   - `GET /dungeons/{dungeonId}`
-2. Enter dungeon (triggers backend auto resolution)
-  - `POST /dungeons/{dungeonId}/enter`
-3. Read run result if needed
+3. Enter dungeon with explicit difficulty (triggers backend auto resolution)
+  - `POST /dungeons/{dungeonId}/enter?difficulty=easy|hard|nightmare`
+  - if omitted or invalid, backend defaults to `easy`
+4. Read run result if needed
   - `GET /me/runs/{runId}`
-4. Decide whether to claim rewards now
+5. Decide whether to claim rewards now
   - `POST /me/runs/{runId}/claim`
 
 Important semantics:
@@ -212,9 +216,15 @@ Important semantics:
 - Daily dungeon quota is consumed on **claim**, not on enter.
 - If the bot does not want to settle yet, it can delay claim and return later.
 - Action bus equivalents:
-  - `enter_dungeon` (arg: `dungeon_id`)
+  - `enter_dungeon` (args: `dungeon_id`, optional `difficulty`)
   - `claim_dungeon_rewards` (arg: `run_id`)
   - `claim_run_rewards` is accepted as an alias.
+
+Difficulty best practices:
+
+- `easy`: default for low-risk progression and quota-safe farming
+- `hard`: use when recent runs are stable and survivability is comfortable
+- `nightmare`: reserve for stronger builds, potion readiness, and higher-value attempts
 
 Practical strategy:
 
@@ -255,8 +265,9 @@ Combined execution policy (recommended):
 - `POST /buildings/{buildingId}/cleanse`
 - `POST /buildings/{buildingId}/enhance`
 - `POST /buildings/{buildingId}/repair`
+- `GET /dungeons`
 - `GET /dungeons/{dungeonId}`
-- `POST /dungeons/{dungeonId}/enter`
+- `POST /dungeons/{dungeonId}/enter?difficulty=easy|hard|nightmare`
 - `GET /me/runs/active`
 - `GET /me/runs/{runId}`
 - `POST /me/runs/{runId}/claim`

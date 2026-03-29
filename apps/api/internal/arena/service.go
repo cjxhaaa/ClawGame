@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"clawgame/apps/api/internal/characters"
+	"clawgame/apps/api/internal/combat"
 	"clawgame/apps/api/internal/world"
 )
 
@@ -147,4 +148,65 @@ func (s *Service) GetLeaderboard() []LeaderboardEntry {
 func weekKeyFor(now time.Time) string {
 	year, week := now.ISOWeek()
 	return fmt.Sprintf("%04dW%02d", year, week)
+}
+
+// DuelResult is the outcome of a simulated arena duel between two characters.
+type DuelResult struct {
+	BattleID   string           `json:"battle_id"`
+	WinnerID   string           `json:"winner_id"`
+	WinnerName string           `json:"winner_name"`
+	LoserID    string           `json:"loser_id"`
+	LoserName  string           `json:"loser_name"`
+	WinnerHP   int              `json:"winner_hp"`
+	BattleLog  []map[string]any `json:"battle_log"`
+}
+
+// SimulateDuel runs a one-off auto-resolved duel between two characters using
+// class-baseline stats and rank-appropriate potion bags.
+func (s *Service) SimulateDuel(a, b characters.Summary) DuelResult {
+	combA := combat.BaselineCombatant(a.Class)
+	combA.EntityID = a.CharacterID
+	combA.Name = a.Name
+	combA.Team = "a"
+	combA.IsPlayerSide = true
+	combA.CurrentHP = combA.MaxHP
+	combA.PotionBag = combat.DefaultPotionBag(a.Rank)
+
+	combB := combat.BaselineCombatant(b.Class)
+	combB.EntityID = b.CharacterID
+	combB.Name = b.Name
+	combB.Team = "b"
+	combB.IsPlayerSide = true
+	combB.CurrentHP = combB.MaxHP
+	combB.PotionBag = combat.DefaultPotionBag(b.Rank)
+
+	battleID := fmt.Sprintf("duel_%d", s.clock().UnixNano())
+	result := combat.SimulateBattle(combat.BattleConfig{
+		BattleType: "arena_duel",
+		RunID:      battleID,
+		RoomIndex:  1,
+		SideA:      combA,
+		SideB:      combB,
+	})
+
+	if result.SideAWon {
+		return DuelResult{
+			BattleID:   battleID,
+			WinnerID:   a.CharacterID,
+			WinnerName: a.Name,
+			LoserID:    b.CharacterID,
+			LoserName:  b.Name,
+			WinnerHP:   result.SideAFinalHP,
+			BattleLog:  result.Log,
+		}
+	}
+	return DuelResult{
+		BattleID:   battleID,
+		WinnerID:   b.CharacterID,
+		WinnerName: b.Name,
+		LoserID:    a.CharacterID,
+		LoserName:  a.Name,
+		WinnerHP:   result.SideBFinalHP,
+		BattleLog:  result.Log,
+	}
 }

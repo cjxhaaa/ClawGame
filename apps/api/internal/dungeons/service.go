@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"clawgame/apps/api/internal/characters"
+	"clawgame/apps/api/internal/combat"
 )
 
 var (
@@ -33,6 +34,7 @@ type DefinitionView struct {
 	BossRoomIndex       int                 `json:"boss_room_index"`
 	RecommendedLevelMin int                 `json:"recommended_level_min"`
 	RecommendedLevelMax int                 `json:"recommended_level_max"`
+	IsNovice            bool                `json:"is_novice"`
 	RatingRules         []DungeonRatingRule `json:"rating_rules"`
 	RewardSummary       map[string]any      `json:"reward_summary"`
 }
@@ -45,6 +47,7 @@ type DungeonRatingRule struct {
 type RunView struct {
 	RunID                     string                   `json:"run_id"`
 	DungeonID                 string                   `json:"dungeon_id"`
+	Difficulty                string                   `json:"difficulty"`
 	StartedAt                 string                   `json:"started_at"`
 	ResolvedAt                string                   `json:"resolved_at"`
 	RunStatus                 string                   `json:"run_status"`
@@ -120,7 +123,7 @@ func RankAllows(currentRank, requiredRank string) bool {
 	return rankAllows(currentRank, requiredRank)
 }
 
-func (s *Service) EnterDungeon(character characters.Summary, _ characters.DailyLimits, dungeonID string) (RunView, error) {
+func (s *Service) EnterDungeon(character characters.Summary, _ characters.DailyLimits, dungeonID, difficulty string) (RunView, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -131,6 +134,7 @@ func (s *Service) EnterDungeon(character characters.Summary, _ characters.DailyL
 	if !rankAllows(character.Rank, def.MinRank) {
 		return RunView{}, ErrDungeonRankNotEligible
 	}
+	difficulty = normalizeDifficulty(difficulty)
 	if activeRunID, ok := s.activeRunByCharacter[character.CharacterID]; ok {
 		if existing, exists := s.runsByID[activeRunID]; exists {
 			if existing.Run.RunStatus == "active" || existing.Run.RunStatus == "resolving" {
@@ -143,7 +147,7 @@ func (s *Service) EnterDungeon(character characters.Summary, _ characters.DailyL
 	now := s.clock().Format(time.RFC3339)
 	runID := nextID("run")
 
-	battleResult := simulateDungeonRun(character, def, runID)
+	battleResult := simulateDungeonRun(character, def, difficulty, runID)
 	rating := ratingFromRoomClear(battleResult.HighestRoomCleared, def.RoomCount)
 	pendingRatingRewards := []map[string]any{}
 	if battleResult.Cleared {
@@ -157,7 +161,7 @@ func (s *Service) EnterDungeon(character characters.Summary, _ characters.DailyL
 	rewardClaimable := battleResult.Cleared
 	stagedMaterialDrops := []map[string]any{}
 	if rewardClaimable {
-		stagedMaterialDrops = stagedMaterialDropsFromClear(battleResult.HighestRoomCleared)
+		stagedMaterialDrops = stagedMaterialDropsFromClear(battleResult.HighestRoomCleared, difficulty)
 	}
 	availableActions := []characters.ValidAction{}
 	if rewardClaimable {
@@ -173,6 +177,7 @@ func (s *Service) EnterDungeon(character characters.Summary, _ characters.DailyL
 	run := RunView{
 		RunID:                     runID,
 		DungeonID:                 def.DungeonID,
+		Difficulty:                difficulty,
 		StartedAt:                 now,
 		ResolvedAt:                now,
 		RunStatus:                 runStatus,
@@ -188,6 +193,7 @@ func (s *Service) EnterDungeon(character characters.Summary, _ characters.DailyL
 			"room_count":      def.RoomCount,
 			"boss_room_index": def.BossRoomIndex,
 			"rooms_cleared":   battleResult.HighestRoomCleared,
+			"difficulty":      difficulty,
 		},
 		BattleState: map[string]any{
 			"engine_mode":         "auto_turn_based",
@@ -198,6 +204,7 @@ func (s *Service) EnterDungeon(character characters.Summary, _ characters.DailyL
 			"player_survived":     battleResult.PlayerSurvived,
 			"final_result":        runStatus,
 			"ended_in_room_index": battleResult.EndedInRoomIndex,
+			"difficulty":          difficulty,
 		},
 		StagedMaterialDrops:  stagedMaterialDrops,
 		PendingRatingRewards: pendingRatingRewards,
@@ -207,7 +214,7 @@ func (s *Service) EnterDungeon(character characters.Summary, _ characters.DailyL
 
 	rewardGold := 0
 	if battleResult.Cleared {
-		rewardGold = scaledRewardGold(definitionRewardGold(def), battleResult.HighestRoomCleared, def.RoomCount)
+		rewardGold = scaledRewardGold(definitionRewardGold(def), battleResult.HighestRoomCleared, def.RoomCount, difficulty)
 	}
 
 	s.runsByID[runID] = runRecord{
@@ -218,6 +225,17 @@ func (s *Service) EnterDungeon(character characters.Summary, _ characters.DailyL
 	delete(s.activeRunByCharacter, character.CharacterID)
 
 	return run, nil
+}
+
+func normalizeDifficulty(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "hard":
+		return "hard"
+	case "nightmare":
+		return "nightmare"
+	default:
+		return "easy"
+	}
 }
 
 func (s *Service) GetActiveRun(characterID string) (*RunView, error) {
@@ -341,26 +359,54 @@ type simulatedRunResult struct {
 	Log                []map[string]any
 }
 
-func simulateDungeonRun(character characters.Summary, def DefinitionView, runID string) simulatedRunResult {
-	stats := baselineStatsForClass(character.Class)
-	startHP := maxInt(1, stats.maxHP)
-	currentHP := startHP
-	log := make([]map[string]any, 0, def.RoomCount*8)
+func simulateDungeonRun(character characters.Summary, def DefinitionView, difficulty, runID string) simulatedRunResult {
+	player := combat.BaselineCombatant(character.Class)
+	player.EntityID = character.CharacterID
+	player.Name = character.Name
+	player.Team = "a"
+	player.IsPlayerSide = true
+	player.CurrentHP = maxInt(1, player.MaxHP)
+	player.PotionBag = combat.DefaultPotionBag(character.Rank)
+
+	startHP := player.CurrentHP
+	runPotionUsed := 0
+	log := make([]map[string]any, 0, def.RoomCount*12)
 
 	for roomIndex := 1; roomIndex <= def.RoomCount; roomIndex++ {
-		enemy := enemyForRoom(def, roomIndex)
-		outcome := simulateRoomCombat(runID, roomIndex, currentHP, stats, enemy)
-		log = append(log, outcome.Log...)
+		composition := buildRoomComposition(def.DungeonID, difficulty, roomIndex, def.BossRoomIndex)
+		enemy := buildRoomEnemyCombatant(def, difficulty, roomIndex, composition)
+		isBoss := composition.hasBoss(def.BossRoomIndex, roomIndex)
+		log = append(log, map[string]any{
+			"step":       "room_composition",
+			"event_type": "room_composition",
+			"room_index": roomIndex,
+			"difficulty": difficulty,
+			"monsters":   composition.logView(),
+			"message":    "room enemy composition prepared",
+		})
+
+		result := combat.SimulateBattle(combat.BattleConfig{
+			BattleType:     "dungeon_wave",
+			RunID:          runID,
+			RoomIndex:      roomIndex,
+			IsBossRoom:     isBoss,
+			SideA:          player,
+			SideB:          enemy,
+			RunPotionUsedA: runPotionUsed,
+		})
+
+		log = append(log, result.Log...)
 		if len(log) > 120 {
 			log = log[len(log)-120:]
 		}
+		runPotionUsed += result.PotionsConsumedA
 
-		if !outcome.PlayerWon {
+		if !result.SideAWon {
 			return simulatedRunResult{
 				Cleared:            false,
-				PlayerSurvived:     outcome.PlayerHP > 0,
+				PlayerSurvived:     result.SideAFinalHP > 0,
 				StartHP:            startHP,
-				RemainingHP:        maxInt(0, outcome.PlayerHP),
+				RemainingHP:        maxInt(0, result.SideAFinalHP),
 				CurrentRoomIndex:   roomIndex,
 				HighestRoomCleared: roomIndex - 1,
 				EndedInRoomIndex:   roomIndex,
@@ -368,11 +414,14 @@ func simulateDungeonRun(character characters.Summary, def DefinitionView, runID 
 			}
 		}
 
-		currentHP = outcome.PlayerHP
-		if roomIndex < def.RoomCount {
-			recovery := maxInt(6, int(float64(stats.maxHP)*0.18)+stats.healingPower)
-			beforeHP := currentHP
-			currentHP = minInt(stats.maxHP, currentHP+recovery)
+		// HP carries over to the next room.
+		player.CurrentHP = result.SideAFinalHP
+
+		// Recovery between rooms: none for standard dungeons, 5 % max_hp for novice dungeons.
+		if roomIndex < def.RoomCount && def.IsNovice {
+			recovery := maxInt(1, int(float64(player.MaxHP)*0.05))
+			beforeHP := player.CurrentHP
+			player.CurrentHP = minInt(player.MaxHP, player.CurrentHP+recovery)
 			log = append(log, map[string]any{
 				"step":                  "room_recovery",
 				"event_type":            "room_recovery",
@@ -380,16 +429,16 @@ func simulateDungeonRun(character characters.Summary, def DefinitionView, runID 
 				"turn":                  0,
 				"actor":                 "system",
 				"target":                "player",
-				"action":                "short_rest",
-				"value":                 recovery,
+				"action":                "novice_rest",
+				"value":                 player.CurrentHP - beforeHP,
 				"value_type":            "heal",
 				"target_hp_before":      beforeHP,
-				"target_hp_after":       currentHP,
-				"player_hp":             currentHP,
+				"target_hp_after":       player.CurrentHP,
+				"player_hp":             player.CurrentHP,
 				"enemy_hp":              0,
 				"cooldown_before_round": map[string]int{},
 				"cooldown_after_round":  map[string]int{},
-				"message":               "player recovers between rooms",
+				"message":               "novice dungeon recovery between rooms",
 			})
 		}
 	}
@@ -398,7 +447,7 @@ func simulateDungeonRun(character characters.Summary, def DefinitionView, runID 
 		Cleared:            true,
 		PlayerSurvived:     true,
 		StartHP:            startHP,
-		RemainingHP:        currentHP,
+		RemainingHP:        player.CurrentHP,
 		CurrentRoomIndex:   def.RoomCount,
 		HighestRoomCleared: def.RoomCount,
 		EndedInRoomIndex:   def.RoomCount,
@@ -406,333 +455,301 @@ func simulateDungeonRun(character characters.Summary, def DefinitionView, runID 
 	}
 }
 
-type combatStats struct {
-	maxHP           int
-	physicalAttack  int
-	magicAttack     int
-	physicalDefense int
-	magicDefense    int
-	speed           int
-	healingPower    int
+type difficultyMultiplier struct {
+	hp      float64
+	damage  float64
+	defense float64
+	speed   float64
 }
 
-type roomEnemy struct {
-	name            string
-	hp              int
-	attack          int
-	physicalDefense int
-	magicDefense    int
-	speed           int
+type roomMonsterSlot struct {
+	MonsterID string
+	Tier      string
+	Role      string
+	Count     int
 }
 
-type roomCombatResult struct {
-	PlayerWon bool
-	PlayerHP  int
-	Log       []map[string]any
+type roomComposition struct {
+	slots []roomMonsterSlot
 }
 
-func baselineStatsForClass(class string) combatStats {
-	class = strings.TrimSpace(strings.ToLower(class))
-	switch class {
-	case "warrior":
-		return combatStats{maxHP: 132, physicalAttack: 28, magicAttack: 6, physicalDefense: 18, magicDefense: 10, speed: 10, healingPower: 4}
-	case "mage":
-		return combatStats{maxHP: 92, physicalAttack: 11, magicAttack: 34, physicalDefense: 9, magicDefense: 18, speed: 16, healingPower: 8}
-	case "priest":
-		return combatStats{maxHP: 104, physicalAttack: 10, magicAttack: 26, physicalDefense: 11, magicDefense: 17, speed: 14, healingPower: 20}
-	default:
-		return combatStats{maxHP: 100, physicalAttack: 16, magicAttack: 16, physicalDefense: 12, magicDefense: 12, speed: 12, healingPower: 6}
+func (c roomComposition) hasBoss(bossRoomIndex, roomIndex int) bool {
+	if roomIndex != bossRoomIndex {
+		return false
+	}
+	for _, slot := range c.slots {
+		if slot.Count > 0 && strings.EqualFold(slot.Tier, "boss") {
+			return true
+		}
+	}
+	return false
+}
+
+func (c roomComposition) logView() []map[string]any {
+	items := make([]map[string]any, 0, len(c.slots))
+	for _, slot := range c.slots {
+		if slot.Count <= 0 {
+			continue
+		}
+		items = append(items, map[string]any{
+			"monster_id": slot.MonsterID,
+			"tier":       slot.Tier,
+			"role":       slot.Role,
+			"count":      slot.Count,
+		})
+	}
+	return items
+}
+
+type monsterBlueprint struct {
+	Name    string
+	Tier    string
+	Role    string
+	MaxHP   int
+	PhysAtk int
+	MagAtk  int
+	PhysDef int
+	MagDef  int
+	Speed   int
+	HealPow int
+}
+
+func buildRoomEnemyCombatant(def DefinitionView, difficulty string, roomIndex int, composition roomComposition) combat.Combatant {
+	mult := difficultyMultipliers[normalizeDifficulty(difficulty)]
+	totalCount := 0
+	totalHP := 0
+	totalPhysAtk := 0
+	totalMagAtk := 0
+	totalPhysDef := 0
+	totalMagDef := 0
+	totalSpeed := 0
+	totalHeal := 0
+	hasBoss := false
+
+	for _, slot := range composition.slots {
+		if slot.Count <= 0 {
+			continue
+		}
+		blueprint, ok := monsterBlueprints[slot.MonsterID]
+		if !ok {
+			continue
+		}
+		if strings.EqualFold(blueprint.Tier, "boss") {
+			hasBoss = true
+		}
+		totalCount += slot.Count
+		totalHP += blueprint.MaxHP * slot.Count
+		totalPhysAtk += blueprint.PhysAtk * slot.Count
+		totalMagAtk += blueprint.MagAtk * slot.Count
+		totalPhysDef += blueprint.PhysDef * slot.Count
+		totalMagDef += blueprint.MagDef * slot.Count
+		totalSpeed += blueprint.Speed * slot.Count
+		totalHeal += blueprint.HealPow * slot.Count
+	}
+
+	if totalCount == 0 {
+		fallback := 40 + roomIndex*12
+		return combat.Combatant{
+			EntityID:     fmt.Sprintf("%s_room_%d", def.DungeonID, roomIndex),
+			Name:         "room_enemy",
+			Team:         "b",
+			IsPlayerSide: false,
+			MaxHP:        fallback,
+			PhysAtk:      7 + roomIndex*2,
+			PhysDef:      3 + roomIndex/2,
+			Speed:        7 + roomIndex/2,
+			CurrentHP:    fallback,
+		}
+	}
+
+	avgPhysAtk := float64(totalPhysAtk) / float64(totalCount)
+	avgMagAtk := float64(totalMagAtk) / float64(totalCount)
+	avgPhysDef := float64(totalPhysDef) / float64(totalCount)
+	avgMagDef := float64(totalMagDef) / float64(totalCount)
+	avgSpeed := float64(totalSpeed) / float64(totalCount)
+	avgHeal := float64(totalHeal) / float64(totalCount)
+
+	pressureScale := 1.0 + 0.10*float64(maxInt(0, totalCount-1))
+	roomScale := 0.70 + 0.05*float64(roomIndex-1)
+
+	maxHP := maxInt(1, int(float64(totalHP)*0.26*roomScale*mult.hp))
+	physAtk := maxInt(1, int(avgPhysAtk*0.60*pressureScale*mult.damage))
+	magAtk := maxInt(0, int(avgMagAtk*0.60*pressureScale*mult.damage))
+	physDef := maxInt(1, int(avgPhysDef*0.45*(1+0.03*float64(maxInt(0, totalCount-1)))*mult.defense))
+	magDef := maxInt(1, int(avgMagDef*0.45*(1+0.03*float64(maxInt(0, totalCount-1)))*mult.defense))
+	speed := maxInt(1, int(avgSpeed*0.95*mult.speed))
+	heal := maxInt(0, int(avgHeal*0.50*mult.defense))
+
+	name := fmt.Sprintf("room_%d_squad", roomIndex)
+	if hasBoss {
+		name = "boss_squad"
+	}
+
+	return combat.Combatant{
+		EntityID:     fmt.Sprintf("%s_%s_room_%d", def.DungeonID, normalizeDifficulty(difficulty), roomIndex),
+		Name:         name,
+		Team:         "b",
+		IsPlayerSide: false,
+		MaxHP:        maxHP,
+		PhysAtk:      physAtk,
+		MagAtk:       magAtk,
+		PhysDef:      physDef,
+		MagDef:       magDef,
+		Speed:        speed,
+		HealPow:      heal,
+		CurrentHP:    maxHP,
 	}
 }
 
-func enemyForRoom(def DefinitionView, roomIndex int) roomEnemy {
-	isBoss := roomIndex == def.BossRoomIndex
-	baseHP := 40 + roomIndex*12
-	baseAtk := 7 + roomIndex*2
-	basePDef := 3 + roomIndex/2
-	baseMDef := 3 + roomIndex/2
-	baseSpeed := 7 + roomIndex/2
-
-	if strings.Contains(def.DungeonID, "sandworm") {
-		baseHP += 45
-		baseAtk += 6
-		basePDef += 4
-		baseMDef += 4
-		baseSpeed += 2
+func buildRoomComposition(dungeonID, difficulty string, roomIndex, bossRoomIndex int) roomComposition {
+	difficulty = normalizeDifficulty(difficulty)
+	if byDifficulty, ok := dungeonRoomCompositions[dungeonID]; ok {
+		if byRoom, ok := byDifficulty[difficulty]; ok {
+			if composition, ok := byRoom[roomIndex]; ok {
+				return composition
+			}
+		}
 	}
 
-	if isBoss {
-		baseHP = int(float64(baseHP) * 1.5)
-		baseAtk = int(float64(baseAtk) * 1.25)
-		basePDef += 3
-		baseMDef += 3
-		baseSpeed += 3
+	// Fallback keeps the historical behavior when no table is found.
+	tier := "normal"
+	name := "fallback_enemy"
+	if roomIndex == bossRoomIndex {
+		tier = "boss"
+		name = "fallback_boss"
 	}
-
-	name := fmt.Sprintf("room_%d_enemy", roomIndex)
-	if isBoss {
-		name = "boss"
-	}
-
-	return roomEnemy{
-		name:            name,
-		hp:              baseHP,
-		attack:          baseAtk,
-		physicalDefense: basePDef,
-		magicDefense:    baseMDef,
-		speed:           baseSpeed,
-	}
+	return roomComposition{slots: []roomMonsterSlot{{MonsterID: name, Tier: tier, Role: "bruiser", Count: 1}}}
 }
 
-func simulateRoomCombat(runID string, roomIndex int, startingPlayerHP int, player combatStats, enemy roomEnemy) roomCombatResult {
-	playerHP := maxInt(1, startingPlayerHP)
-	enemyHP := enemy.hp
-	turn := 1
-	maxTurns := 24
+var difficultyMultipliers = map[string]difficultyMultiplier{
+	"easy":      {hp: 1.00, damage: 1.00, defense: 1.00, speed: 1.00},
+	"hard":      {hp: 1.28, damage: 1.22, defense: 1.15, speed: 1.08},
+	"nightmare": {hp: 1.62, damage: 1.50, defense: 1.35, speed: 1.16},
+}
 
-	basicCooldown := 0
-	burstCooldown := 0
-	healCooldown := 0
-	enemyBurstCooldown := 0
+var monsterBlueprints = map[string]monsterBlueprint{
+	// Ancient Catacomb
+	"catacomb_boneguard":    {Name: "Catacomb Boneguard", Tier: "normal", Role: "bruiser", MaxHP: 132, PhysAtk: 18, MagAtk: 0, PhysDef: 10, MagDef: 6, Speed: 8, HealPow: 0},
+	"ashen_skull_caster":    {Name: "Ashen Skull Caster", Tier: "normal", Role: "caster", MaxHP: 102, PhysAtk: 4, MagAtk: 20, PhysDef: 5, MagDef: 9, Speed: 10, HealPow: 0},
+	"grave_rat_swarm":       {Name: "Grave Rat Swarm", Tier: "normal", Role: "assassin", MaxHP: 94, PhysAtk: 16, MagAtk: 0, PhysDef: 4, MagDef: 4, Speed: 14, HealPow: 0},
+	"warden_of_seals":       {Name: "Warden of Seals", Tier: "elite", Role: "tank", MaxHP: 286, PhysAtk: 22, MagAtk: 8, PhysDef: 18, MagDef: 12, Speed: 7, HealPow: 0},
+	"tomb_hexer":            {Name: "Tomb Hexer", Tier: "elite", Role: "controller", MaxHP: 234, PhysAtk: 6, MagAtk: 26, PhysDef: 8, MagDef: 14, Speed: 12, HealPow: 0},
+	"morthis_chapel_keeper": {Name: "Morthis, Chapel Keeper", Tier: "boss", Role: "boss", MaxHP: 620, PhysAtk: 16, MagAtk: 38, PhysDef: 14, MagDef: 16, Speed: 11, HealPow: 18},
 
-	log := []map[string]any{
-		{
-			"step":                  "room_start",
-			"event_type":            "room_start",
-			"room_index":            roomIndex,
-			"turn":                  0,
-			"player_hp":             playerHP,
-			"enemy_hp":              enemyHP,
-			"enemy_name":            enemy.name,
-			"player_speed":          player.speed,
-			"enemy_speed":           enemy.speed,
-			"cooldown_before_round": map[string]int{"player_burst": burstCooldown, "player_heal": healCooldown, "enemy_burst": enemyBurstCooldown},
-			"cooldown_after_round":  map[string]int{"player_burst": burstCooldown, "player_heal": healCooldown, "enemy_burst": enemyBurstCooldown},
-			"message":               "auto battle room started",
+	// Sandworm Den
+	"dune_skitterer":                {Name: "Dune Skitterer", Tier: "normal", Role: "assassin", MaxHP: 108, PhysAtk: 22, MagAtk: 0, PhysDef: 6, MagDef: 6, Speed: 16, HealPow: 0},
+	"sand_burrower":                 {Name: "Sand Burrower", Tier: "normal", Role: "bruiser", MaxHP: 140, PhysAtk: 24, MagAtk: 0, PhysDef: 12, MagDef: 8, Speed: 9, HealPow: 0},
+	"scorched_spitter":              {Name: "Scorched Spitter", Tier: "normal", Role: "caster", MaxHP: 112, PhysAtk: 4, MagAtk: 22, PhysDef: 6, MagDef: 10, Speed: 12, HealPow: 0},
+	"carapace_crusher":              {Name: "Carapace Crusher", Tier: "elite", Role: "bruiser", MaxHP: 310, PhysAtk: 36, MagAtk: 8, PhysDef: 20, MagDef: 12, Speed: 8, HealPow: 0},
+	"venom_herald":                  {Name: "Venom Herald", Tier: "elite", Role: "controller", MaxHP: 262, PhysAtk: 8, MagAtk: 28, PhysDef: 10, MagDef: 16, Speed: 13, HealPow: 0},
+	"kharzug_dunescourge_matriarch": {Name: "Kharzug, Dunescourge Matriarch", Tier: "boss", Role: "boss", MaxHP: 720, PhysAtk: 32, MagAtk: 18, PhysDef: 20, MagDef: 14, Speed: 10, HealPow: 0},
+	"sandworm_larva":                {Name: "Sandworm Larva", Tier: "normal", Role: "summoner", MaxHP: 88, PhysAtk: 14, MagAtk: 0, PhysDef: 5, MagDef: 4, Speed: 11, HealPow: 0},
+}
+
+var dungeonRoomCompositions = map[string]map[string]map[int]roomComposition{
+	"ancient_catacomb_v1": {
+		"easy": {
+			1: {slots: []roomMonsterSlot{{MonsterID: "catacomb_boneguard", Tier: "normal", Role: "bruiser", Count: 1}, {MonsterID: "ashen_skull_caster", Tier: "normal", Role: "caster", Count: 1}}},
+			2: {slots: []roomMonsterSlot{{MonsterID: "catacomb_boneguard", Tier: "normal", Role: "bruiser", Count: 1}, {MonsterID: "grave_rat_swarm", Tier: "normal", Role: "assassin", Count: 1}, {MonsterID: "ashen_skull_caster", Tier: "normal", Role: "caster", Count: 1}}},
+			3: {slots: []roomMonsterSlot{{MonsterID: "catacomb_boneguard", Tier: "normal", Role: "bruiser", Count: 1}, {MonsterID: "warden_of_seals", Tier: "elite", Role: "tank", Count: 1}}},
+			4: {slots: []roomMonsterSlot{{MonsterID: "grave_rat_swarm", Tier: "normal", Role: "assassin", Count: 1}, {MonsterID: "ashen_skull_caster", Tier: "normal", Role: "caster", Count: 1}, {MonsterID: "tomb_hexer", Tier: "elite", Role: "controller", Count: 1}}},
+			5: {slots: []roomMonsterSlot{{MonsterID: "warden_of_seals", Tier: "elite", Role: "tank", Count: 1}, {MonsterID: "tomb_hexer", Tier: "elite", Role: "controller", Count: 1}, {MonsterID: "catacomb_boneguard", Tier: "normal", Role: "bruiser", Count: 1}}},
+			6: {slots: []roomMonsterSlot{{MonsterID: "morthis_chapel_keeper", Tier: "boss", Role: "boss", Count: 1}, {MonsterID: "catacomb_boneguard", Tier: "normal", Role: "bruiser", Count: 1}}},
 		},
-	}
-
-	for turn <= maxTurns && playerHP > 0 && enemyHP > 0 {
-		playerActsFirst := player.speed >= enemy.speed
-		initiative := []string{"enemy", "player"}
-		if playerActsFirst {
-			initiative = []string{"player", "enemy"}
-		}
-		log = append(log, map[string]any{
-			"step":                  "turn_start",
-			"event_type":            "turn_start",
-			"room_index":            roomIndex,
-			"turn":                  turn,
-			"actor":                 "system",
-			"initiative_order":      initiative,
-			"player_hp":             playerHP,
-			"enemy_hp":              enemyHP,
-			"cooldown_before_round": map[string]int{"player_burst": burstCooldown, "player_heal": healCooldown, "enemy_burst": enemyBurstCooldown},
-			"message":               "turn begins",
-		})
-		if playerActsFirst {
-			playerHP, enemyHP, basicCooldown, burstCooldown, healCooldown, log = playerTurn(turn, roomIndex, player, enemy, playerHP, enemyHP, basicCooldown, burstCooldown, healCooldown, log)
-			if enemyHP <= 0 || playerHP <= 0 {
-				break
-			}
-			playerHP, enemyHP, enemyBurstCooldown, log = enemyTurn(turn, roomIndex, player, enemy, playerHP, enemyHP, enemyBurstCooldown, log)
-		} else {
-			playerHP, enemyHP, enemyBurstCooldown, log = enemyTurn(turn, roomIndex, player, enemy, playerHP, enemyHP, enemyBurstCooldown, log)
-			if enemyHP <= 0 || playerHP <= 0 {
-				break
-			}
-			playerHP, enemyHP, basicCooldown, burstCooldown, healCooldown, log = playerTurn(turn, roomIndex, player, enemy, playerHP, enemyHP, basicCooldown, burstCooldown, healCooldown, log)
-		}
-
-		basicCooldown = maxInt(0, basicCooldown-1)
-		burstCooldown = maxInt(0, burstCooldown-1)
-		healCooldown = maxInt(0, healCooldown-1)
-		enemyBurstCooldown = maxInt(0, enemyBurstCooldown-1)
-		log = append(log, map[string]any{
-			"step":                 "turn_end",
-			"event_type":           "turn_end",
-			"room_index":           roomIndex,
-			"turn":                 turn,
-			"actor":                "system",
-			"player_hp":            playerHP,
-			"enemy_hp":             enemyHP,
-			"cooldown_after_round": map[string]int{"player_burst": burstCooldown, "player_heal": healCooldown, "enemy_burst": enemyBurstCooldown},
-			"message":              "turn ended",
-		})
-		turn++
-	}
-
-	if enemyHP <= 0 {
-		log = append(log, map[string]any{
-			"step":       "room_end",
-			"event_type": "room_end",
-			"room_index": roomIndex,
-			"turn":       turn,
-			"result":     "cleared",
-			"player_hp":  maxInt(0, playerHP),
-			"enemy_hp":   0,
-			"message":    "room cleared",
-		})
-		return roomCombatResult{PlayerWon: true, PlayerHP: maxInt(1, playerHP), Log: log}
-	}
-
-	result := "failed"
-	if turn > maxTurns {
-		result = "timeout"
-	}
-	log = append(log, map[string]any{
-		"step":       "room_end",
-		"event_type": "room_end",
-		"room_index": roomIndex,
-		"turn":       turn,
-		"result":     result,
-		"player_hp":  maxInt(0, playerHP),
-		"enemy_hp":   maxInt(0, enemyHP),
-		"message":    "room failed",
-	})
-	return roomCombatResult{PlayerWon: false, PlayerHP: maxInt(0, playerHP), Log: log}
+		"hard": {
+			1: {slots: []roomMonsterSlot{{MonsterID: "catacomb_boneguard", Tier: "normal", Role: "bruiser", Count: 2}, {MonsterID: "ashen_skull_caster", Tier: "normal", Role: "caster", Count: 1}}},
+			2: {slots: []roomMonsterSlot{{MonsterID: "catacomb_boneguard", Tier: "normal", Role: "bruiser", Count: 1}, {MonsterID: "grave_rat_swarm", Tier: "normal", Role: "assassin", Count: 2}, {MonsterID: "ashen_skull_caster", Tier: "normal", Role: "caster", Count: 1}}},
+			3: {slots: []roomMonsterSlot{{MonsterID: "warden_of_seals", Tier: "elite", Role: "tank", Count: 1}, {MonsterID: "catacomb_boneguard", Tier: "normal", Role: "bruiser", Count: 1}, {MonsterID: "ashen_skull_caster", Tier: "normal", Role: "caster", Count: 1}}},
+			4: {slots: []roomMonsterSlot{{MonsterID: "tomb_hexer", Tier: "elite", Role: "controller", Count: 1}, {MonsterID: "grave_rat_swarm", Tier: "normal", Role: "assassin", Count: 1}, {MonsterID: "ashen_skull_caster", Tier: "normal", Role: "caster", Count: 1}, {MonsterID: "catacomb_boneguard", Tier: "normal", Role: "bruiser", Count: 1}}},
+			5: {slots: []roomMonsterSlot{{MonsterID: "warden_of_seals", Tier: "elite", Role: "tank", Count: 1}, {MonsterID: "tomb_hexer", Tier: "elite", Role: "controller", Count: 1}, {MonsterID: "catacomb_boneguard", Tier: "normal", Role: "bruiser", Count: 1}, {MonsterID: "grave_rat_swarm", Tier: "normal", Role: "assassin", Count: 1}}},
+			6: {slots: []roomMonsterSlot{{MonsterID: "morthis_chapel_keeper", Tier: "boss", Role: "boss", Count: 1}, {MonsterID: "warden_of_seals", Tier: "elite", Role: "tank", Count: 1}, {MonsterID: "ashen_skull_caster", Tier: "normal", Role: "caster", Count: 1}}},
+		},
+		"nightmare": {
+			1: {slots: []roomMonsterSlot{{MonsterID: "catacomb_boneguard", Tier: "normal", Role: "bruiser", Count: 2}, {MonsterID: "ashen_skull_caster", Tier: "normal", Role: "caster", Count: 1}, {MonsterID: "grave_rat_swarm", Tier: "normal", Role: "assassin", Count: 1}}},
+			2: {slots: []roomMonsterSlot{{MonsterID: "warden_of_seals", Tier: "elite", Role: "tank", Count: 1}, {MonsterID: "grave_rat_swarm", Tier: "normal", Role: "assassin", Count: 1}, {MonsterID: "ashen_skull_caster", Tier: "normal", Role: "caster", Count: 1}, {MonsterID: "catacomb_boneguard", Tier: "normal", Role: "bruiser", Count: 1}}},
+			3: {slots: []roomMonsterSlot{{MonsterID: "warden_of_seals", Tier: "elite", Role: "tank", Count: 1}, {MonsterID: "tomb_hexer", Tier: "elite", Role: "controller", Count: 1}, {MonsterID: "catacomb_boneguard", Tier: "normal", Role: "bruiser", Count: 1}, {MonsterID: "grave_rat_swarm", Tier: "normal", Role: "assassin", Count: 1}}},
+			4: {slots: []roomMonsterSlot{{MonsterID: "tomb_hexer", Tier: "elite", Role: "controller", Count: 1}, {MonsterID: "grave_rat_swarm", Tier: "normal", Role: "assassin", Count: 2}, {MonsterID: "ashen_skull_caster", Tier: "normal", Role: "caster", Count: 1}, {MonsterID: "catacomb_boneguard", Tier: "normal", Role: "bruiser", Count: 1}}},
+			5: {slots: []roomMonsterSlot{{MonsterID: "warden_of_seals", Tier: "elite", Role: "tank", Count: 1}, {MonsterID: "tomb_hexer", Tier: "elite", Role: "controller", Count: 1}, {MonsterID: "ashen_skull_caster", Tier: "normal", Role: "caster", Count: 1}, {MonsterID: "catacomb_boneguard", Tier: "normal", Role: "bruiser", Count: 1}, {MonsterID: "grave_rat_swarm", Tier: "normal", Role: "assassin", Count: 1}}},
+			6: {slots: []roomMonsterSlot{{MonsterID: "morthis_chapel_keeper", Tier: "boss", Role: "boss", Count: 1}, {MonsterID: "warden_of_seals", Tier: "elite", Role: "tank", Count: 1}, {MonsterID: "tomb_hexer", Tier: "elite", Role: "controller", Count: 1}, {MonsterID: "grave_rat_swarm", Tier: "normal", Role: "assassin", Count: 1}}},
+		},
+	},
+	"sandworm_den_v1": {
+		"easy": {
+			1: {slots: []roomMonsterSlot{{MonsterID: "sand_burrower", Tier: "normal", Role: "bruiser", Count: 1}, {MonsterID: "scorched_spitter", Tier: "normal", Role: "caster", Count: 1}}},
+			2: {slots: []roomMonsterSlot{{MonsterID: "dune_skitterer", Tier: "normal", Role: "assassin", Count: 1}, {MonsterID: "sand_burrower", Tier: "normal", Role: "bruiser", Count: 1}, {MonsterID: "scorched_spitter", Tier: "normal", Role: "caster", Count: 1}}},
+			3: {slots: []roomMonsterSlot{{MonsterID: "carapace_crusher", Tier: "elite", Role: "bruiser", Count: 1}, {MonsterID: "sand_burrower", Tier: "normal", Role: "bruiser", Count: 1}}},
+			4: {slots: []roomMonsterSlot{{MonsterID: "venom_herald", Tier: "elite", Role: "controller", Count: 1}, {MonsterID: "scorched_spitter", Tier: "normal", Role: "caster", Count: 1}, {MonsterID: "dune_skitterer", Tier: "normal", Role: "assassin", Count: 1}}},
+			5: {slots: []roomMonsterSlot{{MonsterID: "carapace_crusher", Tier: "elite", Role: "bruiser", Count: 1}, {MonsterID: "venom_herald", Tier: "elite", Role: "controller", Count: 1}, {MonsterID: "sand_burrower", Tier: "normal", Role: "bruiser", Count: 1}}},
+			6: {slots: []roomMonsterSlot{{MonsterID: "kharzug_dunescourge_matriarch", Tier: "boss", Role: "boss", Count: 1}, {MonsterID: "sand_burrower", Tier: "normal", Role: "bruiser", Count: 1}}},
+		},
+		"hard": {
+			1: {slots: []roomMonsterSlot{{MonsterID: "sand_burrower", Tier: "normal", Role: "bruiser", Count: 2}, {MonsterID: "scorched_spitter", Tier: "normal", Role: "caster", Count: 1}}},
+			2: {slots: []roomMonsterSlot{{MonsterID: "dune_skitterer", Tier: "normal", Role: "assassin", Count: 1}, {MonsterID: "sand_burrower", Tier: "normal", Role: "bruiser", Count: 2}, {MonsterID: "scorched_spitter", Tier: "normal", Role: "caster", Count: 1}}},
+			3: {slots: []roomMonsterSlot{{MonsterID: "carapace_crusher", Tier: "elite", Role: "bruiser", Count: 1}, {MonsterID: "sand_burrower", Tier: "normal", Role: "bruiser", Count: 1}, {MonsterID: "scorched_spitter", Tier: "normal", Role: "caster", Count: 1}}},
+			4: {slots: []roomMonsterSlot{{MonsterID: "venom_herald", Tier: "elite", Role: "controller", Count: 1}, {MonsterID: "carapace_crusher", Tier: "elite", Role: "bruiser", Count: 1}, {MonsterID: "dune_skitterer", Tier: "normal", Role: "assassin", Count: 1}, {MonsterID: "scorched_spitter", Tier: "normal", Role: "caster", Count: 1}}},
+			5: {slots: []roomMonsterSlot{{MonsterID: "venom_herald", Tier: "elite", Role: "controller", Count: 1}, {MonsterID: "carapace_crusher", Tier: "elite", Role: "bruiser", Count: 1}, {MonsterID: "sand_burrower", Tier: "normal", Role: "bruiser", Count: 1}, {MonsterID: "dune_skitterer", Tier: "normal", Role: "assassin", Count: 1}}},
+			6: {slots: []roomMonsterSlot{{MonsterID: "kharzug_dunescourge_matriarch", Tier: "boss", Role: "boss", Count: 1}, {MonsterID: "carapace_crusher", Tier: "elite", Role: "bruiser", Count: 1}, {MonsterID: "venom_herald", Tier: "elite", Role: "controller", Count: 1}}},
+		},
+		"nightmare": {
+			1: {slots: []roomMonsterSlot{{MonsterID: "sand_burrower", Tier: "normal", Role: "bruiser", Count: 2}, {MonsterID: "scorched_spitter", Tier: "normal", Role: "caster", Count: 1}, {MonsterID: "dune_skitterer", Tier: "normal", Role: "assassin", Count: 1}}},
+			2: {slots: []roomMonsterSlot{{MonsterID: "carapace_crusher", Tier: "elite", Role: "bruiser", Count: 1}, {MonsterID: "sand_burrower", Tier: "normal", Role: "bruiser", Count: 1}, {MonsterID: "scorched_spitter", Tier: "normal", Role: "caster", Count: 1}, {MonsterID: "dune_skitterer", Tier: "normal", Role: "assassin", Count: 1}}},
+			3: {slots: []roomMonsterSlot{{MonsterID: "carapace_crusher", Tier: "elite", Role: "bruiser", Count: 1}, {MonsterID: "venom_herald", Tier: "elite", Role: "controller", Count: 1}, {MonsterID: "sand_burrower", Tier: "normal", Role: "bruiser", Count: 1}, {MonsterID: "scorched_spitter", Tier: "normal", Role: "caster", Count: 1}}},
+			4: {slots: []roomMonsterSlot{{MonsterID: "venom_herald", Tier: "elite", Role: "controller", Count: 1}, {MonsterID: "carapace_crusher", Tier: "elite", Role: "bruiser", Count: 1}, {MonsterID: "dune_skitterer", Tier: "normal", Role: "assassin", Count: 2}, {MonsterID: "scorched_spitter", Tier: "normal", Role: "caster", Count: 1}}},
+			5: {slots: []roomMonsterSlot{{MonsterID: "venom_herald", Tier: "elite", Role: "controller", Count: 1}, {MonsterID: "carapace_crusher", Tier: "elite", Role: "bruiser", Count: 1}, {MonsterID: "sand_burrower", Tier: "normal", Role: "bruiser", Count: 1}, {MonsterID: "scorched_spitter", Tier: "normal", Role: "caster", Count: 1}, {MonsterID: "dune_skitterer", Tier: "normal", Role: "assassin", Count: 1}}},
+			6: {slots: []roomMonsterSlot{{MonsterID: "kharzug_dunescourge_matriarch", Tier: "boss", Role: "boss", Count: 1}, {MonsterID: "carapace_crusher", Tier: "elite", Role: "bruiser", Count: 1}, {MonsterID: "venom_herald", Tier: "elite", Role: "controller", Count: 1}, {MonsterID: "sandworm_larva", Tier: "normal", Role: "summoner", Count: 2}}},
+		},
+	},
 }
 
-func playerTurn(turn, roomIndex int, player combatStats, enemy roomEnemy, playerHP, enemyHP, basicCooldown, burstCooldown, healCooldown int, log []map[string]any) (int, int, int, int, int, []map[string]any) {
-	cooldownBefore := map[string]int{"player_burst": burstCooldown, "player_heal": healCooldown}
-	healThreshold := int(float64(player.maxHP) * 0.55)
-	if player.healingPower > 0 && playerHP <= healThreshold && healCooldown == 0 {
-		healValue := maxInt(8, int(float64(player.healingPower)*1.6)+int(float64(player.maxHP)*0.06))
-		before := playerHP
-		playerHP = minInt(player.maxHP, playerHP+healValue)
-		healCooldown = 3
-		log = append(log, map[string]any{
-			"step":                  "action",
-			"event_type":            "action",
-			"room_index":            roomIndex,
-			"turn":                  turn,
-			"actor":                 "player",
-			"target":                "player",
-			"action":                "recovery_wave",
-			"skill_id":              "player_recovery_wave",
-			"value":                 playerHP - before,
-			"value_type":            "heal",
-			"target_hp_before":      before,
-			"target_hp_after":       playerHP,
-			"player_hp":             playerHP,
-			"enemy_hp":              enemyHP,
-			"cooldown_before_round": cooldownBefore,
-			"cooldown_after_round":  map[string]int{"player_burst": burstCooldown, "player_heal": healCooldown},
-			"message":               "player casts healing skill",
-		})
-		return playerHP, enemyHP, basicCooldown, burstCooldown, healCooldown, log
-	}
-
-	if burstCooldown == 0 {
-		damage := computeDamage(maxInt(player.physicalAttack, player.magicAttack), enemy.physicalDefense, 1.75)
-		before := enemyHP
-		enemyHP = maxInt(0, enemyHP-damage)
-		burstCooldown = 2
-		log = append(log, map[string]any{
-			"step":                  "action",
-			"event_type":            "action",
-			"room_index":            roomIndex,
-			"turn":                  turn,
-			"actor":                 "player",
-			"target":                "enemy",
-			"action":                "burst_skill",
-			"skill_id":              "player_burst_skill",
-			"damage_type":           "physical",
-			"value":                 damage,
-			"value_type":            "damage",
-			"target_hp_before":      before,
-			"target_hp_after":       enemyHP,
-			"player_hp":             playerHP,
-			"enemy_hp":              enemyHP,
-			"cooldown_before_round": cooldownBefore,
-			"cooldown_after_round":  map[string]int{"player_burst": burstCooldown, "player_heal": healCooldown},
-			"message":               "player uses burst skill",
-		})
-		return playerHP, enemyHP, basicCooldown, burstCooldown, healCooldown, log
-	}
-
-	damage := computeDamage(maxInt(player.physicalAttack, player.magicAttack), enemy.physicalDefense, 1.0)
-	before := enemyHP
-	enemyHP = maxInt(0, enemyHP-damage)
-	log = append(log, map[string]any{
-		"step":                  "action",
-		"event_type":            "action",
-		"room_index":            roomIndex,
-		"turn":                  turn,
-		"actor":                 "player",
-		"target":                "enemy",
-		"action":                "basic_attack",
-		"skill_id":              "player_basic_attack",
-		"damage_type":           "physical",
-		"value":                 damage,
-		"value_type":            "damage",
-		"target_hp_before":      before,
-		"target_hp_after":       enemyHP,
-		"player_hp":             playerHP,
-		"enemy_hp":              enemyHP,
-		"cooldown_before_round": cooldownBefore,
-		"cooldown_after_round":  map[string]int{"player_burst": burstCooldown, "player_heal": healCooldown},
-		"message":               "player attacks",
-	})
-	return playerHP, enemyHP, basicCooldown, burstCooldown, healCooldown, log
-}
-
-func enemyTurn(turn, roomIndex int, player combatStats, enemy roomEnemy, playerHP, enemyHP, enemyBurstCooldown int, log []map[string]any) (int, int, int, []map[string]any) {
-	cooldownBefore := map[string]int{"enemy_burst": enemyBurstCooldown}
-	action := "enemy_attack"
-	multiplier := 1.0
-	skillID := "enemy_basic_attack"
-	if enemyBurstCooldown == 0 {
-		action = "enemy_skill"
-		skillID = "enemy_burst_skill"
-		multiplier = 1.35
-		enemyBurstCooldown = 2
-	}
-
-	damage := computeDamage(enemy.attack, player.physicalDefense, multiplier)
-	before := playerHP
-	playerHP = maxInt(0, playerHP-damage)
-	log = append(log, map[string]any{
-		"step":                  "action",
-		"event_type":            "action",
-		"room_index":            roomIndex,
-		"turn":                  turn,
-		"actor":                 "enemy",
-		"target":                "player",
-		"action":                action,
-		"skill_id":              skillID,
-		"damage_type":           "physical",
-		"value":                 damage,
-		"value_type":            "damage",
-		"target_hp_before":      before,
-		"target_hp_after":       playerHP,
-		"player_hp":             playerHP,
-		"enemy_hp":              enemyHP,
-		"cooldown_before_round": cooldownBefore,
-		"cooldown_after_round":  map[string]int{"enemy_burst": enemyBurstCooldown},
-		"message":               "enemy attacks",
-	})
-
-	return playerHP, enemyHP, enemyBurstCooldown, log
-}
-
-func computeDamage(attack, defense int, multiplier float64) int {
-	raw := int(float64(attack)*multiplier) - int(float64(defense)*0.35)
-	return maxInt(1, raw)
-}
-
-func stagedMaterialDropsFromClear(highestRoomCleared int) []map[string]any {
+// stagedMaterialDropsFromClear returns material drops for a cleared dungeon run.
+// Per doc 12 §7: higher difficulty increases the weight of rare materials;
+// nightmare improves access to red and prismatic material resources.
+func stagedMaterialDropsFromClear(highestRoomCleared int, difficulty string) []map[string]any {
 	if highestRoomCleared <= 0 {
 		return []map[string]any{}
 	}
-	quantity := maxInt(1, highestRoomCleared/2+1)
-	return []map[string]any{{
+	baseQty := maxInt(1, highestRoomCleared/2+1)
+	drops := []map[string]any{{
 		"material_key": "dungeon_essence",
-		"quantity":     quantity,
+		"quantity":     baseQty,
 	}}
+	switch normalizeDifficulty(difficulty) {
+	case "hard":
+		// hard adds rare-tier fragments at reduced quantity
+		drops = append(drops, map[string]any{
+			"material_key": "dungeon_fragment",
+			"quantity":     maxInt(1, highestRoomCleared/3),
+		})
+	case "nightmare":
+		// nightmare adds both rare fragments and high-tier cores
+		drops = append(drops, map[string]any{
+			"material_key": "dungeon_fragment",
+			"quantity":     maxInt(1, highestRoomCleared/2),
+		})
+		if highestRoomCleared >= 4 {
+			drops = append(drops, map[string]any{
+				"material_key": "dungeon_core",
+				"quantity":     maxInt(1, (highestRoomCleared-3)/2),
+			})
+		}
+	}
+	return drops
 }
 
-func scaledRewardGold(baseGold, highestRoomCleared, totalRooms int) int {
+// difficultyGoldMultiplier returns a gold bonus multiplier for harder difficulties.
+// hard gives +20%, nightmare gives +50%, aligned with the difficulty risk increase.
+func difficultyGoldMultiplier(difficulty string) float64 {
+	switch normalizeDifficulty(difficulty) {
+	case "hard":
+		return 1.20
+	case "nightmare":
+		return 1.50
+	default:
+		return 1.00
+	}
+}
+
+func scaledRewardGold(baseGold, highestRoomCleared, totalRooms int, difficulty string) int {
 	if totalRooms <= 0 {
 		return baseGold
 	}
@@ -741,7 +758,8 @@ func scaledRewardGold(baseGold, highestRoomCleared, totalRooms int) int {
 		return maxInt(1, baseGold/5)
 	}
 	ratio := float64(cleared) / float64(totalRooms)
-	return maxInt(1, int(float64(baseGold)*(0.45+ratio*0.55)))
+	base := float64(baseGold) * (0.45 + ratio*0.55)
+	return maxInt(1, int(base*difficultyGoldMultiplier(difficulty)))
 }
 
 func maxInt(a, b int) int {
@@ -1009,6 +1027,7 @@ var dungeonDefinitions = map[string]DefinitionView{
 		BossRoomIndex:       6,
 		RecommendedLevelMin: 1,
 		RecommendedLevelMax: 30,
+		IsNovice:            true,
 		RatingRules: []DungeonRatingRule{
 			{HighestRoomCleared: 1, Rating: "E"},
 			{HighestRoomCleared: 2, Rating: "D"},

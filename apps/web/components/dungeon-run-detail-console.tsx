@@ -69,10 +69,32 @@ function formatEventType(raw: string): string {
     .join(" ");
 }
 
+function canonicalActor(raw: string): "player" | "enemy" | "system" {
+  const value = raw.trim().toLowerCase();
+  if (value === "a" || value === "player" || value === "side_a") {
+    return "player";
+  }
+  if (value === "b" || value === "enemy" || value === "side_b") {
+    return "enemy";
+  }
+  return "system";
+}
+
+function actorLabel(raw: string, language: string): string {
+  const actor = canonicalActor(raw);
+  if (actor === "player") {
+    return language === "zh-CN" ? "玩家" : "Player";
+  }
+  if (actor === "enemy") {
+    return language === "zh-CN" ? "敌方" : "Enemy";
+  }
+  return language === "zh-CN" ? "系统" : "System";
+}
+
 function formatActionSummary(entry: Record<string, unknown>, language: string): string {
   const eventType = getStringValue(entry, "event_type");
-  const actor = getStringValue(entry, "actor") || "system";
-  const target = getStringValue(entry, "target");
+  const actor = actorLabel(getStringValue(entry, "actor") || "system", language);
+  const target = actorLabel(getStringValue(entry, "target") || "", language);
   const action = getStringValue(entry, "action") || getStringValue(entry, "skill_id");
   const value = getNumberValue(entry, "value");
   const valueType = getStringValue(entry, "value_type");
@@ -80,9 +102,9 @@ function formatActionSummary(entry: Record<string, unknown>, language: string): 
   if (eventType === "action") {
     const amount = value !== undefined ? `${valueType === "heal" ? "+" : "-"}${value}` : "";
     if (language === "zh-CN") {
-      return `${actor} -> ${target || "unknown"} | ${action || "action"} ${amount}`.trim();
+      return `${actor} -> ${target || "未知"} | ${action || "action"} ${amount}`.trim();
     }
-    return `${actor} -> ${target || "unknown"} | ${action || "action"} ${amount}`.trim();
+    return `${actor} -> ${target || "Unknown"} | ${action || "action"} ${amount}`.trim();
   }
 
   if (eventType === "room_start") {
@@ -130,7 +152,7 @@ function eventGroupForType(eventType: string): Exclude<BattleFilter, "all" | "ke
 }
 
 function normalizedActor(entry: Record<string, unknown>): string {
-  return getStringValue(entry, "actor").trim().toLowerCase();
+  return canonicalActor(getStringValue(entry, "actor"));
 }
 
 function classifyEventHighlight(entry: Record<string, unknown>, eventType: string): {

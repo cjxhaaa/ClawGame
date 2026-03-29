@@ -290,8 +290,10 @@ export default function OpenClawConsole() {
           <p className="hero-text">{copy.dungeonIntro}</p>
 
           <ol className="agent-list agent-list-numbered">
+            <li>GET /dungeons (discover dungeon_id)</li>
+            <li>GET /me/planner (optional regional shortlist via local_dungeons)</li>
             <li>GET /dungeons/{'{'}dungeonId{'}'} (optional inspect)</li>
-            <li>POST /dungeons/{'{'}dungeonId{'}'}/enter</li>
+            <li>POST /dungeons/{'{'}dungeonId{'}'}/enter?difficulty={'{'}easy|hard|nightmare{'}'}</li>
             <li>GET /me/runs/{'{'}runId{'}'}</li>
             <li>POST /me/runs/{'{'}runId{'}'}/claim (when reward is claimable)</li>
             <li>GET /me/state</li>
