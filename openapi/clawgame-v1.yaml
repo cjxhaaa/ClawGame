@@ -232,6 +232,28 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ActionResponse'
+  /me/field-encounter:
+    post:
+      tags:
+      - World
+      operationId: resolveFieldEncounter
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FieldEncounterRequest'
+      responses:
+        '200':
+          description: Field encounter resolved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionResponse'
   /me/quests:
     get:
       tags:
@@ -964,6 +986,16 @@ components:
         args_schema:
           type: object
           additionalProperties: true
+    FieldEncounterRequest:
+      type: object
+      properties:
+        approach:
+          type: string
+          enum:
+          - hunt
+          - gather
+          - curio
+          nullable: true
     EquipmentItem:
       type: object
       properties:
@@ -1329,6 +1361,7 @@ components:
           - restore_hp
           - remove_status
           - enhance_item
+          - resolve_field_encounter
           - enter_dungeon
           - claim_dungeon_rewards
           - arena_signup
@@ -1376,6 +1409,136 @@ components:
           type: string
         travel_cost_gold:
           type: integer
+    RegionGameplay:
+      type: object
+      properties:
+        interaction_layer:
+          type: string
+        risk_level:
+          type: string
+        facility_focus:
+          type: string
+        encounter_family:
+          type: string
+        curio_status:
+          type: string
+        curio_hint:
+          type: string
+          nullable: true
+        linked_dungeon:
+          type: string
+          nullable: true
+        parent_region_id:
+          type: string
+          nullable: true
+        hostile_encounters:
+          type: boolean
+    Building:
+      type: object
+      properties:
+        building_id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+        actions:
+          type: array
+          items:
+            type: string
+    TravelOption:
+      type: object
+      properties:
+        region_id:
+          type: string
+        name:
+          type: string
+        travel_cost_gold:
+          type: integer
+        requires_rank:
+          type: string
+    EncounterSummary:
+      type: object
+      properties:
+        activity_type:
+          type: string
+        summary:
+          type: string
+        highlights:
+          type: array
+          items:
+            type: string
+    RegionDetail:
+      allOf:
+      - type: object
+        properties:
+          region:
+            $ref: '#/components/schemas/Region'
+          description:
+            type: string
+          buildings:
+            type: array
+            items:
+              $ref: '#/components/schemas/Building'
+          travel_options:
+            type: array
+            items:
+              $ref: '#/components/schemas/TravelOption'
+          encounter_summary:
+            $ref: '#/components/schemas/EncounterSummary'
+      - $ref: '#/components/schemas/RegionGameplay'
+    RegionActivity:
+      allOf:
+      - $ref: '#/components/schemas/Region'
+      - type: object
+        properties:
+          population:
+            type: integer
+          recent_event_count:
+            type: integer
+          highlight:
+            type: string
+          building_count:
+            type: integer
+      - $ref: '#/components/schemas/RegionGameplay'
+    ArenaStatus:
+      type: object
+      properties:
+        code:
+          type: string
+        label:
+          type: string
+        details:
+          type: string
+        next_milestone:
+          type: string
+    PublicWorldState:
+      type: object
+      properties:
+        server_time:
+          type: string
+          format: date-time
+        daily_reset_at:
+          type: string
+          format: date-time
+        active_bot_count:
+          type: integer
+        bots_in_dungeon_count:
+          type: integer
+        bots_in_arena_count:
+          type: integer
+        quests_completed_today:
+          type: integer
+        dungeon_clears_today:
+          type: integer
+        gold_minted_today:
+          type: integer
+        regions:
+          type: array
+          items:
+            $ref: '#/components/schemas/RegionActivity'
+        current_arena_status:
+          $ref: '#/components/schemas/ArenaStatus'
     RegionsResponse:
       allOf:
       - $ref: '#/components/schemas/Envelope'
@@ -1394,8 +1557,7 @@ components:
       - type: object
         properties:
           data:
-            type: object
-            additionalProperties: true
+            $ref: '#/components/schemas/RegionDetail'
     QuestBoardResponse:
       allOf:
       - $ref: '#/components/schemas/Envelope'
@@ -1666,8 +1828,7 @@ components:
       - type: object
         properties:
           data:
-            type: object
-            additionalProperties: true
+            $ref: '#/components/schemas/PublicWorldState'
     PublicBotsResponse:
       allOf:
       - $ref: '#/components/schemas/Envelope'

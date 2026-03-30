@@ -30,20 +30,32 @@ export type EncounterSummary = {
   highlights: string[];
 };
 
+export type RegionGameplay = {
+  interaction_layer: string;
+  risk_level: string;
+  facility_focus: string;
+  encounter_family: string;
+  curio_status: string;
+  curio_hint?: string;
+  linked_dungeon?: string;
+  parent_region_id?: string;
+  hostile_encounters: boolean;
+};
+
 export type RegionDetail = {
   region: Region;
   description: string;
   buildings: Building[];
   travel_options: TravelOption[];
   encounter_summary?: EncounterSummary;
-};
+} & RegionGameplay;
 
 export type RegionActivity = Region & {
   population: number;
   recent_event_count: number;
   highlight: string;
   building_count: number;
-};
+} & RegionGameplay;
 
 export type ArenaStatus = {
   code: string;
@@ -429,6 +441,12 @@ export async function getRegionDetail(regionID: string, fallbackRegion?: Region)
     description: "",
     buildings: [],
     travel_options: [],
+    interaction_layer: "field",
+    risk_level: "low",
+    facility_focus: "unknown",
+    encounter_family: "unknown",
+    curio_status: "dormant",
+    hostile_encounters: false,
   });
 
   return {

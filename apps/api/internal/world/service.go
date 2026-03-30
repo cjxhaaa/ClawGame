@@ -1,12 +1,18 @@
 package world
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"time"
 )
 
 const businessTimezone = "Asia/Shanghai"
+
+var (
+	ErrFieldEncounterUnavailable = errors.New("field encounter unavailable")
+	ErrFieldEncounterInvalidMode = errors.New("field encounter invalid mode")
+)
 
 type Region struct {
 	ID             string `json:"region_id"`
@@ -36,12 +42,50 @@ type EncounterSummary struct {
 	Highlights   []string `json:"highlights"`
 }
 
+type FieldEncounterResult struct {
+	RegionID           string           `json:"region_id"`
+	Approach           string           `json:"approach"`
+	EncounterFamily    string           `json:"encounter_family"`
+	EventType          string           `json:"event_type"`
+	Summary            string           `json:"summary"`
+	RewardGold         int              `json:"reward_gold"`
+	EnemiesDefeated    int              `json:"enemies_defeated"`
+	MaterialsCollected int              `json:"materials_collected"`
+	MaterialDrops      []map[string]any `json:"material_drops"`
+	IsCurio            bool             `json:"is_curio"`
+	CurioLabel         string           `json:"curio_label,omitempty"`
+	CurioOutcome       string           `json:"curio_outcome,omitempty"`
+	FollowupQuest      *CurioQuestSeed  `json:"followup_quest,omitempty"`
+}
+
+type CurioQuestSeed struct {
+	TemplateType     string `json:"template_type"`
+	Title            string `json:"title"`
+	Description      string `json:"description"`
+	TargetRegionID   string `json:"target_region_id"`
+	RewardGold       int    `json:"reward_gold"`
+	RewardReputation int    `json:"reward_reputation"`
+}
+
+type RegionGameplay struct {
+	InteractionLayer  string `json:"interaction_layer"`
+	RiskLevel         string `json:"risk_level"`
+	FacilityFocus     string `json:"facility_focus"`
+	EncounterFamily   string `json:"encounter_family"`
+	CurioStatus       string `json:"curio_status"`
+	CurioHint         string `json:"curio_hint,omitempty"`
+	LinkedDungeon     string `json:"linked_dungeon,omitempty"`
+	ParentRegionID    string `json:"parent_region_id,omitempty"`
+	HostileEncounters bool   `json:"hostile_encounters"`
+}
+
 type RegionDetail struct {
 	Region           Region            `json:"region"`
 	Description      string            `json:"description"`
 	Buildings        []Building        `json:"buildings"`
 	TravelOptions    []TravelOption    `json:"travel_options"`
 	EncounterSummary *EncounterSummary `json:"encounter_summary,omitempty"`
+	RegionGameplay
 }
 
 type RegionActivity struct {
@@ -54,6 +98,7 @@ type RegionActivity struct {
 	RecentEventCount int    `json:"recent_event_count"`
 	Highlight        string `json:"highlight"`
 	BuildingCount    int    `json:"building_count"`
+	RegionGameplay
 }
 
 type ArenaStatus struct {
@@ -167,6 +212,7 @@ func (s *Service) GetPublicWorldState() PublicWorldState {
 		activity.MinRank = region.Region.MinRank
 		activity.TravelCostGold = region.Region.TravelCostGold
 		activity.BuildingCount = len(region.Buildings)
+		activity.RegionGameplay = region.RegionGameplay
 		regions = append(regions, activity)
 	}
 
@@ -216,6 +262,24 @@ func (s *Service) GetPublicLeaderboards() Leaderboards {
 	return seedLeaderboards
 }
 
+func (s *Service) ResolveFieldEncounter(regionID, approach string) (FieldEncounterResult, error) {
+	detail, ok := s.GetRegion(regionID)
+	if !ok || detail.Region.Type != "field" {
+		return FieldEncounterResult{}, ErrFieldEncounterUnavailable
+	}
+
+	switch approach {
+	case "", "hunt":
+		return buildFieldEncounter(detail, "hunt"), nil
+	case "gather":
+		return buildFieldEncounter(detail, "gather"), nil
+	case "curio":
+		return buildFieldEncounter(detail, "curio"), nil
+	default:
+		return FieldEncounterResult{}, ErrFieldEncounterInvalidMode
+	}
+}
+
 func mustLocation(name string) *time.Location {
 	location, err := time.LoadLocation(name)
 	if err != nil {
@@ -223,6 +287,167 @@ func mustLocation(name string) *time.Location {
 	}
 
 	return location
+}
+
+func buildFieldEncounter(detail RegionDetail, approach string) FieldEncounterResult {
+	switch detail.Region.ID {
+	case "sunscar_desert_outskirts":
+		return buildDesertFieldEncounter(detail, approach)
+	default:
+		return buildForestFieldEncounter(detail, approach)
+	}
+}
+
+func buildForestFieldEncounter(detail RegionDetail, approach string) FieldEncounterResult {
+	switch approach {
+	case "gather":
+		drops := []map[string]any{
+			{"material_key": "whisperleaf", "quantity": 2},
+			{"material_key": "damp_moss", "quantity": 1},
+			{"material_key": "thorn_vine", "quantity": 1},
+		}
+		return FieldEncounterResult{
+			RegionID:           detail.Region.ID,
+			Approach:           "gather",
+			EncounterFamily:    detail.EncounterFamily,
+			EventType:          "field.gathering_resolved",
+			Summary:            "secured a reagent route through Whispering Forest",
+			RewardGold:         22,
+			EnemiesDefeated:    1,
+			MaterialsCollected: sumMaterialDrops(drops),
+			MaterialDrops:      drops,
+		}
+	case "curio":
+		drops := []map[string]any{
+			{"material_key": "whisperleaf", "quantity": 2},
+			{"material_key": "shrine_amber", "quantity": 1},
+			{"material_key": "wolf_pelt", "quantity": 1},
+		}
+		return FieldEncounterResult{
+			RegionID:           detail.Region.ID,
+			Approach:           "curio",
+			EncounterFamily:    detail.EncounterFamily,
+			EventType:          "field.curio_resolved",
+			Summary:            "resolved a shrine echo and recovered a scout from its guarded cache",
+			RewardGold:         48,
+			EnemiesDefeated:    2,
+			MaterialsCollected: sumMaterialDrops(drops),
+			MaterialDrops:      drops,
+			IsCurio:            true,
+			CurioLabel:         "Shrine Echo Cache",
+			CurioOutcome:       "rescue_followup",
+			FollowupQuest: &CurioQuestSeed{
+				TemplateType:     "curio_followup_delivery",
+				Title:            "Escort the Shrine Witness",
+				Description:      "Deliver the rescued forest scout and shrine notes to Greenfield Outpost for debrief.",
+				TargetRegionID:   "greenfield_village",
+				RewardGold:       56,
+				RewardReputation: 9,
+			},
+		}
+	default:
+		drops := []map[string]any{
+			{"material_key": "wolf_pelt", "quantity": 1},
+			{"material_key": "whisperleaf", "quantity": 1},
+			{"material_key": "beast_bone_shard", "quantity": 1},
+		}
+		return FieldEncounterResult{
+			RegionID:           detail.Region.ID,
+			Approach:           "hunt",
+			EncounterFamily:    detail.EncounterFamily,
+			EventType:          "field.encounter_resolved",
+			Summary:            "cleared a forest hunt route",
+			RewardGold:         34,
+			EnemiesDefeated:    3,
+			MaterialsCollected: sumMaterialDrops(drops),
+			MaterialDrops:      drops,
+		}
+	}
+}
+
+func buildDesertFieldEncounter(detail RegionDetail, approach string) FieldEncounterResult {
+	switch approach {
+	case "gather":
+		drops := []map[string]any{
+			{"material_key": "dry_resin", "quantity": 2},
+			{"material_key": "dust_crystal", "quantity": 1},
+			{"material_key": "sunscorched_ore", "quantity": 1},
+		}
+		return FieldEncounterResult{
+			RegionID:           detail.Region.ID,
+			Approach:           "gather",
+			EncounterFamily:    detail.EncounterFamily,
+			EventType:          "field.gathering_resolved",
+			Summary:            "secured a desert salvage route under light pressure",
+			RewardGold:         30,
+			EnemiesDefeated:    1,
+			MaterialsCollected: sumMaterialDrops(drops),
+			MaterialDrops:      drops,
+		}
+	case "curio":
+		drops := []map[string]any{
+			{"material_key": "sunscorched_ore", "quantity": 2},
+			{"material_key": "venom_sac", "quantity": 1},
+			{"material_key": "dust_crystal", "quantity": 1},
+		}
+		return FieldEncounterResult{
+			RegionID:           detail.Region.ID,
+			Approach:           "curio",
+			EncounterFamily:    detail.EncounterFamily,
+			EventType:          "field.curio_resolved",
+			Summary:            "investigated a ruined beacon and extracted its distress core after the ambush",
+			RewardGold:         64,
+			EnemiesDefeated:    2,
+			MaterialsCollected: sumMaterialDrops(drops),
+			MaterialDrops:      drops,
+			IsCurio:            true,
+			CurioLabel:         "Ruined Beacon Distress",
+			CurioOutcome:       "contract_redirect",
+			FollowupQuest: &CurioQuestSeed{
+				TemplateType:     "curio_followup_delivery",
+				Title:            "Return the Beacon Core",
+				Description:      "Bring the recovered beacon core back to Ironbanner City so the guild can redirect the frontier contract line.",
+				TargetRegionID:   "main_city",
+				RewardGold:       84,
+				RewardReputation: 12,
+			},
+		}
+	default:
+		drops := []map[string]any{
+			{"material_key": "sand_carapace", "quantity": 1},
+			{"material_key": "sunscorched_ore", "quantity": 1},
+			{"material_key": "venom_sac", "quantity": 1},
+		}
+		return FieldEncounterResult{
+			RegionID:           detail.Region.ID,
+			Approach:           "hunt",
+			EncounterFamily:    detail.EncounterFamily,
+			EventType:          "field.encounter_resolved",
+			Summary:            "broke an elite desert patrol and looted the route",
+			RewardGold:         52,
+			EnemiesDefeated:    3,
+			MaterialsCollected: sumMaterialDrops(drops),
+			MaterialDrops:      drops,
+		}
+	}
+}
+
+func sumMaterialDrops(drops []map[string]any) int {
+	total := 0
+	for _, drop := range drops {
+		switch quantity := drop["quantity"].(type) {
+		case int:
+			total += quantity
+		case int32:
+			total += int(quantity)
+		case int64:
+			total += int(quantity)
+		case float64:
+			total += int(quantity)
+		}
+	}
+
+	return total
 }
 
 func nextDailyReset(now time.Time) time.Time {
@@ -308,6 +533,15 @@ var seedRegions = []RegionDetail{
 	{
 		Region:      Region{ID: "main_city", Name: "Main City", Type: "safe_hub", MinRank: "low", TravelCostGold: 0},
 		Description: "The capital hub for guild work, gearing, and arena registration.",
+		RegionGameplay: RegionGameplay{
+			InteractionLayer:  "safe_hub",
+			RiskLevel:         "low",
+			FacilityFocus:     "guild_services",
+			EncounterFamily:   "non_combat_hub",
+			CurioStatus:       "dormant",
+			CurioHint:         "Guild dispatches, arena notices, and logistics requests may surface here.",
+			HostileEncounters: false,
+		},
 		Buildings: []Building{
 			{ID: "guild_main_city", Name: "Adventurers Guild", Type: "guild", Actions: []string{"list_quests", "accept_quest", "submit_quest", "reroll_quests"}},
 			{ID: "weapon_shop_main_city", Name: "Weapon Shop", Type: "weapon_shop", Actions: []string{"browse_stock", "purchase", "sell_loot"}},
@@ -328,6 +562,15 @@ var seedRegions = []RegionDetail{
 	{
 		Region:      Region{ID: "greenfield_village", Name: "Greenfield Village", Type: "safe_hub", MinRank: "low", TravelCostGold: 0},
 		Description: "A logistics stop for early contracts and recovery before pushing back into the wild.",
+		RegionGameplay: RegionGameplay{
+			InteractionLayer:  "safe_hub",
+			RiskLevel:         "low",
+			FacilityFocus:     "supply_services",
+			EncounterFamily:   "route_support",
+			CurioStatus:       "dormant",
+			CurioHint:         "Escort requests and clinic-side supply incidents can begin here.",
+			HostileEncounters: false,
+		},
 		Buildings: []Building{
 			{ID: "quest_outpost_village", Name: "Quest Outpost", Type: "quest_outpost", Actions: []string{"pick_up_supplies", "turn_in_contracts"}},
 			{ID: "general_store_village", Name: "General Store", Type: "general_store", Actions: []string{"buy_consumables", "sell_loot"}},
@@ -341,6 +584,16 @@ var seedRegions = []RegionDetail{
 	{
 		Region:      Region{ID: "whispering_forest", Name: "Whispering Forest", Type: "field", MinRank: "low", TravelCostGold: 10},
 		Description: "The first major hunting ground, filled with predictable contracts and light dungeon pressure.",
+		RegionGameplay: RegionGameplay{
+			InteractionLayer:  "field",
+			RiskLevel:         "low",
+			FacilityFocus:     "hunt_camp",
+			EncounterFamily:   "forest_hunt",
+			CurioStatus:       "dormant",
+			CurioHint:         "Shrine echoes, rare herb blooms, and scout rescues may appear in local routes.",
+			LinkedDungeon:     "ancient_catacomb",
+			HostileEncounters: true,
+		},
 		TravelOptions: []TravelOption{
 			{RegionID: "main_city", Name: "Main City", TravelCostGold: 10, RequiresRank: "low"},
 			{RegionID: "greenfield_village", Name: "Greenfield Village", TravelCostGold: 10, RequiresRank: "low"},
@@ -355,6 +608,16 @@ var seedRegions = []RegionDetail{
 	{
 		Region:      Region{ID: "ancient_catacomb", Name: "Ancient Catacomb", Type: "dungeon", MinRank: "low", TravelCostGold: 15},
 		Description: "A compact starter dungeon with four encounters and a necromancer boss.",
+		RegionGameplay: RegionGameplay{
+			InteractionLayer:  "dungeon",
+			RiskLevel:         "mid",
+			FacilityFocus:     "dungeon_gate",
+			EncounterFamily:   "undead_corridors",
+			CurioStatus:       "dormant",
+			CurioHint:         "Sealed crypts and cursed caches can branch from the main run.",
+			ParentRegionID:    "whispering_forest",
+			HostileEncounters: true,
+		},
 		TravelOptions: []TravelOption{
 			{RegionID: "main_city", Name: "Main City", TravelCostGold: 15, RequiresRank: "low"},
 			{RegionID: "whispering_forest", Name: "Whispering Forest", TravelCostGold: 15, RequiresRank: "low"},
@@ -368,6 +631,16 @@ var seedRegions = []RegionDetail{
 	{
 		Region:      Region{ID: "sunscar_desert_outskirts", Name: "Sunscar Desert Outskirts", Type: "field", MinRank: "mid", TravelCostGold: 30},
 		Description: "A mid-rank route where higher-reputation bots pivot into tougher quest loops.",
+		RegionGameplay: RegionGameplay{
+			InteractionLayer:  "field",
+			RiskLevel:         "mid",
+			FacilityFocus:     "frontier_contracts",
+			EncounterFamily:   "desert_ambush",
+			CurioStatus:       "dormant",
+			CurioHint:         "Buried caches, ruin signals, and escort incidents can disrupt frontier routes.",
+			LinkedDungeon:     "sandworm_den",
+			HostileEncounters: true,
+		},
 		TravelOptions: []TravelOption{
 			{RegionID: "main_city", Name: "Main City", TravelCostGold: 30, RequiresRank: "mid"},
 			{RegionID: "sandworm_den", Name: "Sandworm Den", TravelCostGold: 50, RequiresRank: "high"},
@@ -381,6 +654,16 @@ var seedRegions = []RegionDetail{
 	{
 		Region:      Region{ID: "sandworm_den", Name: "Sandworm Den", Type: "dungeon", MinRank: "high", TravelCostGold: 50},
 		Description: "The highest-rank dungeon in V1, built around five encounters and a matriarch boss fight.",
+		RegionGameplay: RegionGameplay{
+			InteractionLayer:  "dungeon",
+			RiskLevel:         "high",
+			FacilityFocus:     "elite_dungeon_camp",
+			EncounterFamily:   "sandworm_burrow",
+			CurioStatus:       "dormant",
+			CurioHint:         "Venom chambers, survivor caches, and rare molt sites can appear near the run path.",
+			ParentRegionID:    "sunscar_desert_outskirts",
+			HostileEncounters: true,
+		},
 		TravelOptions: []TravelOption{
 			{RegionID: "sunscar_desert_outskirts", Name: "Sunscar Desert Outskirts", TravelCostGold: 50, RequiresRank: "high"},
 			{RegionID: "main_city", Name: "Main City", TravelCostGold: 50, RequiresRank: "high"},

@@ -395,6 +395,9 @@ func NewServer(cfg config.API) *Server {
 					break
 				}
 			}
+			if detail, ok := worldService.GetRegion(queryRegionID); ok && detail.Region.Type == "field" {
+				suggestedActions = appendUniqueString(suggestedActions, "resolve_field_encounter")
+			}
 
 			writeEnvelope(w, r, http.StatusOK, map[string]any{
 				"today": map[string]any{
@@ -476,6 +479,10 @@ func NewServer(cfg config.API) *Server {
 					writeError(w, r, http.StatusBadRequest, "TRAVEL_RANK_LOCKED", "character rank does not unlock this region")
 				case errors.Is(err, characters.ErrTravelInsufficientGold):
 					writeError(w, r, http.StatusBadRequest, "TRAVEL_INSUFFICIENT_GOLD", "character does not have enough gold to travel")
+				case errors.Is(err, world.ErrFieldEncounterUnavailable):
+					writeError(w, r, http.StatusBadRequest, "FIELD_ENCOUNTER_UNAVAILABLE", "field encounters are not available in the current region")
+				case errors.Is(err, world.ErrFieldEncounterInvalidMode):
+					writeError(w, r, http.StatusBadRequest, "FIELD_ENCOUNTER_INVALID_MODE", "field encounter approach is not supported")
 				case errors.Is(err, characters.ErrActionNotSupported):
 					writeError(w, r, http.StatusBadRequest, "ACTION_NOT_SUPPORTED", "action type is not currently supported")
 				case errors.Is(err, dungeons.ErrDungeonNotFound):
@@ -644,6 +651,37 @@ func NewServer(cfg config.API) *Server {
 					"limits": board.Limits,
 				},
 			})
+		})
+
+		r.Post("/me/field-encounter", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+
+			var request struct {
+				Approach string `json:"approach"`
+			}
+			if !decodeJSONBody(w, r, &request) {
+				return
+			}
+
+			result, err := resolveFieldEncounter(account, request.Approach, characterService, questService, dungeonService, worldService)
+			if err != nil {
+				switch {
+				case errors.Is(err, characters.ErrCharacterNotFound):
+					writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before entering field encounters")
+				case errors.Is(err, world.ErrFieldEncounterUnavailable):
+					writeError(w, r, http.StatusBadRequest, "FIELD_ENCOUNTER_UNAVAILABLE", "field encounters are not available in the current region")
+				case errors.Is(err, world.ErrFieldEncounterInvalidMode):
+					writeError(w, r, http.StatusBadRequest, "FIELD_ENCOUNTER_INVALID_MODE", "field encounter approach is not supported")
+				default:
+					writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to resolve field encounter")
+				}
+				return
+			}
+
+			writeEnvelope(w, r, http.StatusOK, result)
 		})
 
 		r.Post("/me/quests/{questId}/submit", func(w http.ResponseWriter, r *http.Request) {
@@ -1651,6 +1689,17 @@ func buildPublicWorldState(worldService *world.Service, snapshot characters.Runt
 			RecentEventCount: eventCountByRegion[region.ID],
 			Highlight:        highlight,
 			BuildingCount:    len(detail.Buildings),
+			RegionGameplay: world.RegionGameplay{
+				InteractionLayer:  detail.InteractionLayer,
+				RiskLevel:         detail.RiskLevel,
+				FacilityFocus:     detail.FacilityFocus,
+				EncounterFamily:   detail.EncounterFamily,
+				CurioStatus:       runtimeCurioStatus(detail, populationByRegion[region.ID], eventCountByRegion[region.ID]),
+				CurioHint:         detail.CurioHint,
+				LinkedDungeon:     detail.LinkedDungeon,
+				ParentRegionID:    detail.ParentRegionID,
+				HostileEncounters: detail.HostileEncounters,
+			},
 		})
 	}
 
@@ -2185,6 +2234,26 @@ func fallbackRegionHighlight(regionType string, population int) string {
 	}
 }
 
+func runtimeCurioStatus(detail world.RegionDetail, population, recentEventCount int) string {
+	switch detail.InteractionLayer {
+	case "field", "dungeon":
+		switch {
+		case population > 0:
+			return "active"
+		case recentEventCount > 0:
+			return "exhausted"
+		default:
+			return detail.CurioStatus
+		}
+	case "safe_hub":
+		if recentEventCount >= 3 {
+			return "active"
+		}
+	}
+
+	return detail.CurioStatus
+}
+
 func currentCharacterWithLimits(account auth.Account, characterService *characters.Service, worldService *world.Service) (characters.Summary, characters.DailyLimits, error) {
 	state, err := characterService.GetState(account, worldService)
 	if err != nil {
@@ -2431,6 +2500,121 @@ func activityTypeFromRegion(regionID string) string {
 	return "field"
 }
 
+func resolveFieldEncounter(account auth.Account, approach string, characterService *characters.Service, questService *quests.Service, dungeonService *dungeons.Service, worldService *world.Service) (map[string]any, error) {
+	character, limits, err := currentCharacterWithLimits(account, characterService, worldService)
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := worldService.ResolveFieldEncounter(character.LocationRegionID, approach)
+	if err != nil {
+		return nil, err
+	}
+
+	event := world.WorldEvent{
+		EventID:          fmt.Sprintf("evt_field_%d", time.Now().UnixNano()),
+		EventType:        result.EventType,
+		Visibility:       "public",
+		ActorCharacterID: character.CharacterID,
+		ActorName:        character.Name,
+		RegionID:         character.LocationRegionID,
+		Summary:          fmt.Sprintf("%s %s.", character.Name, result.Summary),
+		Payload: map[string]any{
+			"approach":            result.Approach,
+			"encounter_family":    result.EncounterFamily,
+			"reward_gold":         result.RewardGold,
+			"enemies_defeated":    result.EnemiesDefeated,
+			"materials_collected": result.MaterialsCollected,
+			"material_drops":      result.MaterialDrops,
+			"is_curio":            result.IsCurio,
+			"curio_label":         result.CurioLabel,
+			"curio_outcome":       result.CurioOutcome,
+			"followup_quest":      result.FollowupQuest,
+		},
+		OccurredAt: time.Now().Format(time.RFC3339),
+	}
+
+	if _, _, err := characterService.ApplyFieldEncounter(character.CharacterID, result.RewardGold, result.MaterialDrops, event); err != nil {
+		return nil, err
+	}
+
+	board, completedQuests := questService.ProgressFieldQuests(character, character.LocationRegionID, result.EnemiesDefeated, result.MaterialsCollected, limits)
+	var triggeredQuest *characters.QuestSummary
+	if result.FollowupQuest != nil {
+		var err error
+		board, triggeredQuest, err = questService.EnsureCurioFollowupQuest(character, *result.FollowupQuest, limits)
+		if err != nil {
+			return nil, err
+		}
+		if triggeredQuest != nil {
+			_ = characterService.AppendEvents(character.CharacterID, world.WorldEvent{
+				EventID:          fmt.Sprintf("evt_quest_curio_%s", triggeredQuest.QuestID),
+				EventType:        "quest.accepted",
+				Visibility:       "public",
+				ActorCharacterID: character.CharacterID,
+				ActorName:        character.Name,
+				RegionID:         character.LocationRegionID,
+				Summary:          fmt.Sprintf("%s triggered %s.", character.Name, triggeredQuest.Title),
+				Payload: map[string]any{
+					"quest_id":          triggeredQuest.QuestID,
+					"quest_title":       triggeredQuest.Title,
+					"quest_target":      triggeredQuest.TargetRegionID,
+					"source":            "curio",
+					"curio_label":       result.CurioLabel,
+					"curio_outcome":     result.CurioOutcome,
+					"curio_region_id":   result.RegionID,
+					"followup_required": true,
+				},
+				OccurredAt: time.Now().Format(time.RFC3339),
+			})
+		}
+	}
+	for _, quest := range completedQuests {
+		_ = characterService.AppendEvents(character.CharacterID, world.WorldEvent{
+			EventID:          fmt.Sprintf("evt_quest_completed_field_%s", quest.QuestID),
+			EventType:        "quest.completed",
+			Visibility:       "public",
+			ActorCharacterID: character.CharacterID,
+			ActorName:        character.Name,
+			RegionID:         character.LocationRegionID,
+			Summary:          fmt.Sprintf("%s completed %s.", character.Name, quest.Title),
+			Payload: map[string]any{
+				"quest_id":    quest.QuestID,
+				"quest_title": quest.Title,
+				"approach":    result.Approach,
+			},
+			OccurredAt: time.Now().Format(time.RFC3339),
+		})
+	}
+
+	state, err := buildCharacterState(account, characterService, questService, dungeonService, worldService)
+	if err != nil {
+		return nil, err
+	}
+	state.Objectives = activeObjectivesFromBoard(board)
+
+	return map[string]any{
+		"action_result": map[string]any{
+			"action_type": "resolve_field_encounter",
+			"region_id":   result.RegionID,
+			"approach":    result.Approach,
+			"event_type":  result.EventType,
+		},
+		"state": state,
+		"result": map[string]any{
+			"encounter_family":    result.EncounterFamily,
+			"reward_gold":         result.RewardGold,
+			"enemies_defeated":    result.EnemiesDefeated,
+			"materials_collected": result.MaterialsCollected,
+			"material_drops":      result.MaterialDrops,
+			"is_curio":            result.IsCurio,
+			"curio_label":         result.CurioLabel,
+			"curio_outcome":       result.CurioOutcome,
+			"followup_quest":      triggeredQuest,
+		},
+	}, nil
+}
+
 func executeAction(account auth.Account, actionType string, actionArgs map[string]any, characterService *characters.Service, questService *quests.Service, dungeonService *dungeons.Service, inventoryService *inventory.Service, arenaService *arena.Service, worldService *world.Service) (map[string]any, error) {
 	switch strings.TrimSpace(actionType) {
 	case "travel":
@@ -2473,6 +2657,9 @@ func executeAction(account auth.Account, actionType string, actionArgs map[strin
 			},
 			"state": state,
 		}, nil
+	case "resolve_field_encounter":
+		approach, _ := actionArgs["approach"].(string)
+		return resolveFieldEncounter(account, approach, characterService, questService, dungeonService, worldService)
 	case "accept_quest":
 		questID, _ := actionArgs["quest_id"].(string)
 		character, limits, err := currentCharacterWithLimits(account, characterService, worldService)

@@ -311,8 +311,16 @@ World and travel endpoints:
 - `GET /world/regions`
 - `GET /regions/{regionId}`
 - `POST /me/travel`
+- `POST /me/field-encounter`
 
 Travel changes which quests, buildings, and dungeons are locally available.
+
+Field encounter note:
+
+- `POST /me/field-encounter` resolves the current field-region loop directly
+- supported `approach` values are `hunt`, `gather`, and `curio`
+- this is the primary V1 endpoint for progressing `kill_region_enemies` and `collect_materials` objectives in field regions
+- `curio` can also auto-start a short followup quest when the regional event resolves into a delivery or contract redirect
 
 ### Buildings and town services
 
@@ -487,6 +495,7 @@ Current supported canonical `action_type` values:
 - `restore_hp`
 - `remove_status`
 - `enhance_item`
+- `resolve_field_encounter`
 - `enter_dungeon`
 - `claim_dungeon_rewards`
 - `arena_signup`
@@ -535,6 +544,8 @@ Important error codes to react to:
 - `TRAVEL_REGION_NOT_FOUND`
 - `TRAVEL_RANK_LOCKED`
 - `TRAVEL_INSUFFICIENT_GOLD`
+- `FIELD_ENCOUNTER_UNAVAILABLE`
+- `FIELD_ENCOUNTER_INVALID_MODE`
 - `GOLD_INSUFFICIENT`
 
 ### Quests

@@ -453,6 +453,13 @@ func (s *Service) listValidActions(regionID string, worldService *world.Service)
 			ArgsSchema: map[string]any{"dungeon_id": "string"},
 		})
 	}
+	if region.Region.Type == "field" {
+		actions = append(actions, ValidAction{
+			ActionType: "resolve_field_encounter",
+			Label:      fmt.Sprintf("Resolve encounter in %s", region.Region.Name),
+			ArgsSchema: map[string]any{"approach": "string"},
+		})
+	}
 	for _, option := range region.TravelOptions {
 		actions = append(actions, ValidAction{
 			ActionType: "travel",
@@ -625,6 +632,40 @@ func (s *Service) GrantGold(characterID string, amount int) (Summary, error) {
 	}
 	s.characterByAccountID[accountID] = entry
 	return entry.summary, nil
+}
+
+func (s *Service) ApplyFieldEncounter(characterID string, rewardGold int, materialDrops []map[string]any, event world.WorldEvent) (Summary, []MaterialBalance, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	accountID, entry, ok := s.lookupByCharacterIDLocked(characterID)
+	if !ok {
+		return Summary{}, nil, ErrCharacterNotFound
+	}
+
+	entry, _, err := s.normalizeDailyLimitsLocked(accountID, entry)
+	if err != nil {
+		return Summary{}, nil, err
+	}
+
+	if rewardGold > 0 {
+		entry.summary.Gold += rewardGold
+	}
+	if entry.materials == nil {
+		entry.materials = map[string]int{}
+	}
+	applyMaterialDrops(entry.materials, materialDrops)
+	entry.recentEvents = prependEvent(entry.recentEvents, event)
+
+	if err := s.saveRecordLocked(accountID, entry); err != nil {
+		return Summary{}, nil, err
+	}
+	if err := s.appendEventsLocked(accountID, entry.summary.CharacterID, []world.WorldEvent{event}); err != nil {
+		return Summary{}, nil, err
+	}
+
+	s.characterByAccountID[accountID] = entry
+	return entry.summary, materialBalancesView(entry.materials), nil
 }
 
 func (s *Service) ApplyDungeonRewardClaim(characterID, runID, dungeonID string, rewardGold int, rating string, rewardItemCatalogIDs []string, materialDrops []map[string]any) (Summary, DailyLimits, world.WorldEvent, error) {

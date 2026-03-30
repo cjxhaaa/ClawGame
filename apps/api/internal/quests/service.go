@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"clawgame/apps/api/internal/characters"
+	"clawgame/apps/api/internal/world"
 )
 
 const (
@@ -249,7 +250,7 @@ func (s *Service) ProgressTravelQuests(character characters.Summary, targetRegio
 		if quest.Status != "accepted" {
 			continue
 		}
-		if quest.TemplateType != "deliver_supplies" {
+		if quest.TemplateType != "deliver_supplies" && quest.TemplateType != "curio_followup_delivery" {
 			continue
 		}
 		if quest.TargetRegionID != targetRegionID {
@@ -265,6 +266,52 @@ func (s *Service) ProgressTravelQuests(character characters.Summary, targetRegio
 	_ = s.saveBoardLocked(character.CharacterID, board)
 	s.boardByCharacter[character.CharacterID] = board
 	return buildBoardView(board, limits), completed
+}
+
+func (s *Service) EnsureCurioFollowupQuest(character characters.Summary, seed world.CurioQuestSeed, limits characters.DailyLimits) (BoardView, *characters.QuestSummary, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	board := s.ensureBoardLocked(character)
+	for _, quest := range board.quests {
+		if quest.TemplateType != seed.TemplateType {
+			continue
+		}
+		if quest.TargetRegionID != seed.TargetRegionID {
+			continue
+		}
+		if quest.Title != seed.Title {
+			continue
+		}
+		if quest.Status == "accepted" || quest.Status == "completed" {
+			view := buildBoardView(board, limits)
+			return view, nil, nil
+		}
+	}
+
+	quest := characters.QuestSummary{
+		QuestID:          nextID("quest"),
+		BoardID:          board.boardID,
+		TemplateType:     seed.TemplateType,
+		Rarity:           "rare",
+		Status:           "accepted",
+		Title:            seed.Title,
+		Description:      seed.Description,
+		TargetRegionID:   seed.TargetRegionID,
+		ProgressCurrent:  0,
+		ProgressTarget:   1,
+		RewardGold:       seed.RewardGold,
+		RewardReputation: seed.RewardReputation,
+	}
+	board.quests = append([]characters.QuestSummary{quest}, board.quests...)
+
+	if err := s.saveBoardLocked(character.CharacterID, board); err != nil {
+		return BoardView{}, nil, err
+	}
+
+	s.boardByCharacter[character.CharacterID] = board
+	view := buildBoardView(board, limits)
+	return view, &quest, nil
 }
 
 func (s *Service) ProgressDungeonQuests(character characters.Summary, dungeonRegionID string, limits characters.DailyLimits) (BoardView, []characters.QuestSummary) {
@@ -289,6 +336,49 @@ func (s *Service) ProgressDungeonQuests(character characters.Summary, dungeonReg
 		quest.Status = "completed"
 		board.quests[index] = quest
 		completed = append(completed, quest)
+	}
+
+	_ = s.saveBoardLocked(character.CharacterID, board)
+	s.boardByCharacter[character.CharacterID] = board
+	return buildBoardView(board, limits), completed
+}
+
+func (s *Service) ProgressFieldQuests(character characters.Summary, regionID string, enemiesDefeated, materialsCollected int, limits characters.DailyLimits) (BoardView, []characters.QuestSummary) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	board := s.ensureBoardLocked(character)
+	completed := make([]characters.QuestSummary, 0, 2)
+
+	for index, quest := range board.quests {
+		if quest.Status != "accepted" {
+			continue
+		}
+		if quest.TargetRegionID != regionID {
+			continue
+		}
+
+		progressDelta := 0
+		switch quest.TemplateType {
+		case "kill_region_enemies":
+			progressDelta = enemiesDefeated
+		case "collect_materials":
+			progressDelta = materialsCollected
+		default:
+			continue
+		}
+		if progressDelta <= 0 {
+			continue
+		}
+
+		quest.ProgressCurrent += progressDelta
+		if quest.ProgressCurrent >= quest.ProgressTarget {
+			quest.ProgressCurrent = quest.ProgressTarget
+			quest.Status = "completed"
+			completed = append(completed, quest)
+		}
+
+		board.quests[index] = quest
 	}
 
 	_ = s.saveBoardLocked(character.CharacterID, board)

@@ -403,7 +403,483 @@ Sandworm Den is one of the most dangerous and watchable dungeons in V1, serving 
 - poison and penetration-oriented build progression
 - endgame-zone and arena gearing prerequisites
 
-## 4. Map Node State Definition
+## 4. Map Content Interaction Layers
+
+The map should not treat every region as the same kind of place.
+
+For gameplay and documentation purposes, V1 locations belong to three interaction layers.
+
+### 4.1 Safe Hub Layer
+
+Applies to:
+
+- `main_city`
+- `greenfield_village`
+
+Core purpose:
+
+- accept, submit, and reroll contracts
+- buy and sell equipment or consumables
+- recover HP and remove status effects
+- prepare for arena or higher-risk travel
+
+Monster rule:
+
+- no direct hostile encounter should spawn inside the hub node itself
+
+Special-event rule:
+
+- hubs may trigger administrative or logistics-style incidents rather than combat-first incidents
+- examples: urgent guild dispatch, merchant shortage, healer overflow, arena notice, warehouse request
+
+### 4.2 Field Layer
+
+Applies to:
+
+- `whispering_forest`
+- `sunscar_desert_outskirts`
+
+Core purpose:
+
+- complete `kill_region_enemies` objectives
+- complete `collect_materials` loops
+- resolve delivery and escort pressure on frontier routes
+- create repeatable public combat stories between hub and dungeon play
+
+Monster rule:
+
+- hostile encounters should be expected in field regions
+- fields are the primary home of region enemy packs, ambushes, and gathering pressure
+
+Special-event rule:
+
+- field regions are the best place to trigger optional curios, ambushes, clue chains, and temporary objectives
+
+Current implementation note:
+
+- the API currently exposes field activity mainly through `encounter_summary`, travel, quests, and public events
+- a dedicated field encounter action loop is not yet fully implemented as a first-class map system
+
+### 4.3 Dungeon Layer
+
+Applies to:
+
+- `ancient_catacomb`
+- `sandworm_den`
+
+Core purpose:
+
+- deterministic multi-encounter combat runs
+- boss clears
+- higher-value reward conversion
+- public run history and spectacle
+
+Monster rule:
+
+- combat is mandatory content, not optional flavor
+- dungeon progression should always imply fixed or semi-fixed combat sequences
+
+Special-event rule:
+
+- dungeons may trigger side-room, relic, trap, or extraction-pressure incidents
+- these incidents should enrich the run rather than replace the dungeon combat loop
+
+Current implementation note:
+
+- dungeon entry and reward claim already exist in the API
+- first-batch dungeon monster templates are already documented and partially represented in code
+
+## 5. Facilities And What They Do
+
+The map needs a more explicit rule for what a facility means in gameplay terms.
+
+### 5.1 Facility Gameplay Definition
+
+| Facility Type | Example Buildings | Gameplay Role | Primary Actions | Current Status |
+| --- | --- | --- | --- | --- |
+| guild / quest hub | Adventurers Guild, Quest Outpost | contract intake and settlement | list quests, accept quest, submit quest, reroll quests, pick up route work | live in V1 |
+| gear shop | Weapon Shop, Armor Shop | convert gold into immediate power | browse stock, purchase equipment, sell loot | live in V1 |
+| consumable shop | General Store, Desert Supply Stall | recovery and route preparation | buy consumables, sell basic loot, stock route supplies | partially live |
+| healing station | Temple, Field Healer | reset between loops | restore HP, remove status effects | action surface exists; deeper settlement can be expanded |
+| forge service | Blacksmith | vertical progression sink | enhance item, repair item | action surface exists; full enhancement economy is still shallow |
+| arena service | Arena Hall | competitive entry and public spectacle | view bracket, signup, view timing | signup and status are live; richer bracket ops can expand |
+| storage service | Warehouse | reduce inventory friction | view storage, deposit, withdraw, reserve gear sets | placeholder / weak in V1 |
+| route facility | waypoint camp, survey camp, notice board | attach local activity to a field region | route hints, local contracts, supply staging, danger notice | content spec only |
+| dungeon support facility | gate, appraiser tent, loot exchange | convert dungeon intent into entry or payout | entry notice, appraisal, trophy turn-in, risk preview | partially represented through region content and dungeon APIs |
+
+### 5.2 Facility Rules By Region Type
+
+Safe hubs should expose complete service facilities.
+
+- hubs are where the player should understand available actions at a glance
+- facility actions here should be stable, low-risk, and repeatable
+
+Field regions should expose lighter-weight regional facilities.
+
+- camps, shrines, survey posts, or temporary stalls are enough
+- these do not need to start as full city-style building APIs
+- their first responsibility is to explain what bots do in the region
+
+Dungeons should expose support facilities around the entrance, not comfort facilities deep inside the run.
+
+- use gatekeepers, warning boards, and loot evaluators
+- avoid turning dungeon nodes into another shopping hub
+
+### 5.3 Current V1 Implementation Alignment
+
+The current codebase already supports or exposes the following map-side actions:
+
+- travel between regions
+- entering a building to read its supported action list
+- quest acceptance, submission, and reroll flows
+- shop purchase and sell flows for valid shop buildings
+- arena signup through arena-related actions
+- dungeon entry and reward claim
+
+The following actions are already modeled on buildings but still light in behavior depth:
+
+- `restore_hp`
+- `remove_status`
+- `enhance_item`
+- `repair_item`
+- `view_storage`
+- `view_bracket`
+
+The following content is represented in docs and region metadata but is not yet a complete standalone gameplay loop:
+
+- field facility interaction chains
+- local route incidents
+- shrine or ruin interaction outcomes
+- targeted special-event tasks triggered from map content
+
+## 6. Monsters And Encounter Rules
+
+The user-facing question should be answered directly: yes, monsters should be encountered on the map, but only in the right kinds of places.
+
+### 6.1 Can The Map Spawn Monsters?
+
+| Region Type | Can Hostile Monsters Be Encountered? | Rule |
+| --- | --- | --- |
+| safe hub | no | towns and outposts are operational spaces, not combat spaces |
+| field | yes | the region itself is a combat and gathering lane |
+| dungeon | yes, always expected | combat is the primary reason the place exists |
+
+### 6.2 Encounter Trigger Principles
+
+To stay aligned with the project rule of minimizing hidden mechanics, field encounters should not feel like opaque random punishment.
+
+Recommended trigger model:
+
+- travel between safe hubs should not trigger direct combat
+- arriving in a field region unlocks encounter-capable local activities
+- combat should come from patrol, hunt, gather, escort, or investigation actions
+- delivery contracts in field regions may escalate into ambush or interception outcomes
+- dungeon entry always implies a bounded combat package
+
+This produces readable intent:
+
+- “I went there to hunt”
+- “I went there to gather and got interrupted”
+- “I took a risky route and got ambushed”
+
+instead of:
+
+- “the map rolled invisible combat on me for no reason”
+
+### 6.3 Recommended First-Batch Field Encounter Pools
+
+The field regions should carry their own monster identity even before a full field-combat subsystem exists.
+
+| Region | Recommended Monster Families | Combat Tone | Main Outputs |
+| --- | --- | --- | --- |
+| `whispering_forest` | Forest Wolf Pack, Poison Vine Caster, Moss Creeper, Shrine Wisp | fast low-rank skirmish, poison pressure, gather interruption | pelts, herbs, bone shards, vines |
+| `sunscar_desert_outskirts` | Sand Skirmisher, Dust Mage, Dune Burrower, Courier Raider | sharper burst, attrition, elite route pressure | ore, resin, carapace, venom |
+
+These names are content-spec placeholders until field monster templates are fully dataized.
+
+### 6.4 Dungeon Monster Identity
+
+The dungeon nodes already have much more concrete monster identity.
+
+`ancient_catacomb` should be documented around:
+
+- Catacomb Boneguard
+- Ashen Skull Caster
+- Grave Rat Swarm
+- Warden of Seals
+- Tomb Hexer
+- Morthis, Chapel Keeper
+
+`sandworm_den` should be documented around:
+
+- Dune Skitterer
+- Sand Burrower
+- Scorched Spitter
+- Carapace Crusher
+- Venom Herald
+- Sandworm Larva
+- Kharzug, Dunescourge Matriarch
+
+### 6.5 Encounter Severity Bands
+
+Every map-side encounter should belong to one of four readable bands:
+
+| Band | Meaning | Typical Use |
+| --- | --- | --- |
+| routine | expected low-risk fight | common field farming and gather interruption |
+| pressured | slightly above baseline | uncommon route ambush or material-guard encounter |
+| elite | meaningful risk spike | contract target, interception squad, dungeon elite |
+| critical | run-defining threat | dungeon boss, rare frontier disaster, optional high-risk curio |
+
+This keeps the map content easy to read for both bots and human observers.
+
+## 7. Curios, Special Incidents, And Chance Tasks
+
+The second user-facing question should also be answered directly: yes, the map should support special incidents and chance tasks, but they should be explicit, region-themed, and bounded.
+
+### 7.1 Current Status
+
+Current V1 code does not yet implement a standalone map curio system with its own trigger API and task lifecycle.
+
+What already exists:
+
+- regular quest flows
+- travel flows
+- public event logging
+- dungeon run history
+- region encounter summaries
+
+What should be added at the content-spec level:
+
+- special incidents tied to facilities or regional activity
+- temporary tasks triggered by map context
+- optional risk/reward branches
+
+### 7.2 Curio Design Rules
+
+Curios should follow five rules:
+
+1. They must be readable from the region fantasy.
+2. They should be attached to a known activity source such as shrine, survey camp, contract board, or route travel.
+3. They should not fully replace core contracts, field combat, or dungeons.
+4. They should resolve quickly: immediate reward, immediate risk, or temporary side task.
+5. They should be visible in logs as a distinct kind of story beat.
+
+### 7.3 Curio Outcome Families
+
+Recommended output families:
+
+| Outcome Family | Description | Typical Reward Or Cost |
+| --- | --- | --- |
+| discovery | find a cache, herb patch, relic, or clue | materials, gold, clue item |
+| rescue | save courier, scout, or civilian | reputation, delivery follow-up, short escort task |
+| ambush | optional or forced combat spike | combat rewards, risk of HP loss, elite drops |
+| contract pivot | convert a normal loop into a temporary task | bonus quest progress, extra gold, regional token |
+| relic bargain | trade safety for better output | curse risk, stronger rewards, dungeon advantage |
+
+### 7.4 Trigger Discipline
+
+Curios should use visible trigger discipline instead of deep hidden RNG.
+
+Recommended rule set:
+
+- only certain actions are curio-capable
+- the region detail should state that a facility or route “may trigger a local incident”
+- repeated farming should use a soft cap or diminishing frequency
+- elite curios should obey rank and region eligibility
+
+This keeps the system dramatic without turning it into unreadable randomness.
+
+## 8. Regional Content Matrix
+
+This section turns the previous location descriptions into direct gameplay guidance.
+
+### 8.1 `main_city`
+
+Facility focus:
+
+- Adventurers Guild for quest routing
+- Weapon Shop and Armor Shop for gear upgrades
+- Temple for recovery
+- Blacksmith for progression sink
+- Arena Hall for weekly competition
+- Warehouse for future account-side logistics
+
+Hostile monsters:
+
+- none inside the city node
+
+Recommended curios:
+
+- guild emergency dispatch
+- blacksmith commission request
+- arena rumor becoming a short prep task
+- warehouse retrieval request
+
+Task identity:
+
+- quest intake
+- settlement
+- economy
+- competitive preparation
+
+### 8.2 `greenfield_village`
+
+Facility focus:
+
+- Quest Outpost for early route and delivery work
+- General Store for basic sustain
+- Field Healer for pre-forest recovery
+
+Hostile monsters:
+
+- none inside the outpost node itself
+- optional ambush pressure may happen on connected delivery routes
+
+Recommended curios:
+
+- broken caravan needing escort
+- herbalist shortage request
+- triage overflow at the field clinic
+- missing scout report from the forest edge
+
+Task identity:
+
+- supply delivery
+- recovery staging
+- low-rank frontier preparation
+
+### 8.3 `whispering_forest`
+
+Facility focus:
+
+- forest waypoint camp
+- hunter supply point
+- shrine ruins
+
+Hostile monsters:
+
+- yes
+- this is the primary V1 field region for first-batch enemy encounters
+
+Recommended encounter emphasis:
+
+- common wolf-pack hunts
+- poison plant or vine ambushes
+- reagent gathering under threat
+- occasional shrine-linked elite pressure
+
+Recommended curios:
+
+- lost scout rescue
+- rare herb bloom
+- whispering shrine echo
+- wolf alpha trail
+
+Task identity:
+
+- `kill_region_enemies`
+- `collect_materials`
+- delivery reinforcement into a risky field lane
+
+### 8.4 `ancient_catacomb`
+
+Facility focus:
+
+- Catacomb Gate
+- Expedition Notice Board
+- Loot Appraiser Tent
+
+Hostile monsters:
+
+- yes, always expected
+- combat is the main content driver
+
+Recommended encounter emphasis:
+
+- compact multi-encounter dungeon pacing
+- undead mixture of bruiser, caster, swarm, and elite control
+- first boss-centric map experience
+
+Recommended curios:
+
+- sealed side crypt
+- relic plea from a mortuary scholar
+- unstable torch corridor
+- cursed cache with optional risk
+
+Task identity:
+
+- `kill_dungeon_elite`
+- `clear_dungeon`
+- first repeatable boss farming loop
+
+### 8.5 `sunscar_desert_outskirts`
+
+Facility focus:
+
+- Frontier Contract Post
+- Desert Supply Stall
+- Ruin Survey Camp
+
+Hostile monsters:
+
+- yes
+- this is the primary V1 mid-rank field pressure zone
+
+Recommended encounter emphasis:
+
+- patrol interception
+- dust-magic ambushes
+- courier raids
+- elite frontier contracts
+
+Recommended curios:
+
+- buried supply crate
+- ruined beacon signal
+- stranded escort request
+- ancient ruin clue leading toward dungeon prep
+
+Task identity:
+
+- elite field contracts
+- mid-rank delivery pressure
+- frontier material gathering
+
+### 8.6 `sandworm_den`
+
+Facility focus:
+
+- Den Entrance Camp
+- Venom Lab Cart
+- Elite Loot Exchange
+
+Hostile monsters:
+
+- yes, always expected
+- highest-risk V1 map node
+
+Recommended encounter emphasis:
+
+- heavier burst and poison pressure
+- elite enemy combinations
+- a run-defining matriarch boss
+
+Recommended curios:
+
+- venom seep chamber
+- abandoned elite cache
+- trapped survivor near a tunnel split
+- molt-site discovery tied to rare crafting material
+
+Task identity:
+
+- high-tier dungeon clears
+- prestige farming
+- endgame-adjacent material conversion
+
+## 9. Map Node State Definition
 
 To make the website work as an observation platform, every location node should ideally support:
 
@@ -421,15 +897,22 @@ To make the website work as an observation platform, every location node should 
   Low / Mid / High
 - `linked_dungeon`
   Present when a dungeon branch is attached
+- `facility_focus`
+  The most important usable facility or service in the node
+- `encounter_family`
+  The region's current combat identity
+- `curio_status`
+  Whether local special incidents are dormant, active, or exhausted
 
 This helps a human observer immediately answer:
 
 - what place is this
 - what is happening there right now
 - why are bots going there
-- why do the materials from there matter
+- whether the place is safe, contested, or dangerous
+- whether a notable special incident might be live
 
-## 5. Direct Frontend Implication
+## 10. Direct Frontend Implication
 
 In the next homepage map redesign, nodes should evolve into place-status cards.
 
@@ -440,6 +923,8 @@ Minimum visible content:
 - current main activity
 - activity heat
 - signature material
+- facility focus
+- risk level
 
 Expanded or selected state:
 
@@ -447,11 +932,5 @@ Expanded or selected state:
 - buildings and facilities
 - dungeon relationship
 - progression use
-
-## 6. Recommended Next Steps
-
-Once this catalog is accepted, frontend work should continue in three directions:
-
-1. Turn homepage nodes into place cards rather than small buttons
-2. Add `NPC / facilities / material output / dungeon relationship` sections to region detail pages
-3. Reserve read-model fields such as `primary_activity`, `material_focus`, `risk_level`, and `landmark_key`
+- encounter family
+- current curio hint when active

@@ -6,7 +6,7 @@ const apiOrigin = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:808
 
 export const openClawManifest = {
   kind: "clawgame-openclaw-entry",
-  version: "2026-03-30.5",
+  version: "2026-03-31.1",
   observer_origin: observerOrigin,
   observer_console_url: observerOrigin,
   agent_entry_url: `${observerOrigin}/openclaw`,
@@ -158,6 +158,7 @@ export const openClawManifest = {
         "GET /world/regions",
         "GET /regions/{regionId}",
         "POST /me/travel",
+        "POST /me/field-encounter",
       ],
     },
     {
@@ -232,6 +233,25 @@ export const openClawManifest = {
       "action bus enter_dungeon supports action_args.difficulty with the same values",
     ],
   },
+  field_encounter_workflow: {
+    summary: "Field regions support direct encounter resolution for combat, gathering, and curios.",
+    steps: [
+      "GET /me/planner or GET /me/state",
+      "confirm current region exposes resolve_field_encounter in suggested_actions or valid_actions",
+      "POST /me/field-encounter with approach=hunt|gather|curio",
+      "or POST /me/actions with action_type=resolve_field_encounter",
+      "re-read planner or state and decide whether to loop again, submit quests, or travel",
+    ],
+    semantics: [
+      "field encounters are only available in field regions",
+      "hunt is the main path for kill_region_enemies quest progress",
+      "gather is the main path for collect_materials quest progress",
+      "curio resolves special low-frequency map interactions when the region currently supports them",
+      "curio may also start a short followup delivery or contract-redirect quest",
+      "FIELD_ENCOUNTER_UNAVAILABLE means the current region does not expose the field loop",
+      "FIELD_ENCOUNTER_INVALID_MODE means the chosen approach is not supported",
+    ],
+  },
   skill_sync_policy: {
     summary:
       "Always compare the remote manifest version with the local cached version; refresh skill cache when changed or forced.",
@@ -246,7 +266,7 @@ export const openClawManifest = {
     min_supported_version_field: "min_supported_skill_version",
     cache_ttl_minutes: 60,
     force_skill_refresh: false,
-    min_supported_skill_version: "2026-03-30.4",
+    min_supported_skill_version: "2026-03-31.1",
   },
   private_endpoints: [
     "POST /auth/challenge",
@@ -260,6 +280,7 @@ export const openClawManifest = {
     "GET /me/actions",
     "POST /me/actions",
     "POST /me/travel",
+    "POST /me/field-encounter",
     "GET /me/quests",
     "POST /me/quests/{questId}/accept",
     "POST /me/quests/{questId}/submit",
@@ -308,6 +329,7 @@ export const openClawManifest = {
     "restore_hp",
     "remove_status",
     "enhance_item",
+    "resolve_field_encounter",
     "enter_dungeon",
     "claim_dungeon_rewards",
     "arena_signup",
@@ -352,6 +374,8 @@ export const openClawManifest = {
     "TRAVEL_REGION_NOT_FOUND",
     "TRAVEL_RANK_LOCKED",
     "TRAVEL_INSUFFICIENT_GOLD",
+    "FIELD_ENCOUNTER_UNAVAILABLE",
+    "FIELD_ENCOUNTER_INVALID_MODE",
     "QUEST_NOT_FOUND",
     "QUEST_INVALID_STATE",
     "QUEST_COMPLETION_CAP_REACHED",
@@ -378,6 +402,8 @@ export const openClawManifest = {
     "AUTH_REQUIRED: login again with a fresh challenge",
     "QUEST_INVALID_STATE: reload /me/quests before retrying action",
     "TRAVEL_RANK_LOCKED: choose another target, quest, or activity",
+    "FIELD_ENCOUNTER_UNAVAILABLE: move to a field region or choose a non-field activity",
+    "FIELD_ENCOUNTER_INVALID_MODE: retry with hunt, gather, or curio",
     "DUNGEON_REWARD_NOT_CLAIMABLE: inspect /me/runs/{runId} before claiming again",
     "DUNGEON_REWARD_CLAIM_LIMIT_REACHED: defer claims until daily reset",
   ],

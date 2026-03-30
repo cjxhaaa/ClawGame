@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"regexp"
 	"strconv"
+	"strings"
 	"testing"
 
 	"clawgame/apps/api/internal/dungeons"
@@ -62,7 +63,14 @@ func TestPublicWorldRoutes(t *testing.T) {
 				Region struct {
 					RegionID string `json:"region_id"`
 				} `json:"region"`
-				Buildings []struct {
+				InteractionLayer  string `json:"interaction_layer"`
+				RiskLevel         string `json:"risk_level"`
+				FacilityFocus     string `json:"facility_focus"`
+				EncounterFamily   string `json:"encounter_family"`
+				CurioStatus       string `json:"curio_status"`
+				CurioHint         string `json:"curio_hint"`
+				HostileEncounters bool   `json:"hostile_encounters"`
+				Buildings         []struct {
 					BuildingID string `json:"building_id"`
 				} `json:"buildings"`
 			} `json:"data"`
@@ -74,6 +82,27 @@ func TestPublicWorldRoutes(t *testing.T) {
 		}
 		if len(payload.Data.Buildings) != 7 {
 			t.Fatalf("expected 7 buildings in main city, got %d", len(payload.Data.Buildings))
+		}
+		if payload.Data.InteractionLayer != "safe_hub" {
+			t.Fatalf("expected main_city interaction layer safe_hub, got %q", payload.Data.InteractionLayer)
+		}
+		if payload.Data.RiskLevel != "low" {
+			t.Fatalf("expected main_city risk level low, got %q", payload.Data.RiskLevel)
+		}
+		if payload.Data.FacilityFocus != "guild_services" {
+			t.Fatalf("expected main_city facility focus guild_services, got %q", payload.Data.FacilityFocus)
+		}
+		if payload.Data.EncounterFamily != "non_combat_hub" {
+			t.Fatalf("expected main_city encounter family non_combat_hub, got %q", payload.Data.EncounterFamily)
+		}
+		if payload.Data.CurioStatus != "dormant" {
+			t.Fatalf("expected main_city curio status dormant, got %q", payload.Data.CurioStatus)
+		}
+		if payload.Data.CurioHint == "" {
+			t.Fatal("expected main_city curio hint to be populated")
+		}
+		if payload.Data.HostileEncounters {
+			t.Fatal("expected main_city hostile encounters to be false")
 		}
 	})
 
@@ -98,6 +127,88 @@ func TestPublicWorldRoutes(t *testing.T) {
 			t.Fatalf("expected REGION_NOT_FOUND, got %q", payload.Error.Code)
 		}
 	})
+}
+
+func TestPublicWorldStateIncludesRegionGameplay(t *testing.T) {
+	server := NewServer(config.API{Port: "8080"})
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "map-bot",
+		"password": "verysecure",
+	}), "", http.StatusOK, nil)
+
+	var loginResponse struct {
+		Data struct {
+			AccessToken string `json:"access_token"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "map-bot",
+		"password": "verysecure",
+	}), "", http.StatusOK, &loginResponse)
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
+		"name":         "MapRunner",
+		"class":        "warrior",
+		"weapon_style": "sword_shield",
+	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/travel", map[string]any{
+		"region_id": "whispering_forest",
+	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+
+	var worldStateResponse struct {
+		Data struct {
+			Regions []struct {
+				RegionID          string `json:"region_id"`
+				InteractionLayer  string `json:"interaction_layer"`
+				RiskLevel         string `json:"risk_level"`
+				FacilityFocus     string `json:"facility_focus"`
+				EncounterFamily   string `json:"encounter_family"`
+				CurioStatus       string `json:"curio_status"`
+				CurioHint         string `json:"curio_hint"`
+				LinkedDungeon     string `json:"linked_dungeon"`
+				HostileEncounters bool   `json:"hostile_encounters"`
+			} `json:"regions"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/public/world-state", nil, "", http.StatusOK, &worldStateResponse)
+
+	found := false
+	for _, region := range worldStateResponse.Data.Regions {
+		if region.RegionID != "whispering_forest" {
+			continue
+		}
+		found = true
+		if region.InteractionLayer != "field" {
+			t.Fatalf("expected whispering_forest interaction layer field, got %q", region.InteractionLayer)
+		}
+		if region.RiskLevel != "low" {
+			t.Fatalf("expected whispering_forest risk level low, got %q", region.RiskLevel)
+		}
+		if region.FacilityFocus != "hunt_camp" {
+			t.Fatalf("expected whispering_forest facility focus hunt_camp, got %q", region.FacilityFocus)
+		}
+		if region.EncounterFamily != "forest_hunt" {
+			t.Fatalf("expected whispering_forest encounter family forest_hunt, got %q", region.EncounterFamily)
+		}
+		if region.CurioStatus != "active" {
+			t.Fatalf("expected whispering_forest curio status active after travel, got %q", region.CurioStatus)
+		}
+		if region.LinkedDungeon != "ancient_catacomb" {
+			t.Fatalf("expected whispering_forest linked dungeon ancient_catacomb, got %q", region.LinkedDungeon)
+		}
+		if region.CurioHint == "" {
+			t.Fatal("expected whispering_forest curio hint to be populated")
+		}
+		if !region.HostileEncounters {
+			t.Fatal("expected whispering_forest hostile encounters to be true")
+		}
+	}
+
+	if !found {
+		t.Fatal("expected whispering_forest to be present in public world state")
+	}
 }
 
 func TestAuthCharacterFlow(t *testing.T) {
@@ -487,6 +598,319 @@ func TestQuestBoardAndSubmissionFlow(t *testing.T) {
 
 	if rerollResponse.Data.RerollCount != 1 {
 		t.Fatalf("expected reroll_count to be 1, got %d", rerollResponse.Data.RerollCount)
+	}
+}
+
+func TestFieldEncounterProgressionFlow(t *testing.T) {
+	server := NewServer(config.API{Port: "8080"})
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "bot-field-runner",
+		"password": "verysecure",
+	}), "", http.StatusOK, nil)
+
+	var loginResponse struct {
+		Data struct {
+			AccessToken string `json:"access_token"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "bot-field-runner",
+		"password": "verysecure",
+	}), "", http.StatusOK, &loginResponse)
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
+		"name":         "FieldLoop",
+		"class":        "warrior",
+		"weapon_style": "sword_shield",
+	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+
+	var questsResponse struct {
+		Data struct {
+			Quests []struct {
+				QuestID        string `json:"quest_id"`
+				TemplateType   string `json:"template_type"`
+				TargetRegionID string `json:"target_region_id"`
+			} `json:"quests"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests", nil, loginResponse.Data.AccessToken, http.StatusOK, &questsResponse)
+
+	killQuestID := ""
+	collectQuestID := ""
+	for _, quest := range questsResponse.Data.Quests {
+		if quest.TargetRegionID != "whispering_forest" {
+			continue
+		}
+		if quest.TemplateType == "kill_region_enemies" {
+			killQuestID = quest.QuestID
+		}
+		if quest.TemplateType == "collect_materials" {
+			collectQuestID = quest.QuestID
+		}
+	}
+	if killQuestID == "" || collectQuestID == "" {
+		t.Fatal("expected whispering_forest kill and collect quests")
+	}
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/quests/"+killQuestID+"/accept", nil, loginResponse.Data.AccessToken, http.StatusOK, nil)
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/quests/"+collectQuestID+"/accept", nil, loginResponse.Data.AccessToken, http.StatusOK, nil)
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/travel", map[string]any{
+		"region_id": "whispering_forest",
+	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+
+	var fieldState struct {
+		Data struct {
+			ValidActions []struct {
+				ActionType string `json:"action_type"`
+			} `json:"valid_actions"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/state", nil, loginResponse.Data.AccessToken, http.StatusOK, &fieldState)
+
+	hasFieldAction := false
+	for _, action := range fieldState.Data.ValidActions {
+		if action.ActionType == "resolve_field_encounter" {
+			hasFieldAction = true
+			break
+		}
+	}
+	if !hasFieldAction {
+		t.Fatal("expected resolve_field_encounter to appear in valid actions while in field region")
+	}
+
+	var firstEncounter struct {
+		Data struct {
+			ActionResult struct {
+				ActionType string `json:"action_type"`
+				Approach   string `json:"approach"`
+				EventType  string `json:"event_type"`
+			} `json:"action_result"`
+			Result struct {
+				RewardGold         int `json:"reward_gold"`
+				EnemiesDefeated    int `json:"enemies_defeated"`
+				MaterialsCollected int `json:"materials_collected"`
+			} `json:"result"`
+			State struct {
+				Character struct {
+					Gold int `json:"gold"`
+				} `json:"character"`
+				Materials []struct {
+					MaterialKey string `json:"material_key"`
+					Quantity    int    `json:"quantity"`
+				} `json:"materials"`
+			} `json:"state"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/field-encounter", map[string]any{
+		"approach": "hunt",
+	}, loginResponse.Data.AccessToken, http.StatusOK, &firstEncounter)
+
+	if firstEncounter.Data.ActionResult.ActionType != "resolve_field_encounter" {
+		t.Fatalf("expected dedicated endpoint to return resolve_field_encounter, got %q", firstEncounter.Data.ActionResult.ActionType)
+	}
+	if firstEncounter.Data.ActionResult.Approach != "hunt" {
+		t.Fatalf("expected hunt approach, got %q", firstEncounter.Data.ActionResult.Approach)
+	}
+	if firstEncounter.Data.ActionResult.EventType != "field.encounter_resolved" {
+		t.Fatalf("expected field.encounter_resolved, got %q", firstEncounter.Data.ActionResult.EventType)
+	}
+	if firstEncounter.Data.Result.RewardGold <= 0 || firstEncounter.Data.Result.EnemiesDefeated <= 0 || firstEncounter.Data.Result.MaterialsCollected <= 0 {
+		t.Fatal("expected field encounter to grant gold, enemy progress, and material progress")
+	}
+	if len(firstEncounter.Data.State.Materials) == 0 {
+		t.Fatal("expected field encounter to add materials to character state")
+	}
+
+	var secondEncounter struct {
+		Data struct {
+			ActionResult struct {
+				ActionType string `json:"action_type"`
+			} `json:"action_result"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/actions", map[string]any{
+		"action_type": "resolve_field_encounter",
+		"action_args": map[string]any{
+			"approach": "hunt",
+		},
+	}, loginResponse.Data.AccessToken, http.StatusOK, &secondEncounter)
+
+	if secondEncounter.Data.ActionResult.ActionType != "resolve_field_encounter" {
+		t.Fatalf("expected action router to resolve field encounter, got %q", secondEncounter.Data.ActionResult.ActionType)
+	}
+
+	var questsAfter struct {
+		Data struct {
+			Quests []struct {
+				QuestID string `json:"quest_id"`
+				Status  string `json:"status"`
+			} `json:"quests"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests", nil, loginResponse.Data.AccessToken, http.StatusOK, &questsAfter)
+
+	killCompleted := false
+	collectCompleted := false
+	for _, quest := range questsAfter.Data.Quests {
+		if quest.QuestID == killQuestID && quest.Status == "completed" {
+			killCompleted = true
+		}
+		if quest.QuestID == collectQuestID && quest.Status == "completed" {
+			collectCompleted = true
+		}
+	}
+	if !killCompleted || !collectCompleted {
+		t.Fatalf("expected both field quests to complete after two hunt encounters, got kill=%v collect=%v", killCompleted, collectCompleted)
+	}
+
+	var eventsResponse struct {
+		Data struct {
+			Items []struct {
+				EventType string `json:"event_type"`
+				ActorName string `json:"actor_name"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/public/events?limit=10", nil, "", http.StatusOK, &eventsResponse)
+
+	foundFieldEvent := false
+	for _, item := range eventsResponse.Data.Items {
+		if item.ActorName == "FieldLoop" && item.EventType == "field.encounter_resolved" {
+			foundFieldEvent = true
+			break
+		}
+	}
+	if !foundFieldEvent {
+		t.Fatal("expected public events to include the resolved field encounter")
+	}
+}
+
+func TestCurioEncounterCreatesFollowupQuest(t *testing.T) {
+	server := NewServer(config.API{Port: "8080"})
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "bot-curio-runner",
+		"password": "verysecure",
+	}), "", http.StatusOK, nil)
+
+	var loginResponse struct {
+		Data struct {
+			AccessToken string `json:"access_token"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "bot-curio-runner",
+		"password": "verysecure",
+	}), "", http.StatusOK, &loginResponse)
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
+		"name":         "CurioLoop",
+		"class":        "mage",
+		"weapon_style": "staff",
+	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/travel", map[string]any{
+		"region_id": "whispering_forest",
+	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+
+	var encounterResponse struct {
+		Data struct {
+			Result struct {
+				IsCurio       bool   `json:"is_curio"`
+				CurioLabel    string `json:"curio_label"`
+				CurioOutcome  string `json:"curio_outcome"`
+				FollowupQuest struct {
+					QuestID        string `json:"quest_id"`
+					TemplateType   string `json:"template_type"`
+					Status         string `json:"status"`
+					Title          string `json:"title"`
+					TargetRegionID string `json:"target_region_id"`
+				} `json:"followup_quest"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/field-encounter", map[string]any{
+		"approach": "curio",
+	}, loginResponse.Data.AccessToken, http.StatusOK, &encounterResponse)
+
+	if !encounterResponse.Data.Result.IsCurio {
+		t.Fatal("expected curio encounter to mark result as curio")
+	}
+	if encounterResponse.Data.Result.CurioLabel == "" || encounterResponse.Data.Result.CurioOutcome == "" {
+		t.Fatal("expected curio encounter to include curio label and outcome")
+	}
+	if encounterResponse.Data.Result.FollowupQuest.QuestID == "" {
+		t.Fatal("expected curio encounter to create a followup quest")
+	}
+	if encounterResponse.Data.Result.FollowupQuest.TemplateType != "curio_followup_delivery" {
+		t.Fatalf("expected curio followup delivery quest, got %q", encounterResponse.Data.Result.FollowupQuest.TemplateType)
+	}
+	if encounterResponse.Data.Result.FollowupQuest.Status != "accepted" {
+		t.Fatalf("expected followup quest to start accepted, got %q", encounterResponse.Data.Result.FollowupQuest.Status)
+	}
+	if encounterResponse.Data.Result.FollowupQuest.TargetRegionID != "greenfield_village" {
+		t.Fatalf("expected whispering forest curio to target greenfield_village, got %q", encounterResponse.Data.Result.FollowupQuest.TargetRegionID)
+	}
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/travel", map[string]any{
+		"region_id": "greenfield_village",
+	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+
+	var questsResponse struct {
+		Data struct {
+			Quests []struct {
+				QuestID string `json:"quest_id"`
+				Status  string `json:"status"`
+				Title   string `json:"title"`
+			} `json:"quests"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests", nil, loginResponse.Data.AccessToken, http.StatusOK, &questsResponse)
+
+	followupCompleted := false
+	for _, quest := range questsResponse.Data.Quests {
+		if quest.QuestID == encounterResponse.Data.Result.FollowupQuest.QuestID && quest.Status == "completed" {
+			followupCompleted = true
+			break
+		}
+	}
+	if !followupCompleted {
+		t.Fatal("expected curio followup quest to complete after traveling to its target region")
+	}
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/quests/"+encounterResponse.Data.Result.FollowupQuest.QuestID+"/submit", nil, loginResponse.Data.AccessToken, http.StatusOK, nil)
+
+	var eventsResponse struct {
+		Data struct {
+			Items []struct {
+				EventType string `json:"event_type"`
+				ActorName string `json:"actor_name"`
+				Summary   string `json:"summary"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/public/events?limit=20", nil, "", http.StatusOK, &eventsResponse)
+
+	foundCurioEvent := false
+	foundCurioQuestEvent := false
+	for _, item := range eventsResponse.Data.Items {
+		if item.ActorName != "CurioLoop" {
+			continue
+		}
+		if item.EventType == "field.curio_resolved" {
+			foundCurioEvent = true
+		}
+		if item.EventType == "quest.accepted" && strings.Contains(item.Summary, "Escort the Shrine Witness") {
+			foundCurioQuestEvent = true
+		}
+	}
+	if !foundCurioEvent {
+		t.Fatal("expected public events to include the resolved curio encounter")
+	}
+	if !foundCurioQuestEvent {
+		t.Fatal("expected public events to include the curio followup quest trigger")
 	}
 }
 
