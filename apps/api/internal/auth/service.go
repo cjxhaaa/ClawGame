@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -9,11 +10,13 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 const (
 	businessTimezone     = "Asia/Shanghai"
-	accessTokenLifetime  = 15 * time.Minute
+	accessTokenLifetime  = 24 * time.Hour
 	refreshTokenLifetime = 7 * 24 * time.Hour
 	challengeLifetime    = 60 * time.Second
 )
@@ -253,10 +256,15 @@ func (s *Service) RegisterAccount(botName, password, challengeID, challengeAnswe
 		CreatedAt: s.clock().In(s.loc).Format(time.RFC3339),
 	}
 
+	passwordHash, err := hashPassword(password)
+	if err != nil {
+		return Account{}, err
+	}
+
 	if s.repo != nil {
 		if err := s.repo.SaveAccount(StoredAccount{
 			Account:  account,
-			Password: password,
+			Password: passwordHash,
 		}); err != nil {
 			return Account{}, err
 		}
@@ -264,7 +272,7 @@ func (s *Service) RegisterAccount(botName, password, challengeID, challengeAnswe
 
 	s.accountsByID[account.AccountID] = accountRecord{
 		account:  account,
-		password: password,
+		password: passwordHash,
 	}
 	s.accountIDByName[lookupKey] = account.AccountID
 
@@ -280,8 +288,32 @@ func (s *Service) Login(botName, password, challengeID, challengeAnswer string) 
 	}
 
 	record, ok := s.lookupAccountByNameLocked(botName)
-	if !ok || record.password != password {
+	if !ok {
 		return TokenPair{}, ErrInvalidCredentials
+	}
+
+	passwordValid, needsUpgrade := verifyPassword(record.password, password)
+	if !passwordValid {
+		return TokenPair{}, ErrInvalidCredentials
+	}
+
+	if needsUpgrade {
+		passwordHash, err := hashPassword(password)
+		if err != nil {
+			return TokenPair{}, err
+		}
+
+		if s.repo != nil {
+			if err := s.repo.SaveAccount(StoredAccount{
+				Account:  record.account,
+				Password: passwordHash,
+			}); err != nil {
+				return TokenPair{}, err
+			}
+		}
+
+		record.password = passwordHash
+		s.accountsByID[record.account.AccountID] = record
 	}
 
 	return s.issueTokenPairLocked(record.account.AccountID)
@@ -329,11 +361,6 @@ func (s *Service) Authenticate(accessToken string) (Account, error) {
 
 	now := s.clock().In(s.loc)
 	if now.After(session.AccessTokenExpiresAt) {
-		s.mu.Lock()
-		_ = s.deleteSessionLocked(session)
-		delete(s.sessionByAccess, accessToken)
-		delete(s.sessionByRefresh, session.RefreshToken)
-		s.mu.Unlock()
 		return Account{}, ErrAccessTokenExpired
 	}
 
@@ -486,6 +513,28 @@ func mustLocation(name string) *time.Location {
 
 func normalizeChallengeAnswer(answer string) string {
 	return strings.TrimSpace(strings.ToLower(answer))
+}
+
+func hashPassword(password string) (string, error) {
+	hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return "", err
+	}
+
+	return string(hashed), nil
+}
+
+func verifyPassword(storedPassword, providedPassword string) (valid bool, needsUpgrade bool) {
+	if isPasswordHash(storedPassword) {
+		return bcrypt.CompareHashAndPassword([]byte(storedPassword), []byte(providedPassword)) == nil, false
+	}
+
+	return subtle.ConstantTimeCompare([]byte(storedPassword), []byte(providedPassword)) == 1, true
+}
+
+func isPasswordHash(storedPassword string) bool {
+	_, err := bcrypt.Cost([]byte(storedPassword))
+	return err == nil
 }
 
 func parseRFC3339(raw string, loc *time.Location) time.Time {

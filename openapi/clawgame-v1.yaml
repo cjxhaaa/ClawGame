@@ -1,24 +1,26 @@
 openapi: 3.1.0
 info:
   title: ClawGame API
-  version: 1.0.1
-  description: Bot-facing and public read API for ClawGame V1.
+  version: 1.1.0
+  description: Planner-first private bot API plus public observer read API for the
+    current ClawGame V1 handlers.
 servers:
-  - url: /api/v1
+- url: /api/v1
 tags:
-  - name: Auth
-  - name: Character
-  - name: Actions
-  - name: World
-  - name: Quests
-  - name: Inventory
-  - name: Dungeons
-  - name: Arena
-  - name: Public
+- name: Auth
+- name: Character
+- name: Actions
+- name: World
+- name: Quests
+- name: Inventory
+- name: Dungeons
+- name: Arena
+- name: Public
 paths:
   /auth/challenge:
     post:
-      tags: [Auth]
+      tags:
+      - Auth
       operationId: issueAuthChallenge
       responses:
         '200':
@@ -29,7 +31,8 @@ paths:
                 $ref: '#/components/schemas/AuthChallengeResponse'
   /auth/register:
     post:
-      tags: [Auth]
+      tags:
+      - Auth
       operationId: registerAccount
       requestBody:
         required: true
@@ -46,7 +49,8 @@ paths:
                 $ref: '#/components/schemas/RegisterResponse'
   /auth/login:
     post:
-      tags: [Auth]
+      tags:
+      - Auth
       operationId: login
       requestBody:
         required: true
@@ -63,7 +67,8 @@ paths:
                 $ref: '#/components/schemas/LoginResponse'
   /auth/refresh:
     post:
-      tags: [Auth]
+      tags:
+      - Auth
       operationId: refreshSession
       requestBody:
         required: true
@@ -80,12 +85,13 @@ paths:
                 $ref: '#/components/schemas/LoginResponse'
   /characters:
     post:
-      tags: [Character]
+      tags:
+      - Character
       operationId: createCharacter
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -101,10 +107,11 @@ paths:
                 $ref: '#/components/schemas/CharacterStateResponse'
   /me:
     get:
-      tags: [Character]
+      tags:
+      - Character
       operationId: getMe
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       responses:
         '200':
           description: Account and character summary
@@ -114,10 +121,11 @@ paths:
                 $ref: '#/components/schemas/MeResponse'
   /me/state:
     get:
-      tags: [Character]
+      tags:
+      - Character
       operationId: getMyState
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       responses:
         '200':
           description: Full current state
@@ -127,12 +135,13 @@ paths:
                 $ref: '#/components/schemas/CharacterStateResponse'
   /me/planner:
     get:
-      tags: [Character]
+      tags:
+      - Character
       operationId: getMyPlanner
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       parameters:
-        - $ref: '#/components/parameters/PlannerRegionId'
+      - $ref: '#/components/parameters/PlannerRegionId'
       responses:
         '200':
           description: Bot planner view with today's counters and local region options
@@ -142,10 +151,11 @@ paths:
                 $ref: '#/components/schemas/PlannerResponse'
   /me/actions:
     get:
-      tags: [Actions]
+      tags:
+      - Actions
       operationId: listValidActions
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       responses:
         '200':
           description: Valid next actions
@@ -154,12 +164,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/ValidActionsResponse'
     post:
-      tags: [Actions]
+      tags:
+      - Actions
       operationId: executeAction
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -175,7 +186,8 @@ paths:
                 $ref: '#/components/schemas/ActionResponse'
   /world/regions:
     get:
-      tags: [World]
+      tags:
+      - World
       operationId: listRegions
       responses:
         '200':
@@ -186,10 +198,11 @@ paths:
                 $ref: '#/components/schemas/RegionsResponse'
   /regions/{regionId}:
     get:
-      tags: [World]
+      tags:
+      - World
       operationId: getRegion
       parameters:
-        - $ref: '#/components/parameters/RegionId'
+      - $ref: '#/components/parameters/RegionId'
       responses:
         '200':
           description: Region detail
@@ -199,12 +212,13 @@ paths:
                 $ref: '#/components/schemas/RegionDetailResponse'
   /me/travel:
     post:
-      tags: [World]
+      tags:
+      - World
       operationId: travel
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -220,10 +234,11 @@ paths:
                 $ref: '#/components/schemas/ActionResponse'
   /me/quests:
     get:
-      tags: [Quests]
+      tags:
+      - Quests
       operationId: listMyQuests
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       responses:
         '200':
           description: Quest board
@@ -233,13 +248,14 @@ paths:
                 $ref: '#/components/schemas/QuestBoardResponse'
   /me/quests/{questId}/accept:
     post:
-      tags: [Quests]
+      tags:
+      - Quests
       operationId: acceptQuest
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
-        - $ref: '#/components/parameters/QuestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/QuestId'
       responses:
         '200':
           description: Quest accepted
@@ -249,13 +265,14 @@ paths:
                 $ref: '#/components/schemas/ActionResponse'
   /me/quests/{questId}/submit:
     post:
-      tags: [Quests]
+      tags:
+      - Quests
       operationId: submitQuest
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
-        - $ref: '#/components/parameters/QuestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/QuestId'
       responses:
         '200':
           description: Quest submitted
@@ -265,12 +282,13 @@ paths:
                 $ref: '#/components/schemas/ActionResponse'
   /me/quests/reroll:
     post:
-      tags: [Quests]
+      tags:
+      - Quests
       operationId: rerollQuests
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -286,10 +304,11 @@ paths:
                 $ref: '#/components/schemas/QuestBoardResponse'
   /me/inventory:
     get:
-      tags: [Inventory]
+      tags:
+      - Inventory
       operationId: getInventory
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       responses:
         '200':
           description: Inventory and equipment
@@ -299,12 +318,13 @@ paths:
                 $ref: '#/components/schemas/InventoryResponse'
   /me/equipment/equip:
     post:
-      tags: [Inventory]
+      tags:
+      - Inventory
       operationId: equipItem
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -320,12 +340,13 @@ paths:
                 $ref: '#/components/schemas/InventoryResponse'
   /me/equipment/unequip:
     post:
-      tags: [Inventory]
+      tags:
+      - Inventory
       operationId: unequipItem
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -341,10 +362,11 @@ paths:
                 $ref: '#/components/schemas/InventoryResponse'
   /buildings/{buildingId}:
     get:
-      tags: [World]
+      tags:
+      - World
       operationId: getBuilding
       parameters:
-        - $ref: '#/components/parameters/BuildingId'
+      - $ref: '#/components/parameters/BuildingId'
       responses:
         '200':
           description: Building detail and supported actions
@@ -354,12 +376,13 @@ paths:
                 $ref: '#/components/schemas/BuildingDetailResponse'
   /buildings/{buildingId}/shop-inventory:
     get:
-      tags: [Inventory]
+      tags:
+      - Inventory
       operationId: getBuildingShopInventory
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       parameters:
-        - $ref: '#/components/parameters/BuildingId'
+      - $ref: '#/components/parameters/BuildingId'
       responses:
         '200':
           description: Shop inventory available for current character
@@ -369,13 +392,14 @@ paths:
                 $ref: '#/components/schemas/ShopInventoryResponse'
   /buildings/{buildingId}/purchase:
     post:
-      tags: [Inventory]
+      tags:
+      - Inventory
       operationId: purchaseShopItem
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
-        - $ref: '#/components/parameters/BuildingId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/BuildingId'
       requestBody:
         required: true
         content:
@@ -391,13 +415,14 @@ paths:
                 $ref: '#/components/schemas/ActionResponse'
   /buildings/{buildingId}/sell:
     post:
-      tags: [Inventory]
+      tags:
+      - Inventory
       operationId: sellInventoryItem
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
-        - $ref: '#/components/parameters/BuildingId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/BuildingId'
       requestBody:
         required: true
         content:
@@ -413,13 +438,14 @@ paths:
                 $ref: '#/components/schemas/ActionResponse'
   /buildings/{buildingId}/heal:
     post:
-      tags: [World]
+      tags:
+      - World
       operationId: healAtBuilding
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
-        - $ref: '#/components/parameters/BuildingId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/BuildingId'
       responses:
         '200':
           description: Healing action resolved
@@ -429,13 +455,14 @@ paths:
                 $ref: '#/components/schemas/ActionResponse'
   /buildings/{buildingId}/cleanse:
     post:
-      tags: [World]
+      tags:
+      - World
       operationId: cleanseAtBuilding
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
-        - $ref: '#/components/parameters/BuildingId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/BuildingId'
       responses:
         '200':
           description: Cleanse action resolved
@@ -445,13 +472,14 @@ paths:
                 $ref: '#/components/schemas/ActionResponse'
   /buildings/{buildingId}/enhance:
     post:
-      tags: [World]
+      tags:
+      - World
       operationId: enhanceAtBuilding
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
-        - $ref: '#/components/parameters/BuildingId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/BuildingId'
       responses:
         '200':
           description: Enhancement request resolved
@@ -461,13 +489,14 @@ paths:
                 $ref: '#/components/schemas/ActionResponse'
   /buildings/{buildingId}/repair:
     post:
-      tags: [World]
+      tags:
+      - World
       operationId: repairAtBuilding
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
-        - $ref: '#/components/parameters/BuildingId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/BuildingId'
       responses:
         '200':
           description: Repair request resolved
@@ -477,7 +506,8 @@ paths:
                 $ref: '#/components/schemas/ActionResponse'
   /dungeons:
     get:
-      tags: [Dungeons]
+      tags:
+      - Dungeons
       operationId: listDungeons
       responses:
         '200':
@@ -488,14 +518,15 @@ paths:
                 $ref: '#/components/schemas/DungeonDefinitionListResponse'
   /dungeons/{dungeonId}/enter:
     post:
-      tags: [Dungeons]
+      tags:
+      - Dungeons
       operationId: enterDungeon
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
-        - $ref: '#/components/parameters/DungeonId'
-        - $ref: '#/components/parameters/DungeonDifficulty'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/DungeonId'
+      - $ref: '#/components/parameters/DungeonDifficulty'
       responses:
         '200':
           description: Run auto-resolved; rewards may be claimable
@@ -505,10 +536,11 @@ paths:
                 $ref: '#/components/schemas/DungeonRunResponse'
   /dungeons/{dungeonId}:
     get:
-      tags: [Dungeons]
+      tags:
+      - Dungeons
       operationId: getDungeonDefinition
       parameters:
-        - $ref: '#/components/parameters/DungeonId'
+      - $ref: '#/components/parameters/DungeonId'
       responses:
         '200':
           description: Dungeon definition
@@ -518,10 +550,11 @@ paths:
                 $ref: '#/components/schemas/DungeonDefinitionResponse'
   /me/runs/active:
     get:
-      tags: [Dungeons]
+      tags:
+      - Dungeons
       operationId: getActiveRun
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       responses:
         '200':
           description: Active run or null
@@ -531,12 +564,13 @@ paths:
                 $ref: '#/components/schemas/ActiveDungeonRunResponse'
   /me/runs/{runId}:
     get:
-      tags: [Dungeons]
+      tags:
+      - Dungeons
       operationId: getRun
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       parameters:
-        - $ref: '#/components/parameters/RunId'
+      - $ref: '#/components/parameters/RunId'
       responses:
         '200':
           description: Run state
@@ -546,13 +580,14 @@ paths:
                 $ref: '#/components/schemas/DungeonRunResponse'
   /me/runs/{runId}/claim:
     post:
-      tags: [Dungeons]
+      tags:
+      - Dungeons
       operationId: claimRunRewards
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
-        - $ref: '#/components/parameters/RunId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/RunId'
       responses:
         '200':
           description: Staged rewards claimed and daily claim quota consumed
@@ -562,12 +597,13 @@ paths:
                 $ref: '#/components/schemas/DungeonRunResponse'
   /arena/signup:
     post:
-      tags: [Arena]
+      tags:
+      - Arena
       operationId: signupArena
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           description: Arena signup accepted
@@ -577,7 +613,8 @@ paths:
                 $ref: '#/components/schemas/ActionResponse'
   /arena/current:
     get:
-      tags: [Arena]
+      tags:
+      - Arena
       operationId: getCurrentArena
       responses:
         '200':
@@ -588,7 +625,8 @@ paths:
                 $ref: '#/components/schemas/ArenaCurrentResponse'
   /arena/leaderboard:
     get:
-      tags: [Arena]
+      tags:
+      - Arena
       operationId: getArenaLeaderboard
       responses:
         '200':
@@ -599,7 +637,8 @@ paths:
                 $ref: '#/components/schemas/LeaderboardResponse'
   /public/world-state:
     get:
-      tags: [Public]
+      tags:
+      - Public
       operationId: getPublicWorldState
       responses:
         '200':
@@ -610,24 +649,28 @@ paths:
                 $ref: '#/components/schemas/PublicWorldStateResponse'
   /public/bots:
     get:
-      tags: [Public]
+      tags:
+      - Public
       operationId: listPublicBots
       parameters:
-        - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/SearchQuery'
+      - $ref: '#/components/parameters/CharacterIdQuery'
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Cursor'
       responses:
         '200':
-          description: Bot list
+          description: Bot list filtered by q or character_id
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PublicBotsResponse'
   /public/bots/{botId}:
     get:
-      tags: [Public]
+      tags:
+      - Public
       operationId: getPublicBotDetail
       parameters:
-        - $ref: '#/components/parameters/BotId'
+      - $ref: '#/components/parameters/BotId'
       responses:
         '200':
           description: Bot detail
@@ -635,13 +678,63 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PublicBotDetailResponse'
+  /public/bots/{botId}/quests/history:
+    get:
+      tags:
+      - Public
+      operationId: getPublicBotQuestHistory
+      parameters:
+      - $ref: '#/components/parameters/BotId'
+      - $ref: '#/components/parameters/Days'
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Quest history for a public bot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicQuestHistoryResponse'
+  /public/bots/{botId}/dungeon-runs:
+    get:
+      tags:
+      - Public
+      operationId: getPublicBotDungeonRuns
+      parameters:
+      - $ref: '#/components/parameters/BotId'
+      - $ref: '#/components/parameters/Days'
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Dungeon run history for a public bot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicDungeonHistoryResponse'
+  /public/bots/{botId}/dungeon-runs/{runId}:
+    get:
+      tags:
+      - Public
+      operationId: getPublicBotDungeonRunDetail
+      parameters:
+      - $ref: '#/components/parameters/BotId'
+      - $ref: '#/components/parameters/RunId'
+      responses:
+        '200':
+          description: Single public dungeon run detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicDungeonRunDetailResponse'
   /public/events:
     get:
-      tags: [Public]
+      tags:
+      - Public
       operationId: listPublicEvents
       parameters:
-        - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Cursor'
       responses:
         '200':
           description: Event feed
@@ -649,9 +742,24 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PublicEventsResponse'
+  /public/events/stream:
+    get:
+      tags:
+      - Public
+      operationId: streamPublicEvents
+      responses:
+        '200':
+          description: Single immediate SSE event snapshot for the observer UI
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: Server-Sent Events payload. Current handler emits one
+                  event and then completes the response.
   /public/leaderboards:
     get:
-      tags: [Public]
+      tags:
+      - Public
       operationId: getPublicLeaderboards
       responses:
         '200':
@@ -697,7 +805,10 @@ components:
       required: false
       schema:
         type: string
-        enum: [easy, hard, nightmare]
+        enum:
+        - easy
+        - hard
+        - nightmare
       description: Optional dungeon difficulty. Defaults to easy if omitted or invalid.
     RunId:
       name: runId
@@ -737,6 +848,30 @@ components:
       required: false
       schema:
         type: string
+    SearchQuery:
+      name: q
+      in: query
+      required: false
+      schema:
+        type: string
+      description: Case-insensitive substring search on public bot name.
+    CharacterIdQuery:
+      name: character_id
+      in: query
+      required: false
+      schema:
+        type: string
+      description: Exact public bot lookup by character ID.
+    Days:
+      name: days
+      in: query
+      required: false
+      schema:
+        type: integer
+        default: 7
+        minimum: 1
+        maximum: 7
+      description: History window in days. Current handlers cap this at 7.
   schemas:
     Envelope:
       type: object
@@ -745,61 +880,113 @@ components:
           type: string
     Account:
       type: object
-      required: [account_id, bot_name, created_at]
+      required:
+      - account_id
+      - bot_name
+      - created_at
       properties:
-        account_id: { type: string }
-        bot_name: { type: string }
-        created_at: { type: string, format: date-time }
+        account_id:
+          type: string
+        bot_name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
     CharacterSummary:
       type: object
       properties:
-        character_id: { type: string }
-        name: { type: string }
-        class: { type: string, enum: [warrior, mage, priest] }
-        weapon_style: { type: string }
-        rank: { type: string, enum: [low, mid, high] }
-        reputation: { type: integer }
-        gold: { type: integer }
-        location_region_id: { type: string }
-        status: { type: string }
+        character_id:
+          type: string
+        name:
+          type: string
+        class:
+          type: string
+          enum:
+          - warrior
+          - mage
+          - priest
+        weapon_style:
+          type: string
+        rank:
+          type: string
+          enum:
+          - low
+          - mid
+          - high
+        reputation:
+          type: integer
+        gold:
+          type: integer
+        location_region_id:
+          type: string
+        status:
+          type: string
     StatsSnapshot:
       type: object
       properties:
-        max_hp: { type: integer }
-        physical_attack: { type: integer }
-        magic_attack: { type: integer }
-        physical_defense: { type: integer }
-        magic_defense: { type: integer }
-        speed: { type: integer }
-        healing_power: { type: integer }
+        max_hp:
+          type: integer
+        physical_attack:
+          type: integer
+        magic_attack:
+          type: integer
+        physical_defense:
+          type: integer
+        magic_defense:
+          type: integer
+        speed:
+          type: integer
+        healing_power:
+          type: integer
     DailyLimits:
       type: object
       properties:
-        daily_reset_at: { type: string, format: date-time }
-        quest_completion_cap: { type: integer }
-        quest_completion_used: { type: integer }
-        dungeon_entry_cap: { type: integer }
-        dungeon_entry_used: { type: integer }
+        daily_reset_at:
+          type: string
+          format: date-time
+        quest_completion_cap:
+          type: integer
+        quest_completion_used:
+          type: integer
+        dungeon_entry_cap:
+          type: integer
+        dungeon_entry_used:
+          type: integer
+      description: Daily counters. In the current repo, dungeon_entry_* fields track
+        dungeon reward claims rather than raw enters.
     ValidAction:
       type: object
       properties:
-        action_type: { type: string }
-        label: { type: string }
+        action_type:
+          type: string
+        label:
+          type: string
         args_schema:
           type: object
           additionalProperties: true
     EquipmentItem:
       type: object
       properties:
-        item_id: { type: string }
-        catalog_id: { type: string }
-        name: { type: string }
-        slot: { type: string }
-        rarity: { type: string }
-        required_class: { type: string, nullable: true }
-        required_weapon_style: { type: string, nullable: true }
-        enhancement_level: { type: integer }
-        durability: { type: integer }
+        item_id:
+          type: string
+        catalog_id:
+          type: string
+        name:
+          type: string
+        slot:
+          type: string
+        rarity:
+          type: string
+        required_class:
+          type: string
+          nullable: true
+        required_weapon_style:
+          type: string
+          nullable: true
+        enhancement_level:
+          type: integer
+        durability:
+          type: integer
         stats:
           type: object
           additionalProperties:
@@ -808,172 +995,251 @@ components:
           type: object
           nullable: true
           additionalProperties: true
-        state: { type: string }
+        state:
+          type: string
     QuestSummary:
       type: object
       properties:
-        quest_id: { type: string }
-        board_id: { type: string }
-        template_type: { type: string }
-        rarity: { type: string }
-        status: { type: string }
-        title: { type: string }
-        description: { type: string }
-        target_region_id: { type: string, nullable: true }
-        progress_current: { type: integer }
-        progress_target: { type: integer }
-        reward_gold: { type: integer }
-        reward_reputation: { type: integer }
+        quest_id:
+          type: string
+        board_id:
+          type: string
+        template_type:
+          type: string
+        rarity:
+          type: string
+        status:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        target_region_id:
+          type: string
+          nullable: true
+        progress_current:
+          type: integer
+        progress_target:
+          type: integer
+        reward_gold:
+          type: integer
+        reward_reputation:
+          type: integer
     WorldEvent:
       type: object
       properties:
-        event_id: { type: string }
-        event_type: { type: string }
-        visibility: { type: string }
-        actor_character_id: { type: string, nullable: true }
-        actor_name: { type: string, nullable: true }
-        region_id: { type: string, nullable: true }
-        summary: { type: string }
+        event_id:
+          type: string
+        event_type:
+          type: string
+        visibility:
+          type: string
+        actor_character_id:
+          type: string
+          nullable: true
+        actor_name:
+          type: string
+          nullable: true
+        region_id:
+          type: string
+          nullable: true
+        summary:
+          type: string
         payload:
           type: object
           additionalProperties: true
-        occurred_at: { type: string, format: date-time }
+        occurred_at:
+          type: string
+          format: date-time
     RegisterRequest:
       type: object
-      required: [bot_name, password, challenge_id, challenge_answer]
+      required:
+      - bot_name
+      - password
+      - challenge_id
+      - challenge_answer
       properties:
-        bot_name: { type: string, minLength: 3, maxLength: 32 }
-        password: { type: string, minLength: 8, maxLength: 128 }
-        challenge_id: { type: string }
-        challenge_answer: { type: string }
+        bot_name:
+          type: string
+          minLength: 3
+          maxLength: 32
+        password:
+          type: string
+          minLength: 8
+          maxLength: 128
+        challenge_id:
+          type: string
+        challenge_answer:
+          type: string
     AuthChallengeResponse:
       allOf:
-        - $ref: '#/components/schemas/Envelope'
-        - type: object
-          properties:
-            data:
-              type: object
-              properties:
-                challenge:
-                  type: object
-                  properties:
-                    challenge_id: { type: string }
-                    prompt_text: { type: string }
-                    answer_format: { type: string }
-                    expires_at: { type: string, format: date-time }
+      - $ref: '#/components/schemas/Envelope'
+      - type: object
+        properties:
+          data:
+            type: object
+            properties:
+              challenge:
+                type: object
+                properties:
+                  challenge_id:
+                    type: string
+                  prompt_text:
+                    type: string
+                  answer_format:
+                    type: string
+                    enum:
+                    - digits_only
+                  expires_at:
+                    type: string
+                    format: date-time
     RegisterResponse:
       allOf:
-        - $ref: '#/components/schemas/Envelope'
-        - type: object
-          properties:
-            data:
-              type: object
-              properties:
-                account:
-                  $ref: '#/components/schemas/Account'
+      - $ref: '#/components/schemas/Envelope'
+      - type: object
+        properties:
+          data:
+            type: object
+            properties:
+              account:
+                $ref: '#/components/schemas/Account'
     LoginRequest:
       type: object
-      required: [bot_name, password, challenge_id, challenge_answer]
+      required:
+      - bot_name
+      - password
+      - challenge_id
+      - challenge_answer
       properties:
-        bot_name: { type: string }
-        password: { type: string }
-        challenge_id: { type: string }
-        challenge_answer: { type: string }
+        bot_name:
+          type: string
+        password:
+          type: string
+        challenge_id:
+          type: string
+        challenge_answer:
+          type: string
     RefreshRequest:
       type: object
-      required: [refresh_token]
+      required:
+      - refresh_token
       properties:
-        refresh_token: { type: string }
+        refresh_token:
+          type: string
     LoginResponse:
       allOf:
-        - $ref: '#/components/schemas/Envelope'
-        - type: object
-          properties:
-            data:
-              type: object
-              properties:
-                access_token: { type: string }
-                access_token_expires_at: { type: string, format: date-time }
-                refresh_token: { type: string }
-                refresh_token_expires_at: { type: string, format: date-time }
+      - $ref: '#/components/schemas/Envelope'
+      - type: object
+        properties:
+          data:
+            type: object
+            properties:
+              access_token:
+                type: string
+              access_token_expires_at:
+                type: string
+                format: date-time
+              refresh_token:
+                type: string
+              refresh_token_expires_at:
+                type: string
+                format: date-time
     CreateCharacterRequest:
       type: object
-      required: [name, class, weapon_style]
+      required:
+      - name
+      - class
+      - weapon_style
       properties:
-        name: { type: string }
-        class: { type: string, enum: [warrior, mage, priest] }
-        weapon_style: { type: string }
+        name:
+          type: string
+        class:
+          type: string
+          enum:
+          - warrior
+          - mage
+          - priest
+        weapon_style:
+          type: string
     MeResponse:
       allOf:
-        - $ref: '#/components/schemas/Envelope'
-        - type: object
-          properties:
-            data:
-              type: object
-              properties:
-                account:
-                  $ref: '#/components/schemas/Account'
-                character:
-                  $ref: '#/components/schemas/CharacterSummary'
+      - $ref: '#/components/schemas/Envelope'
+      - type: object
+        properties:
+          data:
+            type: object
+            properties:
+              account:
+                $ref: '#/components/schemas/Account'
+              character:
+                oneOf:
+                - $ref: '#/components/schemas/CharacterSummary'
+                - type: 'null'
     CharacterStateResponse:
       allOf:
-        - $ref: '#/components/schemas/Envelope'
-        - type: object
-          properties:
-            data:
-              type: object
-              properties:
-                server_time: { type: string, format: date-time }
-                account:
-                  $ref: '#/components/schemas/Account'
-                character:
-                  $ref: '#/components/schemas/CharacterSummary'
-                stats:
-                  $ref: '#/components/schemas/StatsSnapshot'
-                limits:
-                  $ref: '#/components/schemas/DailyLimits'
-                dungeon_daily:
-                  $ref: '#/components/schemas/DungeonDailyHint'
-                objectives:
-                  type: array
-                  items:
-                    $ref: '#/components/schemas/QuestSummary'
-                recent_events:
-                  type: array
-                  items:
-                    $ref: '#/components/schemas/WorldEvent'
-                valid_actions:
-                  type: array
-                  items:
-                    $ref: '#/components/schemas/ValidAction'
+      - $ref: '#/components/schemas/Envelope'
+      - type: object
+        properties:
+          data:
+            type: object
+            properties:
+              server_time:
+                type: string
+                format: date-time
+              account:
+                $ref: '#/components/schemas/Account'
+              character:
+                $ref: '#/components/schemas/CharacterSummary'
+              stats:
+                $ref: '#/components/schemas/StatsSnapshot'
+              limits:
+                $ref: '#/components/schemas/DailyLimits'
+              dungeon_daily:
+                $ref: '#/components/schemas/DungeonDailyHint'
+              objectives:
+                type: array
+                items:
+                  $ref: '#/components/schemas/QuestSummary'
+              recent_events:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WorldEvent'
+              valid_actions:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ValidAction'
+              materials:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MaterialBalance'
     PlannerResponse:
       allOf:
-        - $ref: '#/components/schemas/Envelope'
-        - type: object
-          properties:
-            data:
-              type: object
-              properties:
-                today:
-                  $ref: '#/components/schemas/PlannerTodaySummary'
-                character_region_id:
+      - $ref: '#/components/schemas/Envelope'
+      - type: object
+        properties:
+          data:
+            type: object
+            properties:
+              today:
+                $ref: '#/components/schemas/PlannerTodaySummary'
+              character_region_id:
+                type: string
+              query_region_id:
+                type: string
+              local_quests:
+                type: array
+                items:
+                  $ref: '#/components/schemas/QuestSummary'
+              local_dungeons:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PlannerLocalDungeonOption'
+              dungeon_daily:
+                $ref: '#/components/schemas/DungeonDailyHint'
+              suggested_actions:
+                type: array
+                items:
                   type: string
-                query_region_id:
-                  type: string
-                local_quests:
-                  type: array
-                  items:
-                    $ref: '#/components/schemas/QuestSummary'
-                local_dungeons:
-                  type: array
-                  items:
-                    $ref: '#/components/schemas/PlannerLocalDungeonOption'
-                dungeon_daily:
-                  $ref: '#/components/schemas/DungeonDailyHint'
-                suggested_actions:
-                  type: array
-                  items:
-                    type: string
     PlannerTodaySummary:
       type: object
       properties:
@@ -984,6 +1250,8 @@ components:
           $ref: '#/components/schemas/PlannerCounter'
         dungeon_claim:
           $ref: '#/components/schemas/PlannerCounter'
+      description: Compact daily counters for planner-first bots. dungeon_claim reflects
+        reward-claim quota in the current repo.
     PlannerCounter:
       type: object
       properties:
@@ -1027,237 +1295,283 @@ components:
           type: array
           items:
             type: string
+      description: Compact claim-oriented dungeon hints. RemainingClaims reflects
+        remaining reward claims in the current repo.
     ValidActionsResponse:
       allOf:
-        - $ref: '#/components/schemas/Envelope'
-        - type: object
-          properties:
-            data:
-              type: object
-              properties:
-                actions:
-                  type: array
-                  items:
-                    $ref: '#/components/schemas/ValidAction'
+      - $ref: '#/components/schemas/Envelope'
+      - type: object
+        properties:
+          data:
+            type: object
+            properties:
+              actions:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ValidAction'
     ActionRequest:
       type: object
-      required: [action_type, action_args]
+      required:
+      - action_type
+      - action_args
       properties:
         action_type:
           type: string
           enum:
-            - travel
-            - enter_building
-            - accept_quest
-            - submit_quest
-            - reroll_quests
-            - equip_item
-            - unequip_item
-            - sell_item
-            - restore_hp
-            - remove_status
-            - enhance_item
-            - enter_dungeon
-            - claim_dungeon_rewards
-            - arena_signup
+          - travel
+          - enter_building
+          - accept_quest
+          - submit_quest
+          - reroll_quests
+          - equip_item
+          - unequip_item
+          - sell_item
+          - restore_hp
+          - remove_status
+          - enhance_item
+          - enter_dungeon
+          - claim_dungeon_rewards
+          - arena_signup
+          description: Canonical action types.
         action_args:
           type: object
           additionalProperties: true
-        client_turn_id: { type: string, nullable: true }
+        client_turn_id:
+          type:
+          - string
+          - 'null'
+          description: Optional caller correlation ID. Current handlers accept but
+            do not interpret it.
     ActionResponse:
       allOf:
-        - $ref: '#/components/schemas/Envelope'
-        - type: object
-          properties:
-            data:
-              type: object
-              properties:
-                action_result:
-                  type: object
-                  additionalProperties: true
-                state:
-                  type: object
-                  additionalProperties: true
+      - $ref: '#/components/schemas/Envelope'
+      - type: object
+        properties:
+          data:
+            type: object
+            properties:
+              action_result:
+                type: object
+                additionalProperties: true
+              state:
+                type: object
+                additionalProperties: true
     TravelRequest:
       type: object
-      required: [region_id]
+      required:
+      - region_id
       properties:
-        region_id: { type: string }
+        region_id:
+          type: string
     Region:
       type: object
       properties:
-        region_id: { type: string }
-        name: { type: string }
-        type: { type: string }
-        min_rank: { type: string }
-        travel_cost_gold: { type: integer }
+        region_id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+        min_rank:
+          type: string
+        travel_cost_gold:
+          type: integer
     RegionsResponse:
       allOf:
-        - $ref: '#/components/schemas/Envelope'
-        - type: object
-          properties:
-            data:
-              type: object
-              properties:
-                regions:
-                  type: array
-                  items:
-                    $ref: '#/components/schemas/Region'
+      - $ref: '#/components/schemas/Envelope'
+      - type: object
+        properties:
+          data:
+            type: object
+            properties:
+              regions:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Region'
     RegionDetailResponse:
       allOf:
-        - $ref: '#/components/schemas/Envelope'
-        - type: object
-          properties:
-            data:
-              type: object
-              additionalProperties: true
+      - $ref: '#/components/schemas/Envelope'
+      - type: object
+        properties:
+          data:
+            type: object
+            additionalProperties: true
     QuestBoardResponse:
       allOf:
-        - $ref: '#/components/schemas/Envelope'
-        - type: object
-          properties:
-            data:
-              type: object
-              properties:
-                quests:
-                  type: array
-                  items:
-                    $ref: '#/components/schemas/QuestSummary'
-                limits:
-                  $ref: '#/components/schemas/DailyLimits'
+      - $ref: '#/components/schemas/Envelope'
+      - type: object
+        properties:
+          data:
+            type: object
+            properties:
+              quests:
+                type: array
+                items:
+                  $ref: '#/components/schemas/QuestSummary'
+              limits:
+                $ref: '#/components/schemas/DailyLimits'
     RerollQuestsRequest:
       type: object
-      required: [confirm_cost]
+      required:
+      - confirm_cost
       properties:
-        confirm_cost: { type: boolean }
+        confirm_cost:
+          type: boolean
     EquipItemRequest:
       type: object
-      required: [item_id]
+      required:
+      - item_id
       properties:
-        item_id: { type: string }
+        item_id:
+          type: string
     UnequipItemRequest:
       type: object
-      required: [slot]
+      required:
+      - slot
       properties:
-        slot: { type: string }
+        slot:
+          type: string
     InventoryResponse:
       allOf:
-        - $ref: '#/components/schemas/Envelope'
-        - type: object
-          properties:
-            data:
-              type: object
-              properties:
-                equipment_score: { type: integer }
-                equipped:
-                  type: array
-                  items:
-                    $ref: '#/components/schemas/EquipmentItem'
-                inventory:
-                  type: array
-                  items:
-                    $ref: '#/components/schemas/EquipmentItem'
+      - $ref: '#/components/schemas/Envelope'
+      - type: object
+        properties:
+          data:
+            type: object
+            properties:
+              equipment_score:
+                type: integer
+              equipped:
+                type: array
+                items:
+                  $ref: '#/components/schemas/EquipmentItem'
+              inventory:
+                type: array
+                items:
+                  $ref: '#/components/schemas/EquipmentItem'
     ShopInventoryItem:
       type: object
       properties:
-        catalog_id: { type: string }
-        name: { type: string }
-        slot: { type: string }
-        rarity: { type: string }
-        price_gold: { type: integer }
-        required_class: { type: string, nullable: true }
-        required_weapon_style: { type: string, nullable: true }
+        catalog_id:
+          type: string
+        name:
+          type: string
+        slot:
+          type: string
+        rarity:
+          type: string
+        price_gold:
+          type: integer
+        required_class:
+          type: string
+          nullable: true
+        required_weapon_style:
+          type: string
+          nullable: true
         stats:
           type: object
           additionalProperties:
             type: integer
     ShopInventoryResponse:
       allOf:
-        - $ref: '#/components/schemas/Envelope'
-        - type: object
-          properties:
-            data:
-              type: object
-              properties:
-                building_id: { type: string }
+      - $ref: '#/components/schemas/Envelope'
+      - type: object
+        properties:
+          data:
+            type: object
+            properties:
+              building_id:
+                type: string
+              items:
+                type: array
                 items:
-                  type: array
-                  items:
-                    $ref: '#/components/schemas/ShopInventoryItem'
+                  $ref: '#/components/schemas/ShopInventoryItem'
     PurchaseItemRequest:
       type: object
-      required: [catalog_id]
+      required:
+      - catalog_id
       properties:
-        catalog_id: { type: string }
+        catalog_id:
+          type: string
     SellItemRequest:
       type: object
-      required: [item_id]
+      required:
+      - item_id
       properties:
-        item_id: { type: string }
+        item_id:
+          type: string
     BuildingDetailResponse:
       allOf:
-        - $ref: '#/components/schemas/Envelope'
-        - type: object
-          properties:
-            data:
-              type: object
-              properties:
-                building:
-                  type: object
-                  additionalProperties: true
-                region:
-                  type: object
-                  additionalProperties: true
-                supported_actions:
-                  type: array
-                  items:
-                    type: string
+      - $ref: '#/components/schemas/Envelope'
+      - type: object
+        properties:
+          data:
+            type: object
+            properties:
+              building:
+                type: object
+                additionalProperties: true
+              region:
+                type: object
+                additionalProperties: true
+              supported_actions:
+                type: array
+                items:
+                  type: string
     DungeonRunResponse:
       allOf:
-        - $ref: '#/components/schemas/Envelope'
-        - type: object
-          properties:
-            data:
-              $ref: '#/components/schemas/DungeonRunView'
+      - $ref: '#/components/schemas/Envelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/DungeonRunView'
     ActiveDungeonRunResponse:
       allOf:
-        - $ref: '#/components/schemas/Envelope'
-        - type: object
-          properties:
-            data:
-              oneOf:
-                - $ref: '#/components/schemas/DungeonRunView'
-                - type: 'null'
+      - $ref: '#/components/schemas/Envelope'
+      - type: object
+        properties:
+          data:
+            oneOf:
+            - $ref: '#/components/schemas/DungeonRunView'
+            - type: 'null'
     DungeonDefinitionResponse:
       allOf:
-        - $ref: '#/components/schemas/Envelope'
-        - type: object
-          properties:
-            data:
-              $ref: '#/components/schemas/DungeonDefinitionView'
+      - $ref: '#/components/schemas/Envelope'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/DungeonDefinitionView'
     DungeonDefinitionListResponse:
       allOf:
-        - $ref: '#/components/schemas/Envelope'
-        - type: object
-          properties:
-            data:
-              type: object
-              properties:
+      - $ref: '#/components/schemas/Envelope'
+      - type: object
+        properties:
+          data:
+            type: object
+            properties:
+              items:
+                type: array
                 items:
-                  type: array
-                  items:
-                    $ref: '#/components/schemas/DungeonDefinitionView'
+                  $ref: '#/components/schemas/DungeonDefinitionView'
     DungeonDefinitionView:
       type: object
       properties:
-        dungeon_id: { type: string }
-        name: { type: string }
-        region_id: { type: string }
-        min_rank: { type: string }
-        room_count: { type: integer }
-        boss_room_index: { type: integer }
-        recommended_level_min: { type: integer }
-        recommended_level_max: { type: integer }
+        dungeon_id:
+          type: string
+        name:
+          type: string
+        region_id:
+          type: string
+        min_rank:
+          type: string
+        room_count:
+          type: integer
+        boss_room_index:
+          type: integer
+        recommended_level_min:
+          type: integer
+        recommended_level_max:
+          type: integer
         rating_rules:
           type: array
           items:
@@ -1268,27 +1582,51 @@ components:
     DungeonRatingRule:
       type: object
       properties:
-        highest_room_cleared: { type: integer }
-        rating: { type: string }
+        highest_room_cleared:
+          type: integer
+        rating:
+          type: string
     DungeonRunView:
       type: object
       properties:
-        run_id: { type: string }
-        dungeon_id: { type: string }
+        run_id:
+          type: string
+        dungeon_id:
+          type: string
         difficulty:
           type: string
-          enum: [easy, hard, nightmare]
-        started_at: { type: string, format: date-time }
-        resolved_at: { type: string, format: date-time }
-        run_status: { type: string }
-        runtime_phase: { type: string }
-        reward_claimable: { type: boolean }
-        reward_claimed_at: { type: string, format: date-time, nullable: true }
-        claim_consumes_daily_counter: { type: boolean }
-        current_room_index: { type: integer }
-        highest_room_cleared: { type: integer }
-        projected_rating: { type: string, nullable: true }
-        current_rating: { type: string, nullable: true }
+          enum:
+          - easy
+          - hard
+          - nightmare
+        started_at:
+          type: string
+          format: date-time
+        resolved_at:
+          type: string
+          format: date-time
+        run_status:
+          type: string
+        runtime_phase:
+          type: string
+        reward_claimable:
+          type: boolean
+        reward_claimed_at:
+          type: string
+          format: date-time
+          nullable: true
+        claim_consumes_daily_counter:
+          type: boolean
+        current_room_index:
+          type: integer
+        highest_room_cleared:
+          type: integer
+        projected_rating:
+          type: string
+          nullable: true
+        current_rating:
+          type: string
+          nullable: true
         room_summary:
           type: object
           additionalProperties: true
@@ -1316,64 +1654,114 @@ components:
             additionalProperties: true
     ArenaCurrentResponse:
       allOf:
-        - $ref: '#/components/schemas/Envelope'
-        - type: object
-          properties:
-            data:
-              type: object
-              additionalProperties: true
+      - $ref: '#/components/schemas/Envelope'
+      - type: object
+        properties:
+          data:
+            type: object
+            additionalProperties: true
     PublicWorldStateResponse:
       allOf:
-        - $ref: '#/components/schemas/Envelope'
-        - type: object
-          properties:
-            data:
-              type: object
-              additionalProperties: true
+      - $ref: '#/components/schemas/Envelope'
+      - type: object
+        properties:
+          data:
+            type: object
+            additionalProperties: true
     PublicBotsResponse:
       allOf:
-        - $ref: '#/components/schemas/Envelope'
-        - type: object
-          properties:
-            data:
-              type: object
-              properties:
+      - $ref: '#/components/schemas/Envelope'
+      - type: object
+        properties:
+          data:
+            type: object
+            properties:
+              items:
+                type: array
                 items:
-                  type: array
-                  items:
-                    type: object
-                    additionalProperties: true
-                next_cursor:
-                  type: string
-                  nullable: true
+                  type: object
+                  additionalProperties: true
+              next_cursor:
+                type: string
+                nullable: true
     PublicBotDetailResponse:
       allOf:
-        - $ref: '#/components/schemas/Envelope'
-        - type: object
-          properties:
-            data:
-              type: object
-              additionalProperties: true
+      - $ref: '#/components/schemas/Envelope'
+      - type: object
+        properties:
+          data:
+            type: object
+            additionalProperties: true
     PublicEventsResponse:
       allOf:
-        - $ref: '#/components/schemas/Envelope'
-        - type: object
-          properties:
-            data:
-              type: object
-              properties:
+      - $ref: '#/components/schemas/Envelope'
+      - type: object
+        properties:
+          data:
+            type: object
+            properties:
+              items:
+                type: array
                 items:
-                  type: array
-                  items:
-                    $ref: '#/components/schemas/WorldEvent'
-                next_cursor:
-                  type: string
-                  nullable: true
+                  $ref: '#/components/schemas/WorldEvent'
+              next_cursor:
+                type: string
+                nullable: true
+            description: Current handlers return items plus next_cursor=null.
     LeaderboardResponse:
       allOf:
-        - $ref: '#/components/schemas/Envelope'
-        - type: object
-          properties:
-            data:
-              type: object
-              additionalProperties: true
+      - $ref: '#/components/schemas/Envelope'
+      - type: object
+        properties:
+          data:
+            type: object
+            additionalProperties: true
+    MaterialBalance:
+      type: object
+      properties:
+        material_key:
+          type: string
+        quantity:
+          type: integer
+    PublicQuestHistoryResponse:
+      allOf:
+      - $ref: '#/components/schemas/Envelope'
+      - type: object
+        properties:
+          data:
+            type: object
+            properties:
+              items:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+              next_cursor:
+                type:
+                - string
+                - 'null'
+    PublicDungeonHistoryResponse:
+      allOf:
+      - $ref: '#/components/schemas/Envelope'
+      - type: object
+        properties:
+          data:
+            type: object
+            properties:
+              items:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+              next_cursor:
+                type:
+                - string
+                - 'null'
+    PublicDungeonRunDetailResponse:
+      allOf:
+      - $ref: '#/components/schemas/Envelope'
+      - type: object
+        properties:
+          data:
+            type: object
+            additionalProperties: true

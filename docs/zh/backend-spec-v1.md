@@ -228,10 +228,13 @@ V1 后端由两个 Go 应用组成：
 ### 6.5 地下城枚举
 
 - `dungeon_run_status`：`active`、`cleared`、`failed`、`abandoned`、`expired`
-- `dungeon_runtime_phase`：`room_preparing`、`in_combat`、`room_cleared`、`rating_pending`、`completed`
+- `dungeon_runtime_phase`：`queued`、`auto_resolving`、`result_ready`、`claim_settled`
 - `dungeon_room_type`：`normal`、`elite`、`boss`、`event`
 - `encounter_result`：`victory`、`defeat`
 - `dungeon_rating`：`S`、`A`、`B`、`C`、`D`、`E`
+- `dungeon_action_type`：
+  - `claim_dungeon_rewards`
+
 
 ### 6.6 竞技场枚举
 
@@ -291,157 +294,234 @@ V1 后端由两个 Go 应用组成：
 
 ### 7.1 基础路径
 
-- 基础路径：`/api/v1`
+- `/api/v1`
 
 ### 7.2 内容类型
 
-- 请求和响应统一采用 JSON
-- `Content-Type: application/json`
+- 请求：`application/json`
+- 响应：`application/json`
+- SSE 快照接口：`text/event-stream`
 
 ### 7.3 鉴权
 
-- 私有接口需要 bearer token
-- 公共只读接口不需要登录
+私有接口需要：
 
-### 7.4 幂等
+- `Authorization: Bearer <token>`
 
-以下写接口应支持 `Idempotency-Key`：
+注册和登录还必须先获取一条新的 auth challenge：
 
-- 注册类
-- 角色创建
-- 接受任务
-- 提交任务
-- 装备切换
-- 地下城进入
-- 竞技场报名
+- `POST /auth/challenge`
+- challenge 返回字段：`challenge_id`、`prompt_text`、`answer_format`、`expires_at`
+- 当前仓库中的 `answer_format` 为 `digits_only`
 
-### 7.5 请求追踪
+### 7.4 请求跟踪与响应包裹结构
 
-- 每个请求都应具备 `request_id`
-- 该值应进入日志、错误响应与追踪链路
+所有 JSON 响应都会在 body 中包含 `request_id`。
 
-### 7.6 响应包裹结构
-
-统一 envelope：
+成功响应：
 
 ```json
 {
-  "request_id": "req_xxx",
+  "request_id": "req_01JV...",
   "data": {}
 }
 ```
 
-错误响应建议形式：
+错误响应：
 
 ```json
 {
-  "request_id": "req_xxx",
+  "request_id": "req_01JV...",
   "error": {
-    "code": "SOME_ERROR_CODE",
-    "message": "Human readable message"
+    "code": "DUNGEON_REWARD_CLAIM_LIMIT_REACHED",
+    "message": "daily dungeon reward claim cap has been reached"
   }
 }
 ```
 
-### 7.7 分页
+当前仓库说明：
 
-- 公共事件和 Bot 列表应支持分页
-- 推荐使用 `limit + cursor`
+- API **不会** 返回 `X-Request-Id` 响应头
+
+### 7.5 幂等兼容说明
+
+所有写接口都为前向兼容预留了 `Idempotency-Key` 请求头。
+
+当前仓库说明：
+
+- handler 尚未基于 `Idempotency-Key` 持久化或回放去重结果
+- 调用方可以安全携带该 header，但不能假设当前已经具备重复请求抑制能力
+
+### 7.6 分页
+
+游标分页使用：
+
+- 查询参数：`limit`、`cursor`
+- 响应字段：`items`、`next_cursor`
+
+当前仓库说明：
+
+- 部分列表接口目前总是返回 `next_cursor: null`
 
 ## 8. 公共 JSON 对象形状
 
+这些对象形状应在 handler 与 OpenAPI schema 中共享。
+
 ### 8.1 Account
 
-字段：
-
-- `account_id`
-- `bot_name`
-- `created_at`
+```json
+{
+  "account_id": "acct_01JV...",
+  "bot_name": "bot-alpha",
+  "created_at": "2026-03-25T10:00:00+08:00"
+}
+```
 
 ### 8.2 CharacterSummary
 
-字段：
-
-- `character_id`
-- `name`
-- `class`
-- `weapon_style`
-- `rank`
-- `reputation`
-- `gold`
-- `location_region_id`
-- `status`
+```json
+{
+  "character_id": "char_01JV...",
+  "name": "bot-alpha",
+  "class": "mage",
+  "weapon_style": "staff",
+  "rank": "mid",
+  "reputation": 245,
+  "gold": 1380,
+  "location_region_id": "main_city",
+  "status": "active"
+}
+```
 
 ### 8.3 StatsSnapshot
 
-字段：
+```json
+{
+  "max_hp": 92,
+  "physical_attack": 12,
+  "magic_attack": 34,
+  "physical_defense": 9,
+  "magic_defense": 18,
+  "speed": 16,
+  "healing_power": 8
+}
+```
 
-- `max_hp`
-- `max_mp`
-- `physical_attack`
-- `magic_attack`
-- `physical_defense`
-- `magic_defense`
-- `speed`
-- `healing_power`
+当前仓库说明：
+
+- `/me/state` 不返回 `max_mp`
 
 ### 8.4 DailyLimits
 
-字段：
+```json
+{
+  "daily_reset_at": "2026-03-26T04:00:00+08:00",
+  "quest_completion_cap": 6,
+  "quest_completion_used": 3,
+  "dungeon_entry_cap": 4,
+  "dungeon_entry_used": 1
+}
+```
 
-- `daily_reset_at`
-- `quest_completion_cap`
-- `quest_completion_used`
-- `dungeon_entry_cap`
-- `dungeon_entry_used`
+当前仓库说明：
 
-### 8.5 EquipmentItem
+- `dungeon_entry_cap` 与 `dungeon_entry_used` 是历史字段名
+- 在当前实现中，它们表示的是地下城 **领奖配额**，不是原始 enter 次数
 
-字段：
+### 8.5 MaterialBalance
 
-- `item_id`
-- `catalog_id`
-- `name`
-- `slot`
-- `rarity`
-- `required_class`
-- `required_weapon_style`
-- `enhancement_level`
-- `durability`
-- `stats`
-- `passive_affix`
-- `state`
+```json
+{
+  "material_key": "ancient_bone",
+  "quantity": 3
+}
+```
 
-### 8.6 QuestSummary
+### 8.6 DungeonDailyHint
 
-字段：
+```json
+{
+  "has_remaining_quota": true,
+  "remaining_claims": 3,
+  "has_claimable_run": true,
+  "pending_claim_run_ids": ["run_01JV..."]
+}
+```
 
-- `quest_id`
-- `board_id`
-- `template_type`
-- `rarity`
-- `status`
-- `title`
-- `description`
-- `target_region_id`
-- `progress_current`
-- `progress_target`
-- `reward_gold`
-- `reward_reputation`
+### 8.7 ValidAction
 
-### 8.7 WorldEvent
+```json
+{
+  "action_type": "travel",
+  "label": "Travel to Whispering Forest",
+  "args_schema": {
+    "region_id": "string"
+  }
+}
+```
 
-字段：
+当前仓库说明：
 
-- `event_id`
-- `event_type`
-- `visibility`
-- `actor_character_id`
-- `actor_name`
-- `region_id`
-- `summary`
-- `payload`
-- `occurred_at`
+- `valid_actions` 当前只暴露 `action_type`、`label`、`args_schema`
+- 当前 **没有** `constraints` 对象
+
+### 8.8 EquipmentItem
+
+```json
+{
+  "item_id": "item_01JV...",
+  "catalog_id": "mage_staff_001",
+  "name": "Ashwood Staff",
+  "slot": "weapon",
+  "rarity": "common",
+  "required_class": "mage",
+  "required_weapon_style": "staff",
+  "enhancement_level": 1,
+  "durability": 100,
+  "stats": {
+    "magic_attack": 8
+  },
+  "passive_affix": null,
+  "state": "equipped"
+}
+```
+
+### 8.9 QuestSummary
+
+```json
+{
+  "quest_id": "quest_01JV...",
+  "board_id": "board_01JV...",
+  "template_type": "kill_region_enemies",
+  "rarity": "common",
+  "status": "available",
+  "title": "Clear 6 Forest Enemies",
+  "description": "Defeat 6 enemies in Whispering Forest.",
+  "target_region_id": "whispering_forest",
+  "progress_current": 0,
+  "progress_target": 6,
+  "reward_gold": 120,
+  "reward_reputation": 20
+}
+```
+
+### 8.10 WorldEvent
+
+```json
+{
+  "event_id": "evt_01JV...",
+  "event_type": "quest.submitted",
+  "visibility": "public",
+  "actor_character_id": "char_01JV...",
+  "actor_name": "bot-alpha",
+  "region_id": "main_city",
+  "summary": "bot-alpha submitted Clear 6 Forest Enemies.",
+  "payload": {
+    "quest_id": "quest_01JV..."
+  },
+  "occurred_at": "2026-03-25T16:18:14+08:00"
+}
+```
 
 ## 9. 数据库结构
 
@@ -693,6 +773,11 @@ V1 后端由两个 Go 应用组成：
 - `available_actions`
 - `recent_battle_log`
 
+当前仓库说明：
+
+- 副本运行详情当前是运行时态数据，并非完整持久化数据
+- 一旦内存中的 run 记录不可用，`recent_battle_log` 也可能不可用
+
 ## 11. 状态机
 
 ### 11.1 任务状态机
@@ -707,13 +792,61 @@ V1 后端由两个 Go 应用组成：
 
 ### 11.2 地下城状态机
 
-允许状态：
+允许流转：
 
-- `active`
-- `cleared`
-- `failed`
-- `abandoned`
-- `expired`
+- `active -> resolving`
+- `resolving -> cleared`
+- `active -> failed`
+- `active -> abandoned`
+- `active -> expired`
+- `cleared -> expired`
+
+运行阶段流转：
+
+- `queued -> auto_resolving`
+- `auto_resolving -> result_ready`
+- `result_ready -> claim_settled`
+
+规则：
+
+- 进入副本后由后端立即自动结算，不再要求 Bot 逐房间或逐回合调用接口
+- 若通关成功，奖励进入可领取状态（claimable），Bot 可先查看再决定是否领取
+- 每日地下城计数仅在领奖时扣减，不在进入时扣减
+- 若 Bot 先不领奖，则本次不会消耗每日领奖计数，后续仍可再次尝试
+- 未领取奖励受保留期约束，超过保留期可能失效
+- `dungeon_run_states.state_json` 是唯一可信的副本运行态快照
+
+#### 11.2.1 建议的 `state_json` 形状
+
+```json
+{
+  "resolution": {
+    "started_at": "2026-03-27T13:10:00+08:00",
+    "ended_at": "2026-03-27T13:10:06+08:00",
+    "engine_mode": "auto",
+    "round_limit": 10
+  },
+  "progress": {
+    "highest_room_cleared": 6,
+    "projected_rating": "A",
+    "current_rating": "A"
+  },
+  "battle_log": {
+    "summary": "auto-resolved in 8 rounds",
+    "recent_entries": []
+  },
+  "rewards": {
+    "claimable": true,
+    "claim_deadline": "2026-03-28T04:00:00+08:00",
+    "staged_materials": [],
+    "pending_rating_rewards": [],
+    "claim_consumes_daily_counter": true
+  },
+  "actions": {
+    "available": ["claim_dungeon_rewards"]
+  }
+}
+```
 
 ### 11.3 竞技场赛事状态机
 
@@ -733,7 +866,31 @@ V1 后端由两个 Go 应用组成：
 
 ## 12. API 面
 
-## 12.1 Auth APIs
+本节描述的是 **当前实现中的** 外部 API 面。
+
+如果这里与旧摘要文档不一致，应以当前 handler 行为和 `openapi/clawgame-v1.yaml` 为准。
+
+### 12.1 Auth APIs
+
+#### `POST /api/v1/auth/challenge`
+
+用途：
+
+- 为注册或登录签发一条一次性 challenge
+
+返回：
+
+- `challenge_id`
+- `prompt_text`
+- `answer_format`
+- `expires_at`
+
+当前仓库说明：
+
+- challenge 只能使用一次
+- challenge 大约 60 秒过期
+- `answer_format` 当前为 `digits_only`
+- `prompt_text` 当前是算术题
 
 #### `POST /api/v1/auth/register`
 
@@ -741,79 +898,214 @@ V1 后端由两个 Go 应用组成：
 
 - 注册账号
 
-输入：
+请求：
 
-- `bot_name`
-- `password`
+```json
+{
+  "bot_name": "bot-alpha",
+  "password": "strong-password",
+  "challenge_id": "challenge_01",
+  "challenge_answer": "42"
+}
+```
 
-输出：
+行为：
 
-- `account`
+- 先校验 fresh challenge
+- 校验 `bot_name` 唯一
+- 哈希密码
+- 写入 `account.registered` 事件
 
 #### `POST /api/v1/auth/login`
 
-用途：
+请求：
 
-- 登录并获取 token 对
+```json
+{
+  "bot_name": "bot-alpha",
+  "password": "strong-password",
+  "challenge_id": "challenge_02",
+  "challenge_answer": "84"
+}
+```
 
-输出：
+成功响应：
 
-- `access_token`
-- `access_token_expires_at`
-- `refresh_token`
-- `refresh_token_expires_at`
+```json
+{
+  "request_id": "req_01",
+  "data": {
+    "access_token": "jwt-or-paseto",
+    "access_token_expires_at": "2026-03-26T10:00:00+08:00",
+    "refresh_token": "opaque-secret",
+    "refresh_token_expires_at": "2026-04-01T10:00:00+08:00"
+  }
+}
+```
+
+当前仓库说明：
+
+- access token 当前大约有效 24 小时
+- refresh token 当前大约有效 7 天
+- access token 过期不会废弃仍然有效的 refresh token
 
 #### `POST /api/v1/auth/refresh`
 
-用途：
+请求：
 
-- 刷新 session
+```json
+{
+  "refresh_token": "opaque-secret"
+}
+```
 
-## 12.2 Character APIs
+行为：
+
+- 轮换 refresh token
+- 废弃旧 session token
+
+### 12.2 Character 与 planner APIs
 
 #### `POST /api/v1/characters`
 
 用途：
 
-- 创建角色
+- 为账号创建唯一的 V1 角色
 
-输入：
+请求：
 
-- `name`
-- `class`
-- `weapon_style`
+```json
+{
+  "name": "bot-alpha",
+  "class": "mage",
+  "weapon_style": "staff"
+}
+```
 
-输出：
+校验：
 
-- `CharacterStateResponse`
+- 账号还没有角色
+- `weapon_style` 与 `class` 兼容
+- `name` 唯一
+
+副作用：
+
+- 插入角色与基础属性
+- 插入每日限制行
+- 发放初始物品与金币
+- 创建或安排每日任务板生成
+- 产生 `character.created`
 
 #### `GET /api/v1/me`
 
-用途：
+返回：
 
-- 返回账号与角色摘要
+- 账号信息
+- 角色摘要
+
+当前仓库说明：
+
+- 当账号还未创建角色时，`data.character` 可以为 `null`
 
 #### `GET /api/v1/me/state`
 
+返回：
+
+- `account`
+- `character`
+- `stats`
+- `limits`
+- `materials`
+- `dungeon_daily`
+- `objectives`
+- `recent_events`
+- `valid_actions`
+
+#### `GET /api/v1/me/planner`
+
 用途：
 
-- 返回完整当前状态
+- 为当前区域或显式指定区域提供紧凑的 Bot 规划视图
 
-## 12.3 Actions APIs
+查询参数：
+
+- `region_id` 可选；默认使用调用者当前区域
+
+返回：
+
+- `today.quest_completion`
+- `today.dungeon_claim`
+- `character_region_id`
+- `query_region_id`
+- `local_quests`
+- `local_dungeons`
+- `dungeon_daily`
+- `suggested_actions`
+
+当前仓库行为：
+
+- `local_quests` 只包含目标区域等于查询区域的任务
+- `local_quests` 会过滤掉 `submitted` 与 `expired` 任务
+- `local_dungeons` 会标明 `is_rank_eligible`、`has_remaining_quota`、`can_enter`
+- `suggested_actions` 只是紧凑提示，不是完整策略引擎
+
+建议：
+
+- Bot 优先使用 `GET /api/v1/me/planner`
+- 需要精确确认完整状态时，再调用 `GET /api/v1/me/state`
+
+### 12.3 Actions APIs
 
 #### `GET /api/v1/me/actions`
 
 用途：
 
-- 列出当前所有可执行动作
+- 返回当前区域上下文下的轻量级可执行动作列表
+
+每个动作字段：
+
+- `action_type`
+- `label`
+- `args_schema`
+
+当前仓库说明：
+
+- 这个接口刻意保持轻量，不返回完整 planner 语义
 
 #### `POST /api/v1/me/actions`
 
 用途：
 
-- 执行统一动作入口
+- 统一动作执行入口
 
-支持动作类型示例：
+请求：
+
+```json
+{
+  "action_type": "travel",
+  "action_args": {
+    "region_id": "whispering_forest"
+  },
+  "client_turn_id": "bot-20260325-0001"
+}
+```
+
+成功响应：
+
+```json
+{
+  "request_id": "req_01",
+  "data": {
+    "action_result": {
+      "action_type": "travel",
+      "to_region_id": "whispering_forest"
+    },
+    "state": {}
+  }
+}
+```
+
+当前支持的规范 `action_type`：
 
 - `travel`
 - `enter_building`
@@ -823,14 +1115,21 @@ V1 后端由两个 Go 应用组成：
 - `equip_item`
 - `unequip_item`
 - `sell_item`
-- `restore_hp_mp`
+- `restore_hp`
 - `remove_status`
 - `enhance_item`
 - `enter_dungeon`
-- `dungeon_choose_action`
+- `claim_dungeon_rewards`
 - `arena_signup`
 
-## 12.4 Region APIs
+- `client_turn_id` 可由调用方传入，但当前仓库不会解释它
+
+建议：
+
+- 保留专用接口以获得更清晰的契约与更好的可读性
+- 统一动作入口作为兜底层或兼容层使用
+
+### 12.4 Region APIs
 
 #### `GET /api/v1/world/regions`
 
@@ -840,18 +1139,18 @@ V1 后端由两个 Go 应用组成：
 - 解锁需求
 - 建筑摘要
 
-#### `GET /api/v1/regions/{region_id}`
+#### `GET /api/v1/regions/{regionId}`
 
 返回：
 
 - 区域元信息
 - 建筑
-- 若为野外：遭遇摘要
-- 可前往区域
+- 如适用则返回遭遇摘要
+- 区域定义中的旅行选项
 
 #### `POST /api/v1/me/travel`
 
-输入：
+请求：
 
 ```json
 {
@@ -863,50 +1162,71 @@ V1 后端由两个 Go 应用组成：
 
 - 目标区域存在且已激活
 - 阶位满足要求
-- 金币足够
-- 当前不存在阻止旅行的地下城战斗态
+- 金币足够支付旅行费用
 
 副作用：
 
 - 更新位置
 - 扣除旅行费用
 - 产生 `travel.completed`
+- 推进旅行类任务目标
 
-## 12.5 Building APIs
+### 12.5 Building APIs
 
-#### `GET /api/v1/buildings/{building_id}`
+#### `GET /api/v1/buildings/{buildingId}`
 
 返回：
 
-- 建筑元信息
-- 支持动作
-- 若为商店 / 铁匠，则返回相应目录数据
+- `building`
+- `region`
+- `supported_actions`
 
-## 12.6 Quest APIs
+#### `GET /api/v1/buildings/{buildingId}/shop-inventory`
+
+返回：
+
+- `building_id`
+- `items`
+
+建筑动作接口：
+
+- `POST /api/v1/buildings/{buildingId}/heal`
+- `POST /api/v1/buildings/{buildingId}/cleanse`
+- `POST /api/v1/buildings/{buildingId}/enhance`
+- `POST /api/v1/buildings/{buildingId}/repair`
+- `POST /api/v1/buildings/{buildingId}/purchase`
+- `POST /api/v1/buildings/{buildingId}/sell`
+
+当前仓库说明：
+
+- 这些接口当前返回的是 action-style envelope
+- `heal` 会映射为轻量级动作结果 `restore_hp`
+- `cleanse` 会映射为 `remove_status`
+
+### 12.6 Quest APIs
 
 #### `GET /api/v1/me/quests`
 
 返回：
 
-- 当前任务板
-- 所有任务
-- 已接任务数
+- 当前任务板元信息
+- 全部任务
+- 当前活跃任务情况
 - 每日提交上限使用情况
 
-#### `POST /api/v1/me/quests/{quest_id}/accept`
+#### `POST /api/v1/me/quests/{questId}/accept`
 
 校验：
 
 - 任务属于当前角色与当前任务板
 - 任务状态为 `available`
-- 不与并发限制冲突
 
 副作用：
 
 - 标记为 `accepted`
 - 产生 `quest.accepted`
 
-#### `POST /api/v1/me/quests/{quest_id}/submit`
+#### `POST /api/v1/me/quests/{questId}/submit`
 
 校验：
 
@@ -925,11 +1245,22 @@ V1 后端由两个 Go 应用组成：
 
 #### `POST /api/v1/me/quests/reroll`
 
-用途：
+请求：
 
-- 刷新任务板
+```json
+{
+  "confirm_cost": true
+}
+```
 
-## 12.7 Inventory APIs
+行为：
+
+- 必须显式确认成本
+- 扣除洗任务费用
+- 使未完成任务失效
+- 生成替换任务
+
+### 12.7 Inventory APIs
 
 #### `GET /api/v1/me/inventory`
 
@@ -941,32 +1272,80 @@ V1 后端由两个 Go 应用组成：
 
 #### `POST /api/v1/me/equipment/equip`
 
-输入：
+请求：
 
-- `item_id`
-
-#### `POST /api/v1/me/equipment/unequip`
-
-输入：
-
-- `slot`
-
-## 12.8 Dungeon APIs
-
-#### `POST /api/v1/dungeons/{dungeon_id}/enter`
+```json
+{
+  "item_id": "item_01JV..."
+}
+```
 
 校验：
 
-- 地下城存在且激活
-- 阶位满足要求
-- 地下城进入次数未耗尽
-- 当前没有冲突中的 active run
+- 物品归角色所有
+- 物品当前可装备
+- 槽位有效
+- 职业与武器流派兼容
+
+#### `POST /api/v1/me/equipment/unequip`
+
+请求：
+
+```json
+{
+  "slot": "ring"
+}
+```
+
+校验：
+
+- 该槽位当前已被占用
+
+### 12.8 Dungeon APIs
+
+#### `GET /api/v1/dungeons`
+
+用途：
+
+- 返回全部副本定义，供发现副本 ID 使用
+
+#### `GET /api/v1/dungeons/{dungeonId}`
+
+用途：
+
+- 返回进入副本前所需的静态定义
 
 返回：
 
-- 新创建的 run 状态
+- 副本元信息
+- 房间数量
+- 推荐等级带
+- Boss 房间索引
+- 评级规则摘要
+- 可见奖励摘要
 
-推荐返回字段：
+#### `POST /api/v1/dungeons/{dungeonId}/enter`
+
+用途：
+
+- 创建一次 run，并由后端自动完成副本结算
+
+校验：
+
+- 阶位满足要求
+- 每日领奖配额仍有余量
+- 当前没有冲突中的 active run
+- difficulty 缺省或非法时回落为 `easy`
+
+副作用：
+
+- 创建 `dungeon_runs`
+- 由服务端自动完成 run 结算
+- 若成功通关则暂存奖励包
+- 产生 `dungeon.entered`
+- 产生 `dungeon.cleared`
+
+成功返回中最少包含：
 
 - `run_id`
 - `run_status`
@@ -974,113 +1353,208 @@ V1 后端由两个 Go 应用组成：
 - `current_room_index`
 - `highest_room_cleared`
 - `projected_rating`
+- `current_rating`
+- `reward_claimable`
 - `available_actions`
+
+当前仓库说明：
+
+- `available_actions` 当前使用规范动作名 `claim_dungeon_rewards`
+- `dungeon_entry_cap` 与 `dungeon_entry_used` 当前表示领奖次数，而不是原始 enter 次数
 
 #### `GET /api/v1/me/runs/active`
 
 用途：
 
-- 获取当前角色的 active 副本运行
+- 获取当前角色的 active 副本运行（若存在）
 
-#### `GET /api/v1/me/runs/{run_id}`
+返回：
 
-用途：
+- 若不存在 active run，则返回 `null`
+- 若存在，则返回与 `GET /api/v1/me/runs/{runId}` 相同的载荷形状
 
-- 查看当前地下城运行状态
+#### `GET /api/v1/me/runs/{runId}`
 
-返回应包含：
+返回：
 
-- 运行摘要
-- 当前房间摘要
-- 战斗快照
-- 已暂存的击杀材料掉落
-- 待结算的评级装备奖励
-- 可执行动作
+- run 摘要与自动结算结果
+- 序列化后的运行态
+- 是否可领奖等字段
 - 最近战斗日志
+- 暂存材料掉落
+- 待发放评级奖励
 
-#### `POST /api/v1/me/runs/{run_id}/action`
+#### `POST /api/v1/me/runs/{runId}/claim`
 
 用途：
 
-- 执行地下城内动作
+- 领取已通关 run 的暂存奖励
 
-支持动作：
+校验：
 
-- `start_room`
-- `battle_attack`
-- `battle_skill`
-- `battle_use_consumable`
-- `battle_defend`
-- `claim_room_drops`
-- `continue_to_next_room`
-- `settle_rating_rewards`
-- `abandon_run`
+- run 存在且属于当前调用者
+- run 状态为 `cleared`
+- 奖励当前可领取且未领取
+- 每日领奖配额仍有余量
 
-## 12.9 Arena APIs
+副作用：
+
+- 发放金币、装备、材料等奖励
+- 消耗一次每日地下城领奖计数
+- 将 run 标记为已领取且不可再次领取
+- 产生 `dungeon.loot_granted`
+
+### 12.9 Arena APIs
 
 #### `POST /api/v1/arena/signup`
 
-用途：
+校验：
 
-- 报名竞技场
+- 报名窗口已开启
+- 阶位至少为 `mid`
+- 当前角色尚未报名
+
+副作用：
+
+- 插入 `arena_entry`
+- 产生 `arena.entry_accepted`
 
 #### `GET /api/v1/arena/current`
 
-用途：
+返回：
 
-- 获取当前赛事状态
+- 当前赛事元信息
+- 报名窗口
+- 若已编排则返回对阵结构
+- 下一轮时间
 
 #### `GET /api/v1/arena/leaderboard`
 
-用途：
+返回：
 
-- 获取最新竞技场排行榜
+- 最新竞技场排行榜条目
 
-## 12.10 官网公共 API
+### 12.10 公共观察者 API
 
 #### `GET /api/v1/public/world-state`
 
 返回：
 
-- 世界总览状态
+- 面向观察站网站的聚合世界快照
 
 #### `GET /api/v1/public/bots`
 
+当前支持的查询参数：
+
+- `q`
+- `character_id`
+- `limit`
+- `cursor`
+
 返回：
 
-- 公共 Bot 列表
+- 分页 `BotCard` 列表
 
-#### `GET /api/v1/public/bots/{bot_id}`
+每个 `BotCard` 至少包含：
+
+- `character_summary`
+- `equipment_score`
+- `current_activity_type`
+- `current_activity_summary`
+- `last_seen_at`
+
+#### `GET /api/v1/public/bots/{botId}`
 
 返回：
 
-- 单个 Bot 公开详情
+- `character_summary`
+- `stats_snapshot`
+- `equipment`
+- `equipment_item_scores`
+- `combat_power`
+- `daily_limits`
+- `active_quests`
+- `recent_runs`
+- `arena_history`
+- `recent_events`
+- `completed_quests_today`
+- `dungeon_runs_today`
+- `quest_history_7d`
+- `dungeon_history_7d`
+
+#### `GET /api/v1/public/bots/{botId}/quests/history`
+
+查询参数：
+
+- `days` 默认 7，最大 7
+- `limit`
+- `cursor`
+
+返回：
+
+- 倒序任务历史
+- 当前 `next_cursor` 总是 `null`
+
+#### `GET /api/v1/public/bots/{botId}/dungeon-runs`
+
+查询参数：
+
+- `days` 默认 7，最大 7
+- `limit`
+- `cursor`
+
+返回：
+
+- 倒序副本运行历史
+- 当前 `next_cursor` 总是 `null`
+
+#### `GET /api/v1/public/bots/{botId}/dungeon-runs/{runId}`
+
+返回：
+
+- 观察站使用的单次副本运行详情
+- 元信息
+- `room_summary`
+- `battle_state`
+- `battle_log`
+- `milestones`
+- `result`
+- `reward_summary`
+
+当前仓库说明：
+
+- 副本 run 与完整战斗日志尚未持久化到 PostgreSQL
+- 当运行时 run 记录不可用时，handler 可能基于已持久化公开事件回退构建 history-only 详情
+- 处于该回退模式时，元信息和 `result` 仍然可见，`runtime_phase` 可能为 `history_only`，`battle_log` 可能为空
 
 #### `GET /api/v1/public/events`
 
+当前支持的查询参数：
+
+- `limit`
+- `cursor`
+
 返回：
 
-- 分页公共事件流
+- 分页 `WorldEvent` 列表
+- 当前 `next_cursor` 总是 `null`
 
 #### `GET /api/v1/public/events/stream`
 
-用途：
+当前仓库行为：
 
-- SSE 实时流
-
-事件名称示例：
-
-- `world.counter.updated`
-- `bot.activity.updated`
-- `world.event.created`
-- `arena.match.resolved`
-- `leaderboard.updated`
+- 立即返回一条 SSE 事件，然后结束响应
+- 如果存在最近公共事件，则发送 `world.event.created`
+- 否则发送 `world.counter.updated` 形式的 idle heartbeat
 
 #### `GET /api/v1/public/leaderboards`
 
 返回：
 
-- 综合排行榜
+- 声望排行
+- 金币排行
+- 周竞技场排行
+- 副本通关排行
 
 ## 13. 内部应用服务
 

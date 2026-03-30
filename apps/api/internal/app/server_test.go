@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"testing"
 
+	"clawgame/apps/api/internal/dungeons"
 	"clawgame/apps/api/internal/platform/config"
 )
 
@@ -841,6 +842,88 @@ func TestDungeonAutoResolveAndClaimFlow(t *testing.T) {
 	}
 }
 
+func TestBuildPublicDungeonRunDetailFallsBackToEventHistoryWhenRuntimeRunMissing(t *testing.T) {
+	server := NewServer(config.API{Port: "8080"})
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "bot-history-fallback",
+		"password": "verysecure",
+	}), "", http.StatusOK, nil)
+
+	var loginResponse struct {
+		Data struct {
+			AccessToken string `json:"access_token"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "bot-history-fallback",
+		"password": "verysecure",
+	}), "", http.StatusOK, &loginResponse)
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
+		"name":         "HistoryFallback",
+		"class":        "mage",
+		"weapon_style": "staff",
+	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+
+	var enterResponse struct {
+		Data struct {
+			RunID string `json:"run_id"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/dungeons/ancient_catacomb_v1/enter", nil, loginResponse.Data.AccessToken, http.StatusOK, &enterResponse)
+
+	var state struct {
+		Data struct {
+			Character struct {
+				CharacterID string `json:"character_id"`
+			} `json:"character"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/state", nil, loginResponse.Data.AccessToken, http.StatusOK, &state)
+
+	_, _, _, events, ok := server.characterService.GetRuntimeDetailByCharacterID(state.Data.Character.CharacterID)
+	if !ok {
+		t.Fatal("expected runtime detail for fallback test character")
+	}
+
+	payload, found := buildPublicDungeonRunDetail(
+		state.Data.Character.CharacterID,
+		enterResponse.Data.RunID,
+		events,
+		dungeons.NewService(),
+	)
+	if !found {
+		t.Fatal("expected fallback payload to be built from event history")
+	}
+
+	runID, _ := payload["run_id"].(string)
+	if runID != enterResponse.Data.RunID {
+		t.Fatalf("expected fallback run id %q, got %q", enterResponse.Data.RunID, runID)
+	}
+
+	result, _ := payload["result"].(map[string]any)
+	if result["run_status"] != "cleared" {
+		t.Fatalf("expected fallback run status cleared, got %#v", result["run_status"])
+	}
+	if result["runtime_phase"] != "history_only" {
+		t.Fatalf("expected history_only runtime phase, got %#v", result["runtime_phase"])
+	}
+	if result["reward_claimable"] != true {
+		t.Fatal("expected uncleared historical loot state to remain claimable in fallback payload")
+	}
+
+	battleLog, _ := payload["battle_log"].([]map[string]any)
+	if len(battleLog) != 0 {
+		t.Fatalf("expected no runtime battle log in fallback payload, got %d items", len(battleLog))
+	}
+
+	difficulty, _ := payload["difficulty"].(string)
+	if difficulty != "unknown" {
+		t.Fatalf("expected fallback difficulty unknown, got %q", difficulty)
+	}
+}
+
 func TestDungeonEnterDifficultyQueryAndFallback(t *testing.T) {
 	server := NewServer(config.API{Port: "8080"})
 
@@ -966,7 +1049,7 @@ func TestActionEnterDungeonWithDifficulty(t *testing.T) {
 	}
 }
 
-func TestActionAliasClaimRunRewards(t *testing.T) {
+func TestActionClaimDungeonRewards(t *testing.T) {
 	server := NewServer(config.API{Port: "8080"})
 
 	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
@@ -1015,14 +1098,14 @@ func TestActionAliasClaimRunRewards(t *testing.T) {
 		} `json:"data"`
 	}
 	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/actions", map[string]any{
-		"action_type": "claim_run_rewards",
+		"action_type": "claim_dungeon_rewards",
 		"action_args": map[string]any{
 			"run_id": enterResponse.Data.RunID,
 		},
 	}, loginResponse.Data.AccessToken, http.StatusOK, &actionResponse)
 
 	if actionResponse.Data.ActionResult.ActionType != "claim_dungeon_rewards" {
-		t.Fatalf("expected normalized action_type claim_dungeon_rewards, got %q", actionResponse.Data.ActionResult.ActionType)
+		t.Fatalf("expected action_type claim_dungeon_rewards, got %q", actionResponse.Data.ActionResult.ActionType)
 	}
 	if actionResponse.Data.ActionResult.RunID != enterResponse.Data.RunID {
 		t.Fatalf("expected run_id %q, got %q", enterResponse.Data.RunID, actionResponse.Data.ActionResult.RunID)

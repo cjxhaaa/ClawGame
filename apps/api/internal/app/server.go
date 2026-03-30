@@ -1208,10 +1208,28 @@ func NewServer(cfg config.API) *Server {
 
 			r.Get("/events", func(w http.ResponseWriter, r *http.Request) {
 				limit := parseLimit(r, 20, 100)
+				cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
 				snapshot := characterService.SnapshotRuntime()
+				items := buildPublicEvents(snapshot.Events, len(snapshot.Events))
+				start := 0
+				if cursor != "" {
+					if value, err := strconv.Atoi(cursor); err == nil && value >= 0 && value < len(items) {
+						start = value
+					}
+				}
+				end := start + limit
+				if end > len(items) {
+					end = len(items)
+				}
+
+				nextCursor := any(nil)
+				if end < len(items) {
+					nextCursor = strconv.Itoa(end)
+				}
+
 				writeEnvelope(w, r, http.StatusOK, map[string]any{
-					"items":       buildPublicEvents(snapshot.Events, limit),
-					"next_cursor": nil,
+					"items":       items[start:end],
+					"next_cursor": nextCursor,
 				})
 			})
 
@@ -1233,6 +1251,20 @@ func NewServer(cfg config.API) *Server {
 				if flusher, ok := w.(http.Flusher); ok {
 					flusher.Flush()
 				}
+			})
+
+			r.Get("/events/{eventId}", func(w http.ResponseWriter, r *http.Request) {
+				eventID := chi.URLParam(r, "eventId")
+				snapshot := characterService.SnapshotRuntime()
+				items := buildPublicEvents(snapshot.Events, len(snapshot.Events))
+				for _, event := range items {
+					if event.EventID == eventID {
+						writeEnvelope(w, r, http.StatusOK, event)
+						return
+					}
+				}
+
+				writeError(w, r, http.StatusNotFound, "PUBLIC_EVENT_NOT_FOUND", "public event does not exist")
 			})
 
 			r.Get("/leaderboards", func(w http.ResponseWriter, r *http.Request) {
@@ -1367,50 +1399,19 @@ func NewServer(cfg config.API) *Server {
 			r.Get("/bots/{botId}/dungeon-runs/{runId}", func(w http.ResponseWriter, r *http.Request) {
 				botID := chi.URLParam(r, "botId")
 				runID := chi.URLParam(r, "runId")
-
-				runs := dungeonService.ListRunsByCharacter(botID)
-				var selected *dungeons.RunView
-				for index := range runs {
-					if runs[index].RunID == runID {
-						selected = &runs[index]
-						break
-					}
+				_, _, _, events, ok := characterService.GetRuntimeDetailByCharacterID(botID)
+				if !ok {
+					writeError(w, r, http.StatusNotFound, "BOT_NOT_FOUND", "public bot does not exist")
+					return
 				}
-				if selected == nil {
+
+				payload, ok := buildPublicDungeonRunDetail(botID, runID, events, dungeonService)
+				if !ok {
 					writeError(w, r, http.StatusNotFound, "DUNGEON_RUN_NOT_FOUND", "dungeon run does not exist")
 					return
 				}
 
-				definition, _ := dungeonService.GetDungeonDefinition(selected.DungeonID)
-				writeEnvelope(w, r, http.StatusOK, map[string]any{
-					"run_id":       selected.RunID,
-					"dungeon_id":   selected.DungeonID,
-					"dungeon_name": definition.Name,
-					"difficulty":   selected.Difficulty,
-					"started_at":   selected.StartedAt,
-					"resolved_at":  selected.ResolvedAt,
-					"room_summary": selected.RoomSummary,
-					"battle_state": selected.BattleState,
-					"battle_log":   selected.RecentBattleLog,
-					"milestones": []map[string]any{
-						{
-							"type":    "rating",
-							"rating":  selected.CurrentRating,
-							"message": "rating calculated from auto resolve result",
-						},
-					},
-					"result": map[string]any{
-						"run_status":       selected.RunStatus,
-						"runtime_phase":    selected.RuntimePhase,
-						"reward_claimable": selected.RewardClaimable,
-						"current_rating":   selected.CurrentRating,
-						"projected_rating": selected.ProjectedRating,
-					},
-					"reward_summary": map[string]any{
-						"pending_rating_rewards": selected.PendingRatingRewards,
-						"staged_material_drops":  selected.StagedMaterialDrops,
-					},
-				})
+				writeEnvelope(w, r, http.StatusOK, payload)
 			})
 		})
 	})
@@ -1964,6 +1965,178 @@ func findRunInServiceByID(dungeonService *dungeons.Service, runID string) dungeo
 	return dungeons.RunView{}
 }
 
+func buildPublicDungeonRunDetail(characterID, runID string, events []world.WorldEvent, dungeonService *dungeons.Service) (map[string]any, bool) {
+	if run, err := dungeonService.GetRun(characterID, runID); err == nil {
+		return publicDungeonRunPayloadFromRun(run, dungeonService), true
+	}
+
+	var enteredEvent *world.WorldEvent
+	var clearedEvent *world.WorldEvent
+	var lootEvent *world.WorldEvent
+
+	for index := range events {
+		event := events[index]
+		if stringPayload(event.Payload, "run_id") != runID {
+			continue
+		}
+
+		switch event.EventType {
+		case "dungeon.entered":
+			if enteredEvent == nil {
+				enteredEvent = &event
+			}
+		case "dungeon.cleared":
+			if clearedEvent == nil {
+				clearedEvent = &event
+			}
+		case "dungeon.loot_granted":
+			if lootEvent == nil {
+				lootEvent = &event
+			}
+		}
+	}
+
+	if enteredEvent == nil && clearedEvent == nil && lootEvent == nil {
+		return nil, false
+	}
+
+	dungeonID := firstNonEmpty(
+		stringPayload(eventPayload(enteredEvent), "dungeon_id"),
+		stringPayload(eventPayload(clearedEvent), "dungeon_id"),
+		stringPayload(eventPayload(lootEvent), "dungeon_id"),
+	)
+	if dungeonID == "" {
+		return nil, false
+	}
+
+	definition, _ := dungeonService.GetDungeonDefinition(dungeonID)
+	dungeonName := firstNonEmpty(definition.Name, dungeonID)
+	currentRating := firstNonEmpty(
+		stringPayload(eventPayload(lootEvent), "rating"),
+		stringPayload(eventPayload(clearedEvent), "current_rating"),
+	)
+	rewardClaimed := lootEvent != nil
+
+	return map[string]any{
+		"run_id":       runID,
+		"dungeon_id":   dungeonID,
+		"dungeon_name": dungeonName,
+		"difficulty":   "unknown",
+		"started_at": firstNonEmpty(
+			occurredAtOrEmpty(enteredEvent),
+			occurredAtOrEmpty(clearedEvent),
+			occurredAtOrEmpty(lootEvent),
+		),
+		"resolved_at": firstNonEmpty(
+			occurredAtOrEmpty(clearedEvent),
+			occurredAtOrEmpty(lootEvent),
+			occurredAtOrEmpty(enteredEvent),
+		),
+		"room_summary": map[string]any{
+			"source": "event_history",
+		},
+		"battle_state": map[string]any{
+			"engine_mode":  "history_only",
+			"final_result": "cleared",
+			"source":       "event_history",
+		},
+		"battle_log": []map[string]any{},
+		"milestones": []map[string]any{
+			{
+				"type":    "history_fallback",
+				"message": "runtime battle log unavailable; built from public event history",
+			},
+			{
+				"type":    "rating",
+				"rating":  currentRating,
+				"message": "rating reconstructed from public event history",
+			},
+		},
+		"result": map[string]any{
+			"run_status":       "cleared",
+			"runtime_phase":    "history_only",
+			"reward_claimable": !rewardClaimed,
+			"current_rating":   currentRating,
+			"projected_rating": currentRating,
+		},
+		"reward_summary": map[string]any{
+			"pending_rating_rewards": []map[string]any{},
+			"staged_material_drops":  mapSlicePayload(eventPayload(lootEvent), "material_drops"),
+			"reward_gold":            intPayload(eventPayload(lootEvent), "reward_gold"),
+		},
+	}, true
+}
+
+func publicDungeonRunPayloadFromRun(run dungeons.RunView, dungeonService *dungeons.Service) map[string]any {
+	definition, _ := dungeonService.GetDungeonDefinition(run.DungeonID)
+
+	return map[string]any{
+		"run_id":       run.RunID,
+		"dungeon_id":   run.DungeonID,
+		"dungeon_name": definition.Name,
+		"difficulty":   run.Difficulty,
+		"started_at":   run.StartedAt,
+		"resolved_at":  run.ResolvedAt,
+		"room_summary": run.RoomSummary,
+		"battle_state": run.BattleState,
+		"battle_log":   run.RecentBattleLog,
+		"milestones": []map[string]any{
+			{
+				"type":    "rating",
+				"rating":  run.CurrentRating,
+				"message": "rating calculated from auto resolve result",
+			},
+		},
+		"result": map[string]any{
+			"run_status":       run.RunStatus,
+			"runtime_phase":    run.RuntimePhase,
+			"reward_claimable": run.RewardClaimable,
+			"current_rating":   run.CurrentRating,
+			"projected_rating": run.ProjectedRating,
+		},
+		"reward_summary": map[string]any{
+			"pending_rating_rewards": run.PendingRatingRewards,
+			"staged_material_drops":  run.StagedMaterialDrops,
+		},
+	}
+}
+
+func eventPayload(event *world.WorldEvent) map[string]any {
+	if event == nil {
+		return nil
+	}
+	return event.Payload
+}
+
+func occurredAtOrEmpty(event *world.WorldEvent) string {
+	if event == nil {
+		return ""
+	}
+	return event.OccurredAt
+}
+
+func mapSlicePayload(payload map[string]any, key string) []map[string]any {
+	if payload == nil {
+		return []map[string]any{}
+	}
+
+	switch value := payload[key].(type) {
+	case []map[string]any:
+		return value
+	case []any:
+		items := make([]map[string]any, 0, len(value))
+		for _, item := range value {
+			entry, ok := item.(map[string]any)
+			if ok {
+				items = append(items, entry)
+			}
+		}
+		return items
+	default:
+		return []map[string]any{}
+	}
+}
+
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if strings.TrimSpace(value) != "" {
@@ -2472,7 +2645,7 @@ func executeAction(account auth.Account, actionType string, actionArgs map[strin
 				"state": state,
 			},
 		}, nil
-	case "claim_dungeon_rewards", "claim_run_rewards":
+	case "claim_dungeon_rewards":
 		runID, _ := actionArgs["run_id"].(string)
 		character, limits, err := currentCharacterWithLimits(account, characterService, worldService)
 		if err != nil {

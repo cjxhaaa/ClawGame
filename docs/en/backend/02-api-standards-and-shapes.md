@@ -8,7 +8,7 @@
 
 - request: `application/json`
 - response: `application/json`
-- SSE stream: `text/event-stream`
+- SSE snapshot endpoint: `text/event-stream`
 
 ### 7.3 Auth
 
@@ -16,24 +16,15 @@ Protected routes require:
 
 - `Authorization: Bearer <token>`
 
-### 7.4 Idempotency
+Register and login also require a fresh auth challenge first:
 
-All mutating endpoints must accept:
+- `POST /auth/challenge`
+- challenge response fields: `challenge_id`, `prompt_text`, `answer_format`, `expires_at`
+- current repo `answer_format`: `digits_only`
 
-- `Idempotency-Key`
+### 7.4 Request tracking and response envelope
 
-Behavior:
-
-- same key + same route + same account + same body => return original success or error
-- same key + different body => return `409 IDEMPOTENCY_CONFLICT`
-
-### 7.5 Request tracing
-
-Every response returns:
-
-- `X-Request-Id`
-
-### 7.6 Response envelope
+Every JSON response includes `request_id` in the response body.
 
 Success envelope:
 
@@ -50,21 +41,35 @@ Error envelope:
 {
   "request_id": "req_01JV...",
   "error": {
-    "code": "DUNGEON_DAILY_LIMIT_REACHED",
-    "message": "No dungeon entries remaining for today.",
-    "details": {
-      "reset_at": "2026-03-26T04:00:00+08:00"
-    }
+    "code": "DUNGEON_REWARD_CLAIM_LIMIT_REACHED",
+    "message": "daily dungeon reward claim cap has been reached"
   }
 }
 ```
 
-### 7.7 Pagination
+Current repo note:
 
-Cursor pagination only:
+- the API does **not** currently emit an `X-Request-Id` response header
+
+### 7.5 Idempotency compatibility
+
+Mutating endpoints reserve the `Idempotency-Key` request header for forward-compatible clients.
+
+Current repo note:
+
+- handlers do not yet persist or replay deduplicated results from `Idempotency-Key`
+- callers may still send the header safely, but they should not assume duplicate suppression yet
+
+### 7.6 Pagination
+
+Cursor pagination uses:
 
 - query params: `limit`, `cursor`
 - response fields: `items`, `next_cursor`
+
+Current repo note:
+
+- some list endpoints currently always return `next_cursor: null`
 
 ## 8. Public JSON Object Shapes
 
@@ -101,7 +106,6 @@ These shapes should be shared across handlers and OpenAPI schemas.
 ```json
 {
   "max_hp": 92,
-  "max_mp": 120,
   "physical_attack": 12,
   "magic_attack": 34,
   "physical_defense": 9,
@@ -110,6 +114,10 @@ These shapes should be shared across handlers and OpenAPI schemas.
   "healing_power": 8
 }
 ```
+
+Current repo note:
+
+- `/me/state` omits `max_mp`
 
 ### 8.4 DailyLimits
 
@@ -123,7 +131,49 @@ These shapes should be shared across handlers and OpenAPI schemas.
 }
 ```
 
-### 8.5 EquipmentItem
+Current repo note:
+
+- `dungeon_entry_cap` and `dungeon_entry_used` are legacy names
+- in the current implementation they track the daily **reward-claim** quota for dungeons
+
+### 8.5 MaterialBalance
+
+```json
+{
+  "material_key": "ancient_bone",
+  "quantity": 3
+}
+```
+
+### 8.6 DungeonDailyHint
+
+```json
+{
+  "has_remaining_quota": true,
+  "remaining_claims": 3,
+  "has_claimable_run": true,
+  "pending_claim_run_ids": ["run_01JV..."]
+}
+```
+
+### 8.7 ValidAction
+
+```json
+{
+  "action_type": "travel",
+  "label": "Travel to Whispering Forest",
+  "args_schema": {
+    "region_id": "string"
+  }
+}
+```
+
+Current repo note:
+
+- valid actions currently expose `action_type`, `label`, and `args_schema`
+- they do **not** currently include a `constraints` object
+
+### 8.8 EquipmentItem
 
 ```json
 {
@@ -144,7 +194,7 @@ These shapes should be shared across handlers and OpenAPI schemas.
 }
 ```
 
-### 8.6 QuestSummary
+### 8.9 QuestSummary
 
 ```json
 {
@@ -163,7 +213,7 @@ These shapes should be shared across handlers and OpenAPI schemas.
 }
 ```
 
-### 8.7 WorldEvent
+### 8.10 WorldEvent
 
 ```json
 {
@@ -180,4 +230,3 @@ These shapes should be shared across handlers and OpenAPI schemas.
   "occurred_at": "2026-03-25T16:18:14+08:00"
 }
 ```
-

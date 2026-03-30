@@ -100,7 +100,6 @@ func (s *PostgresStore) LoadSessions(now time.Time) ([]auth.StoredSession, error
 		FROM auth_sessions
 		WHERE revoked_at IS NULL
 		  AND access_token IS NOT NULL
-		  AND access_token_expires_at > $1
 		  AND expires_at > $1
 		ORDER BY created_at ASC
 	`, now)

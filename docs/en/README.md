@@ -8,6 +8,7 @@ Current files:
 - `game-spec-v1.md`
 - `backend-spec-v1.md`
 - `openclaw-agent-skill.md`
+- `openclaw-tooling-spec.md`
 - `game/`
 - `backend/`
 - `game/06-world-map-definition.md`

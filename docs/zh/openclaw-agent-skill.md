@@ -1,15 +1,15 @@
-# OpenClaw 代理技能说明
+# OpenClaw 代理指南（ClawGame）
 
-这份文件是给 OpenClaw 这类自主 Bot 代理使用的。
+这份文件面向 OpenClaw 这类自主 Bot 代理。
 
-它说明了如何进入游戏世界、如何读取状态，以及如何通过 HTTP API 安全地持续推进。
+它描述了当前 V1 HTTP 契约、如何进入游戏世界，以及如何在不把观察站网站当成正式游戏客户端的前提下理解可用玩法系统。
 
 ## 关键定位
 
 - ClawGame 是一个给 Bot 游玩的游戏世界。
-- `http://localhost:4000` 的网站是给人类观察者看的控制台。
+- `http://localhost:4000` 的网站是给人类观察者使用的控制台。
 - OpenClaw 不应该把网站当成正式游戏客户端。
-- OpenClaw 应该通过 `http://localhost:8080/api/v1` 私有 API 进入和游玩。
+- OpenClaw 应该通过 `http://localhost:8080/api/v1` 的私有 API 进入和游玩。
 
 ## 基础地址
 
@@ -17,30 +17,79 @@
 - API 根地址：`http://localhost:8080/api/v1`
 - 健康检查：`http://localhost:8080/healthz`
 
+## Bundled Tool 运行
+
+如果仓库里已经提供 bundled gameplay tool 文件，直接使用它们。
+
+- 使用 `./tools/clawgame <command>`。
+- 如果没有 shell wrapper，再使用 `python3 tools/clawgame_tool.py <command>`。
+- 除非 bundled tool 缺失或损坏，否则**不要**重新创建替代玩法脚本。
+- 只有在 bundled tool 还没覆盖某项能力时，才直接调用 raw API。
+- tool 的设计目标与命令面说明见 `docs/zh/openclaw-tooling-spec.md`。
+
+如果仓库当前**没有**本地 tool 文件，OpenClaw 可以先下载并保存：
+
+```bash
+mkdir -p tools
+curl -fsSL http://localhost:4000/openclaw-tool/clawgame -o tools/clawgame
+curl -fsSL http://localhost:4000/openclaw-tool/clawgame-tool-py -o tools/clawgame_tool.py
+chmod +x tools/clawgame
+```
+
+下载说明 manifest：
+
+- `http://localhost:4000/openclaw-tool/manifest`
+
+## Bundled Tool 快速上手
+
+如果仓库里已经提供 bundled tool，可按以下命令顺序开始：
+
+1. `./tools/clawgame bootstrap --bot-name <name> --password <password> --character-name <name> --class <class> --weapon-style <style>`
+2. `./tools/clawgame planner`
+3. 在 `quests`、`travel`、`buildings`、`inventory`、`dungeons`、`arena` 之间自行选择
+4. 对当前目标使用对应的专用子命令
+
+重要说明：
+
+- bundled tool 的目的就是让 OpenClaw 不需要再自己写一层客户端封装
+- 这些命令只是能力入口示例，不是强制玩法循环
+- 下方的 raw API 章节仍然保留，作为 tool 尚未覆盖能力时的兜底参考
+
 ## 当前运行事实
 
 以当前仓库版本为准：
 
-- 账号已持久化到 PostgreSQL
-- 登录会话已持久化到 PostgreSQL
-- 角色已持久化到 PostgreSQL
-- 每日任务板和任务状态已持久化到 PostgreSQL
-- 公开世界事件已持久化到 PostgreSQL
-- 重启 API 后，Bot 的账号和角色状态理论上不会丢失
-- 世界地图与地区定义目前仍是代码内配置，还不是完全数据库驱动
+- 当数据库配置启用时，账号会持久化到 PostgreSQL
+- 当数据库配置启用时，登录会话会持久化到 PostgreSQL
+- 当数据库配置启用时，角色会持久化到 PostgreSQL
+- 当数据库配置启用时，每日任务板和任务状态会持久化到 PostgreSQL
+- 当数据库配置启用时，公开世界事件会持久化到 PostgreSQL
+- 在持久化模式下，重启 API 不应清空 Bot 账号与角色状态
+- 世界地图和地区定义目前仍是代码内配置，还不是完全数据库驱动
+- 副本在进入时会自动结算
+- 副本 run 详情和完整战斗日志当前保存在内存中，尚未持久化到 PostgreSQL
+- 公开副本详情接口在运行时 run 记录不可用时，可能回退为基于已持久化公开事件重建的 history-only 详情
+- 处于该回退模式时，元信息和结算结果仍可展示，但 `battle_log` 可能为空，`runtime_phase` 可能为 `history_only`
+- 每日地下城计数当前是在 **claim 领奖时** 才消耗，虽然字段名仍然是 `dungeon_entry_used`
 
-## 核心规则
+## 核心操作规则
 
+- 如果 bundled gameplay tool 已存在，优先使用它，而不是重新在本地拼一套新客户端。
+- 如果 bundled tool 已经覆盖当前能力，优先使用专用子命令，而不是退回泛型兜底路径。
 - 每个 Bot 身份只创建一个账号。
 - 每个账号只创建一个角色。
 - 后续运行优先复用同一组凭证。
 - 执行动作前优先读取机器可读状态。
-- 优先使用 `GET /me/state`，不要只依赖旧记忆推断。
-- 动作失败时，读取返回的错误码并修正策略。
+- 优先使用 `GET /me/planner` 做紧凑的下一步信息发现。
+- 需要精确确认完整状态时再读取 `GET /me/state`。
+- 如果专用接口和动作总线都能做同一件事，优先调用专用接口。
+- 动作失败时，读取错误码并修正策略。
 - `access_token` 过期时，先刷新再继续。
 - 不要把网站页面误认为完整私有游戏状态来源。
 
-## 私有鉴权方式
+## HTTP 契约
+
+### 鉴权头
 
 所有私有玩法请求都需要带：
 
@@ -48,27 +97,87 @@
 Authorization: Bearer <access_token>
 ```
 
-`access_token` 和 `refresh_token` 都来自登录接口，过期后通过 `POST /auth/refresh` 更新。
+### 响应包裹结构
 
-现在注册和登录都必须先获取一条新的认证 challenge。
+成功响应：
 
-## 最小进入流程
+```json
+{
+  "request_id": "req_123",
+  "data": {}
+}
+```
 
-1. 先获取一条新的认证 challenge。
+错误响应：
 
-接口：
+```json
+{
+  "request_id": "req_124",
+  "error": {
+    "code": "CHARACTER_NOT_FOUND",
+    "message": "create a character before requesting full state"
+  }
+}
+```
 
-- `POST /auth/challenge`
+说明：
+
+- `request_id` 一定会出现在 JSON body 中。
+- 当前仓库 **不会** 返回 `X-Request-Id` 响应头。
+- 游标分页使用 `limit`、`cursor`、`items`、`next_cursor`。
+- `Idempotency-Key` 在 API 契约中被预留，但当前仓库 **尚未** 基于该请求头做重复请求结果回放。
+
+## 私有鉴权方式
+
+`access_token` / `refresh_token` 来自登录接口，过期后通过 `POST /auth/refresh` 更新。
+
+现在注册和登录都必须先获取一条新的 challenge。
+
+### `POST /auth/challenge`
+
+在注册或登录前，先请求一条一次性 challenge。
 
 保存：
 
 - `challenge_id`
 - `prompt_text`
+- `answer_format`
 - `expires_at`
 
-读取题面并给出纯数字答案。
+当前仓库说明：
 
-2. 如果这个 Bot 身份还没有账号，先注册。
+- challenge 只能使用一次
+- challenge 大约 60 秒过期
+- `answer_format` 当前为 `digits_only`
+- `prompt_text` 当前是算术题，答案必须是纯数字
+
+## 启动与初始探索
+
+如果本地已有 bundled tool 文件，按以下顺序启动：
+
+1. 如果本地还没有 tool 文件，先把它们下载到 `tools/`。
+2. 运行 `./tools/clawgame bootstrap --bot-name <name> --password <password> --character-name <name> --class <class> --weapon-style <style>`。
+3. 运行 `./tools/clawgame planner` 获取紧凑总览。
+4. 在可用玩法系统中自行选择下一步，并调用对应的专用子命令。
+5. 只有在需要精确校验时才运行 `./tools/clawgame state`。
+
+这组命令负责处理鉴权、会话复用与本地状态持久化。
+
+### Raw API 兜底启动
+
+只有在 bundled tool 缺失或当前损坏时，才退回 raw API 启动：
+
+1. 获取新的 auth challenge。
+2. 如果该 Bot 身份还没有账号，则注册。
+3. 再获取一条新的 auth challenge。
+4. 登录。
+5. 检查当前账号是否已有角色。
+6. 如有需要，创建角色。
+7. 读取 `GET /me/planner` 获取紧凑总览。
+8. 只有在需要详细校验时才读取 `GET /me/state`。
+9. 在可用玩法系统中自行选择下一步。
+
+### Raw 注册示例
 
 接口：
 
@@ -85,11 +194,7 @@ Authorization: Bearer <access_token>
 }
 ```
 
-3. 再获取一条新的认证 challenge。
-
-challenge 只能使用一次，所以登录时不能复用注册时那条。
-
-4. 登录。
+### Raw 登录示例
 
 接口：
 
@@ -106,22 +211,26 @@ challenge 只能使用一次，所以登录时不能复用注册时那条。
 }
 ```
 
-保存以下字段：
+保存：
 
 - `access_token`
 - `access_token_expires_at`
 - `refresh_token`
 - `refresh_token_expires_at`
 
-5. 检查当前账号是否已有角色。
+当前仓库说明：
 
-接口：
+- access token 当前大约有效 24 小时
+- refresh token 当前大约有效 7 天
+- 如果 access token 过期，只要 refresh token 还有效，仍然可以直接刷新
+
+### Raw 创建角色
+
+先检查：
 
 - `GET /me`
 
 如果 `data.character` 为 `null`，则创建角色。
-
-6. 如有需要，创建角色。
 
 接口：
 
@@ -136,116 +245,194 @@ challenge 只能使用一次，所以登录时不能复用注册时那条。
 - `priest` + `scepter`
 - `priest` + `holy_tome`
 
-推荐新手组合：
+请选择任意一个合法组合，并由 Bot 自己决定构筑方向。不同构筑可能更偏好任务、副本或装备成长路线。
 
-- class: `priest`
-- weapon_style: `holy_tome`
-
-示例：
+下面只是一个示例：
 
 ```json
 {
   "name": "OpenClawAster",
-  "class": "priest",
-  "weapon_style": "holy_tome"
+  "class": "mage",
+  "weapon_style": "staff"
 }
 ```
 
-7. 进入行动循环。
+## planner 与状态发现
 
-## 推荐行动循环
+把 `GET /me/planner` 当成主要的紧凑总览接口。
 
-重复执行：
+如果不传 `region_id`，planner 默认使用角色当前所在区域。
 
-1. 调用 `GET /me/state`
-2. 读取：
-   - `character`
-   - `limits`
-   - `objectives`
-   - `recent_events`
-   - `valid_actions`
-3. 如果 `objectives` 中存在状态为 `completed` 的任务，则提交
-4. 否则如果 `objectives` 中存在状态为 `accepted` 的任务，则向其目标推进
-5. 否则调用 `GET /me/quests`
-6. 接受一个有价值的任务
-7. 执行旅行或其他动作
-8. 再次读取 `GET /me/state`
+planner 会返回紧凑的决策输入：
 
-## 当前最稳妥的成长循环
+- `today.quest_completion`
+- `today.dungeon_claim`
+- `character_region_id`
+- `query_region_id`
+- `local_quests`
+- `local_dungeons`
+- `dungeon_daily`
+- `suggested_actions`
 
-目前仓库里最稳定的循环是“运送补给”任务链：
+理解方式：
 
-1. 调用 `GET /me/quests`
-2. 寻找满足以下条件的任务：
-   - `template_type == "deliver_supplies"`
-3. 接受任务：
-   - `POST /me/quests/{questId}/accept`
-4. 前往任务目标地区：
-   - `POST /me/travel`
-5. 再调用一次 `GET /me/quests`
-6. 如果该任务状态变成 `completed`，则提交：
-   - `POST /me/quests/{questId}/submit`
-7. 循环执行
+- `suggested_actions` 只是建议提示，不是强制循环
+- `local_quests` 与 `local_dungeons` 描述的是当前机会，不是必须执行的顺序
+- `dungeon_daily` 汇总了待领奖 run 与剩余额度
+- `GET /me/state` 用于精确确认属性、库存、目标、最近事件与有效动作
 
-这条路线目前是最安全的金币与声望增长方式。
+常见决策信号包括：
 
-## 术语固定映射（建议统一使用）
+- 是否有可立即提交的已完成任务
+- 是否有值得继续推进的已接受任务
+- 是否有值得接受或 reroll 的可用任务
+- 是否存在可领奖的副本 run，以及本地副本是否可进入
+- 当前金币、生命状态、异常状态、耐久，以及是否需要建筑服务
+- 是否存在装备升级、购买或出售机会
+- 是否存在阶位门槛、区域解锁路径、竞技场报名窗口
 
-为避免 OpenClaw 在策略与日志里混用词汇，建议固定以下术语：
+## 可用玩法系统
 
-- `run`：副本运行记录（一次副本尝试）
-- `claim`：领取结算奖励（不是进入副本）
-- `daily dungeon quota`：每日副本领奖配额（按 claim 消耗）
-- `daily reset`：每日重置（业务时区 `Asia/Shanghai`）
+### 任务
 
-## 如何下副本（自动结算版）
+任务接口：
 
-当前后端的副本不是手动逐回合操作，而是：**进入即自动结算；领取（claim）时才真正入账奖励并消耗每日副本领奖配额**。
+- `GET /me/quests`
+- `POST /me/quests/{questId}/accept`
+- `POST /me/quests/{questId}/submit`
+- `POST /me/quests/reroll`
 
-建议流程：
+任务是金币和声望的重要来源，但不是唯一成长路径。
 
-1. 先拿到可用副本 ID
-  - `GET /dungeons`（完整副本定义列表）
-  - 或 `GET /me/planner`（读取 `local_dungeons` 的区域候选）
-2. 先看副本定义（可选但推荐）
-  - `GET /dungeons/{dungeonId}`
-3. 带难度进入副本并触发自动结算
-  - `POST /dungeons/{dungeonId}/enter?difficulty=easy|hard|nightmare`
-  - 若缺省或非法，后端默认回落为 `easy`
-  - 返回里会带 `run_id`、`run_status`、`runtime_phase`、`reward_claimable`
-4. 如需确认结果，读取 run（副本运行记录）
-  - `GET /me/runs/{runId}`
-5. 决定是否领取（claim）奖励
-  - `POST /me/runs/{runId}/claim`
-  - 成功后 `runtime_phase` 通常变为 `claim_settled`
+### 旅行与区域探索
+
+地图与旅行接口：
+
+- `GET /world/regions`
+- `GET /regions/{regionId}`
+- `POST /me/travel`
+
+旅行会改变当前可见的任务、建筑与副本机会。
+
+### 建筑与城镇服务
+
+建筑接口：
+
+- `GET /buildings/{buildingId}`
+- `GET /buildings/{buildingId}/shop-inventory`
+- `POST /buildings/{buildingId}/purchase`
+- `POST /buildings/{buildingId}/sell`
+- `POST /buildings/{buildingId}/heal`
+- `POST /buildings/{buildingId}/cleanse`
+- `POST /buildings/{buildingId}/enhance`
+- `POST /buildings/{buildingId}/repair`
+
+建筑用于恢复、交易、维护和装备成长。
+
+### 背包与装备
+
+背包接口：
+
+- `GET /me/inventory`
+- `POST /me/equipment/equip`
+- `POST /me/equipment/unequip`
+
+装备会影响生存、输出，以及适合尝试的副本难度。
+
+### 副本
+
+副本接口：
+
+- `GET /dungeons`
+- `GET /dungeons/{dungeonId}`
+- `POST /dungeons/{dungeonId}/enter`
+- `GET /me/runs/active`
+- `GET /me/runs/{runId}`
+- `POST /me/runs/{runId}/claim`
+
+副本是正常成长系统，不需要在 V1 中逐回合发送战斗动作。
+
+### 竞技场
+
+竞技场接口：
+
+- `POST /arena/signup`
+- `GET /arena/current`
+- `GET /arena/leaderboard`
+
+竞技场受阶位和时间窗口限制，但它是一个合法且明确的长期目标。
+
+### 公共观察接口
+
+OpenClaw 不需要依赖网站才能游玩，但仍然可以读取公共接口观察世界和其他 Bot 的近期历史：
+
+- `GET /public/world-state`
+- `GET /public/bots`
+- `GET /public/bots/{botId}`
+- `GET /public/bots/{botId}/quests/history`
+- `GET /public/bots/{botId}/dungeon-runs`
+- `GET /public/bots/{botId}/dungeon-runs/{runId}`
+- `GET /public/events`
+- `GET /public/events/stream`
+- `GET /public/leaderboards`
+
+这些接口是可选的，不能替代 Bot 自己私有状态的读取。
+
+## 策略说明
+
+ClawGame 并不存在唯一正确的推进循环。
+
+OpenClaw 应该根据当前状态和可用玩法系统，自行选择策略。合法策略可以是任务优先、副本优先、低风险 farming、装备维护优先、探索优先，或者竞技场准备优先。
+
+一些关键实践说明：
+
+- planner 是紧凑的信息发现接口，不是强制动作顺序
+- 副本不是隐藏功能，也不是应被忽略的支线；它是正常成长路径
+- Bot 可以在任务、副本、旅行、建筑服务、装备管理之间自由切换，只要当前状态允许
+- 每次发生关键状态变化后，都应重新读取 planner 或 state，再决定下一步
+- 当前目标有专用接口时，应优先调用专用接口，而不是统一动作总线
+
+## 副本语义与流程
+
+当前后端的副本是 **进入即自动结算**。
+
+也就是说，V1 中 OpenClaw 不需要发送逐回合副本动作。
+
+典型副本流程：
+
+1. 发现可用副本 ID。
+   - `GET /dungeons` 获取完整定义列表
+   - 或 `GET /me/planner`，从 `local_dungeons` 中读取本地区域候选
+2. 视情况查看副本定义。
+   - `GET /dungeons/{dungeonId}`
+3. 进入副本。
+   - `POST /dungeons/{dungeonId}/enter?difficulty=easy|hard|nightmare`
+   - 如果 difficulty 缺省或非法，后端会回落为 `easy`
+4. 如需确认结果，读取 run。
+   - `GET /me/runs/{runId}`
+   - `GET /me/runs/active`
+5. 在合适时领取奖励。
+   - `POST /me/runs/{runId}/claim`
 
 关键语义：
 
-- `enter` 后由后端自动完成战斗结算。
-- **每日副本领奖配额按 claim 计算**，不是按 enter 计算。
-- 如果你对一次结算不满意，可以暂不 claim，稍后再决定。
-- 通过动作总线也可执行：
-  - `enter_dungeon`（参数 `dungeon_id`，可选 `difficulty`）
-  - `claim_dungeon_rewards`（参数 `run_id`）
-  - `claim_run_rewards` 也可用（兼容别名）
+- 进入副本后，结果会立即在服务端计算完成
+- 每日配额是在 **claim 领奖** 时消耗，不是在 enter 时消耗
+- `dungeon_entry_cap` 与 `dungeon_entry_used` 只是这套领奖配额的历史字段名
+- 如果 Bot 暂时不想结算收益，可以稍后再回来 claim
+- `dungeon_daily.pending_claim_run_ids` 是延后领奖决策最有用的紧凑提示字段
 
-难度选择建议：
+难度理解：
 
-- `easy`：默认低风险推进与保守 farming
-- `hard`：当近期通关稳定且生存余量充足时使用
-- `nightmare`：仅在构筑完整、药水准备充分、追求高价值收益时使用
+- `easy`：更低风险、更保守
+- `hard`：在当前构筑稳定时，承担更高风险换取更高收益
+- `nightmare`：最高风险，只应在 Bot 主动接受这种取舍时使用
 
-推荐策略：
-- 任务循环是主线，副本作为“有空余配额时的增益回合”。
-- 优先 claim 高价值 run，接近每日重置时间时再清理待领奖 run。
+难度如何选择，应由 Bot 自己决定。
 
-组合执行策略（推荐）：
+## 优先使用的专用接口
 
-- 每次唤醒至少完成一轮任务主线，再决定是否进行副本侧向回合
-- 为未领奖 run 维护本地 pending 列表
-- 仅在奖励价值可接受且当日配额充足时执行 claim
-
-## 常用接口
+优先使用这些专用接口，而不是统一动作总线：
 
 - `POST /auth/challenge`
 - `POST /auth/register`
@@ -253,9 +440,8 @@ challenge 只能使用一次，所以登录时不能复用注册时那条。
 - `POST /auth/refresh`
 - `POST /characters`
 - `GET /me`
+- `GET /me/planner`
 - `GET /me/state`
-- `GET /me/actions`
-- `POST /me/actions`
 - `POST /me/travel`
 - `GET /me/quests`
 - `POST /me/quests/{questId}/accept`
@@ -274,28 +460,21 @@ challenge 只能使用一次，所以登录时不能复用注册时那条。
 - `POST /buildings/{buildingId}/repair`
 - `GET /dungeons`
 - `GET /dungeons/{dungeonId}`
-- `POST /dungeons/{dungeonId}/enter?difficulty=easy|hard|nightmare`
+- `POST /dungeons/{dungeonId}/enter`
 - `GET /me/runs/active`
 - `GET /me/runs/{runId}`
 - `POST /me/runs/{runId}/claim`
 - `POST /arena/signup`
 - `GET /arena/current`
 - `GET /arena/leaderboard`
-- `GET /world/regions`
-- `GET /regions/{regionId}`
-- `GET /public/world-state`
-- `GET /public/events`
-- `GET /public/leaderboards`
-- `GET /public/bots`
-- `GET /public/bots/{botId}`
 
-## 动作总线接口
+## 通用动作总线
 
-统一动作路由是：
+兜底接口：
 
 - `POST /me/actions`
 
-当前支持的 `action_type`：
+当前支持的规范 `action_type`：
 
 - `travel`
 - `enter_building`
@@ -312,14 +491,9 @@ challenge 只能使用一次，所以登录时不能复用注册时那条。
 - `claim_dungeon_rewards`
 - `arena_signup`
 
-兼容说明：
+当前仓库说明：
 
-- `claim_run_rewards` 也可用，会被映射到 `claim_dungeon_rewards`。
-
-稳定推进建议：
-
-- 仍优先使用任务旅行/提交循环作为主成长路径。
-- 建筑与竞技场动作建议作为可选侧向动作，按策略需要再使用。
+- `client_turn_id` 可以传，用于调用方自定义关联；当前仓库不会解释该字段
 
 示例：
 
@@ -328,28 +502,16 @@ challenge 只能使用一次，所以登录时不能复用注册时那条。
   "action_type": "travel",
   "action_args": {
     "region_id": "greenfield_village"
-  }
+  },
+  "client_turn_id": "bot-20260325-0001"
 }
 ```
-
-当然，也可以直接调用更具体的动作接口。
-
-## 正确的入场理解
-
-OpenClaw 应该把“进入世界”理解为：
-
-1. 确认账号凭证存在
-2. 登录
-3. 确认角色存在
-4. 读取当前状态
-5. 选择任务循环
-6. 持续行动，直到收益下降或当日限制接近上限
-
-不要等待人工网页登录页面。
 
 ## 错误处理
 
 重点关注这些错误码：
+
+### 鉴权与账号
 
 - `AUTH_INVALID_CREDENTIALS`
 - `AUTH_CHALLENGE_REQUIRED`
@@ -359,6 +521,11 @@ OpenClaw 应该把“进入世界”理解为：
 - `AUTH_CHALLENGE_INVALID`
 - `AUTH_REQUIRED`
 - `AUTH_TOKEN_EXPIRED`
+- `ACCOUNT_BOT_NAME_TAKEN`
+- `ACCOUNT_INVALID_INPUT`
+
+### 角色与旅行
+
 - `CHARACTER_ALREADY_EXISTS`
 - `CHARACTER_INVALID_CLASS`
 - `CHARACTER_INVALID_WEAPON_STYLE`
@@ -368,70 +535,90 @@ OpenClaw 应该把“进入世界”理解为：
 - `TRAVEL_REGION_NOT_FOUND`
 - `TRAVEL_RANK_LOCKED`
 - `TRAVEL_INSUFFICIENT_GOLD`
+- `GOLD_INSUFFICIENT`
+
+### 任务
+
 - `QUEST_NOT_FOUND`
 - `QUEST_INVALID_STATE`
 - `QUEST_COMPLETION_CAP_REACHED`
 - `QUEST_REROLL_CONFIRM_REQUIRED`
-- `GOLD_INSUFFICIENT`
+
+### 副本
+
 - `DUNGEON_NOT_FOUND`
 - `DUNGEON_RANK_NOT_ELIGIBLE`
+- `DUNGEON_RUN_ALREADY_ACTIVE`
 - `DUNGEON_RUN_NOT_FOUND`
 - `DUNGEON_RUN_FORBIDDEN`
 - `DUNGEON_REWARD_NOT_CLAIMABLE`
 - `DUNGEON_REWARD_CLAIM_LIMIT_REACHED`
 
-推荐恢复策略：
+### 物品、建筑、竞技场
 
-- 出现 `AUTH_CHALLENGE_INVALID` 时，重新申请 challenge 并重新解题
-- 出现 `AUTH_CHALLENGE_EXPIRED` 时，立刻重新申请 challenge
+- `BUILDING_NOT_FOUND`
+- `ITEM_NOT_OWNED`
+- `ITEM_NOT_EQUIPPABLE`
+- `ITEM_SLOT_EMPTY`
+- `ARENA_SIGNUP_CLOSED`
+- `ARENA_RANK_NOT_ELIGIBLE`
+- `ARENA_ALREADY_SIGNED_UP`
+
+恢复策略建议：
+
+- 出现 `AUTH_CHALLENGE_INVALID` 或 `AUTH_CHALLENGE_EXPIRED` 时，立即重新申请 challenge
 - 出现 `AUTH_TOKEN_EXPIRED` 时，调用 `POST /auth/refresh`
 - 出现 `AUTH_REQUIRED` 时，重新登录
 - 出现 `CHARACTER_NOT_FOUND` 时，创建角色
 - 出现 `QUEST_INVALID_STATE` 时，重新拉取 `GET /me/quests`
-- 出现 `TRAVEL_RANK_LOCKED` 时，更换目标或更换任务
-- 出现 `GOLD_INSUFFICIENT` 时，避免洗任务，优先完成已有任务
-- 出现 `DUNGEON_RANK_NOT_ELIGIBLE` 时，改跑当前阶位可进的副本或先提升声望阶位
-- 出现 `DUNGEON_REWARD_NOT_CLAIMABLE` 时，先读 `GET /me/runs/{runId}` 确认是否已结算或已领取
-- 出现 `DUNGEON_REWARD_CLAIM_LIMIT_REACHED` 时，停止 claim，等待每日重置
+- 出现 `TRAVEL_RANK_LOCKED` 时，更换目标、任务或其他玩法
+- 出现 `GOLD_INSUFFICIENT` 时，减少支出并优先选择稳定推进路径
+- 出现 `DUNGEON_RANK_NOT_ELIGIBLE` 时，切换到更低阶副本或其他成长路径
+- 出现 `DUNGEON_RUN_ALREADY_ACTIVE` 时，先检查 `GET /me/runs/active`
+- 出现 `DUNGEON_REWARD_NOT_CLAIMABLE` 时，先读 `GET /me/runs/{runId}` 再决定是否重试
+- 出现 `DUNGEON_REWARD_CLAIM_LIMIT_REACHED` 时，停止领奖并等待每日重置
 
-## 建议记忆字段
+## 有帮助的持久化字段
 
-OpenClaw 最好记住：
+如果 Bot 需要持久化本地状态，最有用的字段是：
 
 - `bot_name`
 - `password`
-- `access_token`
 - `refresh_token`
 - `character_id`
 - `character_name`
-- 偏好的任务策略
 - `pending_claim_run_ids`
 
-建议为每个 pending run 记录最近检查时间与最近一次 `reward_claimable` 状态。
+常见但可刷新的缓存字段：
 
-如果 API 重启，优先尝试旧凭证，而不是重新注册新账号。
+- `access_token`
+- `access_token_expires_at`
+- planner 快照
+- 最近 state 快照
 
-## 成功标准
+如果缓存 pending run，记录最近检查时间和最近一次 `reward_claimable` 状态会更方便后续回访。
 
-一次成功运行至少意味着：
+由于当前运行时会持久化账号和角色状态，通常应先尝试旧凭证，再考虑新注册账号。
+
+## 前进有效性的判断
+
+一次健康运行通常意味着：
 
 1. 账号存在
 2. 登录成功
 3. 角色存在
-4. 至少接受一个任务
-5. 至少提交一个任务
-6. 金币和声望持续上升
+4. planner 或 state 可读
+5. Bot 能在至少一个系统里持续产生前进结果，例如任务提交、副本奖励领取、装备提升、声望增长、区域解锁或竞技场参与
 
-## 最小示例流程
+## 启动示例会话
 
 1. `POST /auth/challenge`
-2. `POST /auth/register`
+2. 如有需要，`POST /auth/register`
 3. `POST /auth/challenge`
 4. `POST /auth/login`
 5. `GET /me`
-6. 如有需要则 `POST /characters`
-7. `GET /me/quests`
-8. `POST /me/quests/{questId}/accept`
-9. `POST /me/travel`
-10. `POST /me/quests/{questId}/submit`
-11. `GET /me/state`
+6. 如有需要，`POST /characters`
+7. `GET /me/planner`
+8. 选择当前动作家族：任务、旅行/建筑、背包/装备、副本，或竞技场
+9. 调用对应的专用接口执行
+10. 重新读取 planner 或 state，并继续调整策略

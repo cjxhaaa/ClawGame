@@ -11,10 +11,8 @@ import {
   formatRelativeTime,
   getRegionAtlasDossier,
   localizeActionName,
-  localizeEncounterHighlight,
-  localizeEncounterSummary,
   localizeEventSummary,
-  localizeRegionHighlight,
+  localizeRegionDescription,
   localizeRegionName,
   localizeRegionType,
   localizeBuildingName,
@@ -43,14 +41,22 @@ export default function RegionDetailConsole({
   const copy = uiText[language].regions;
   const homeCopy = uiText[language].home;
   const pulse = worldState.regions.find((region) => region.region_id === regionDetail.region.region_id);
-  const localEvents = events.filter((event) => event.region_id === regionDetail.region.region_id);
+  const localEvents = events
+    .filter((event) => event.region_id === regionDetail.region.region_id)
+    .sort((left, right) => new Date(right.occurred_at).getTime() - new Date(left.occurred_at).getTime());
   const atlas = getRegionAtlasDossier(regionDetail.region.region_id, language);
+  const localizedRegionDescription = localizeRegionDescription(regionDetail.description, language);
+  const atlasFallbackLead =
+    language === "zh-CN" ? "该地点暂时没有公开档案。" : "No public dossier is available for this place yet.";
+  const storyLeadCopy =
+    atlas.shortIntro === atlasFallbackLead && localizedRegionDescription
+      ? localizedRegionDescription
+      : atlas.shortIntro;
   const layoutCopy =
     language === "zh-CN"
       ? {
           storyLead: "区域叙述与当前动态",
           storySummary: "先理解这个地点在世界中的职责，再看当前 Bot 正在这里推进什么。",
-          statusTitle: "即时观测",
           systemsTitle: "世界中的功能",
           systemsNote: "把这个区域的 NPC、设施、材料与成长用途放在同一张观察面板里。",
           npcTitle: "关键 NPC",
@@ -67,11 +73,12 @@ export default function RegionDetailConsole({
           dossierLabel: "地点档案",
           signatureMaterial: "代表材料",
           signalStreamTitle: "动态情报流",
-          signalStreamNote: "这里把局部动态和最近公开事件合并成一条可持续下拉阅读的观测流。",
+          signalStreamNote: "这里只保留真实事件，并让它持续滚动，像一条正在刷新的区域情报带。",
           openDossier: "打开完整地点档案",
           openOperations: "打开建筑与动作",
           closePanel: "关闭面板",
-          latestSignal: "最近公开信号",
+          recentEventsTitle: "滚动情报流",
+          recentEventsNote: "按时间顺序持续滚动最近发生的公开动作；当区域数据较少时自动循环补齐，悬浮时暂停。",
           openRoutes: "旅行网络",
           feedLane: "动态情报流",
           routeSidebarTitle: "旅行网络",
@@ -85,7 +92,6 @@ export default function RegionDetailConsole({
       : {
           storyLead: "Region story and current pressure",
           storySummary: "Understand what this place does in the world first, then read what bots are actively pushing here.",
-          statusTitle: "Live observation",
           systemsTitle: "What this region provides",
           systemsNote: "NPCs, facilities, materials, and growth value are grouped into one readable observer panel.",
           npcTitle: "Key NPCs",
@@ -102,11 +108,12 @@ export default function RegionDetailConsole({
           dossierLabel: "Place dossier",
           signatureMaterial: "Signature material",
           signalStreamTitle: "Signal stream",
-          signalStreamNote: "Local state and recent public events are merged into one observer feed that can be read all the way down.",
+          signalStreamNote: "This lane is reserved for real event rows only, and keeps moving like a live regional intel tape.",
           openDossier: "Open full dossier",
           openOperations: "Open buildings and actions",
           closePanel: "Close panel",
-          latestSignal: "Latest public signal",
+          recentEventsTitle: "Rolling intel feed",
+          recentEventsNote: "Recent public actions scroll in time order; when local data is short, the feed loops to stay alive and pauses on hover.",
           openRoutes: "Travel network",
           feedLane: "Signal stream",
           routeSidebarTitle: "Travel network",
@@ -117,67 +124,29 @@ export default function RegionDetailConsole({
           routeDeckNote: "Each card represents a destination hop with risk, purpose, and travel cost.",
           routeTraffic: "Local activity",
         };
-  const encounterHighlights = regionDetail.encounter_summary?.highlights ?? [];
-  const eventFilter = localEvents[0] ? eventTypeToFilter(localEvents[0].event_type) : "all";
-  const signalCards = [
-    {
-      key: "activity",
-      label: common.localActivity,
-      title: atlas.primaryActivity,
-      body: localizeRegionHighlight(
-        pulse?.highlight ?? "High-rank clears remain limited but lucrative.",
-        language,
-      ),
-    },
-    {
-      key: "focus",
-      label: layoutCopy.statusTitle,
-      title: homeCopy.observationFocus,
-      body: atlas.observationFocus,
-    },
-    ...(regionDetail.encounter_summary
-      ? [
-          {
-            key: "encounter",
-            label: common.encounterFocus,
-            title: localizeEncounterSummary(regionDetail.encounter_summary.summary, language),
-            body:
-              encounterHighlights.length > 0
-                ? encounterHighlights.map((highlight) => localizeEncounterHighlight(highlight, language)).join(" / ")
-                : common.noHighlights,
-          },
-        ]
-      : []),
-    ...(localEvents[0]
-      ? [
-          {
-            key: "event",
-            label: layoutCopy.latestSignal,
-            title: localizeEventSummary(localEvents[0].summary, language),
-            body: `${localEvents[0].actor_name ?? common.unknownActor} · ${formatRelativeTime(localEvents[0].occurred_at, language)}`,
-          },
-        ]
-      : []),
-  ];
-  const liveEntries = [
-    ...signalCards.map((card) => ({
-      key: `signal-${card.key}`,
-      type: "signal" as const,
-      label: card.label,
-      title: card.title,
-      body: card.body,
-    })),
-    ...localEvents.map((event) => ({
-      key: `event-${event.event_id}`,
-      type: "event" as const,
-      href: `/events?filter=${eventTypeToFilter(event.event_type)}#${event.event_id}`,
-      summary: localizeEventSummary(event.summary, language),
-      actor: event.actor_name ?? common.unknownActor,
-      time: formatRelativeTime(event.occurred_at, language),
-      marker: eventTypeToFilter(event.event_type),
-    })),
-  ];
-  const marqueeEntries = liveEntries.length > 1 ? [...liveEntries, ...liveEntries] : liveEntries;
+  const latestEvent = localEvents[0];
+  const eventFilter = latestEvent ? eventTypeToFilter(latestEvent.event_type) : "all";
+  const eventEntries = localEvents.map((event) => ({
+    key: `event-${event.event_id}`,
+    href: `/events/${event.event_id}?filter=${eventTypeToFilter(event.event_type)}&region=${regionDetail.region.region_id}&focus=${event.event_id}`,
+    summary: localizeEventSummary(event.summary, language),
+    actorCharacterID: event.actor_character_id,
+    actor: event.actor_name ?? common.unknownActor,
+    time: formatRelativeTime(event.occurred_at, language),
+    marker: eventTypeToFilter(event.event_type),
+  }));
+  const loopSeed =
+    eventEntries.length > 0
+      ? Array.from({ length: Math.max(4, eventEntries.length) }, (_, index) => {
+          const event = eventEntries[index % eventEntries.length];
+
+          return {
+            ...event,
+            loopKey: `${event.key}-seed-${index}`,
+          };
+        })
+      : [];
+  const marqueeEvents = loopSeed.length > 0 ? [...loopSeed, ...loopSeed] : [];
   const travelDestinations = regionDetail.travel_options.map((route) => {
     const destinationAtlas = getRegionAtlasDossier(route.region_id, language);
     const destinationPulse = worldState.regions.find((item) => item.region_id === route.region_id);
@@ -209,7 +178,7 @@ export default function RegionDetailConsole({
                 <h2 className="region-story-title">
                   {localizeRegionName(regionDetail.region.region_id, regionDetail.region.name, language)}
                 </h2>
-                <p className="region-story-lead">{atlas.shortIntro}</p>
+                <p className="region-story-lead">{storyLeadCopy}</p>
 
                 <div className="region-badges">
                   <span>{localizeRegionType(regionDetail.region.type, language)}</span>
@@ -243,49 +212,57 @@ export default function RegionDetailConsole({
               </div>
             </div>
 
-            <aside className="region-live-panel">
-              <div className="section-header">
-                <div>
-                  <p className="eyebrow">{layoutCopy.feedLane}</p>
-                  <h2>{layoutCopy.signalStreamTitle}</h2>
-                </div>
-                <Link className="section-link" href={`/events?filter=${eventFilter}`}>
+            <aside className="pixel-panel region-live-panel">
+                <div className="section-header">
+                  <div>
+                    <p className="eyebrow">{layoutCopy.feedLane}</p>
+                    <h2>{layoutCopy.recentEventsTitle}</h2>
+                  </div>
+                <Link
+                  className="section-link"
+                  href={
+                    regionDetail.region.region_id
+                      ? `/events${eventFilter === "all" ? "" : `?filter=${eventFilter}`}${
+                          eventFilter === "all" ? "?" : "&"
+                        }region=${regionDetail.region.region_id}`
+                      : `/events${eventFilter === "all" ? "" : `?filter=${eventFilter}`}`
+                  }
+                >
                   {uiText[language].common.openEvents}
                 </Link>
               </div>
 
               <p className="section-note">{layoutCopy.signalStreamNote}</p>
+              <p className="region-subnote">{layoutCopy.recentEventsNote}</p>
 
-              <div className="region-live-scroll">
-                {liveEntries.length > 0 ? (
-                  <div className={`region-feed-track ${liveEntries.length > 1 ? "animated" : ""}`}>
-                    {marqueeEntries.map((entry, index) =>
-                      entry.type === "signal" ? (
-                        <article key={`${entry.key}-${index}`} className="region-signal-card">
-                          <span className="region-story-label">{entry.label}</span>
-                          <h4>{entry.title}</h4>
-                          <p>{entry.body}</p>
-                        </article>
-                      ) : (
-                        <Link key={`${entry.key}-${index}`} className="timeline-link" href={entry.href}>
-                          <article className="log-entry region-feed-entry">
-                            <div className={`log-marker ${entry.marker}`} />
-                            <div>
-                              <p className="log-summary">{entry.summary}</p>
-                              <p className="log-meta">
+              {eventEntries.length > 0 ? (
+                  <div className="region-event-scroll">
+                    <div className="region-event-track animated">
+                      {marqueeEvents.map((entry, index) => (
+                        <article key={`${entry.loopKey}-${index}`} className="log-entry region-feed-entry">
+                          <div className={`log-marker ${entry.marker}`} />
+                          <div>
+                            <Link className="feed-summary-link" href={entry.href}>
+                              {entry.summary}
+                            </Link>
+                            <p className="log-meta">
+                              {entry.actorCharacterID ? (
+                                <Link className="inline-link" href={`/bots/${entry.actorCharacterID}`}>
+                                  {entry.actor}
+                                </Link>
+                              ) : (
                                 <span>{entry.actor}</span>
-                                <span>{entry.time}</span>
-                              </p>
-                            </div>
-                          </article>
-                        </Link>
-                      ),
-                    )}
+                              )}
+                              <span>{entry.time}</span>
+                            </p>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
                   </div>
-                ) : (
-                  <p className="empty-state">{copy.noRegionEvents}</p>
-                )}
-              </div>
+              ) : (
+                <p className="empty-state">{copy.noRegionEvents}</p>
+              )}
             </aside>
           </div>
 

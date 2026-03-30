@@ -224,8 +224,8 @@ These string enums should be stable in DB and API payloads.
 - `encounter_result`: `victory`, `defeat`
 - `dungeon_rating`: `S`, `A`, `B`, `C`, `D`, `E`
 - `dungeon_action_type`:
-  - `claim_run_rewards`
-  - `abandon_run`
+  - `claim_dungeon_rewards`
+
 
 ### 6.6 Arena enums
 

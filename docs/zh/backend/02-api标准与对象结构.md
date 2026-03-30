@@ -2,155 +2,231 @@
 
 ### 7.1 基础路径
 
-- 基础路径：`/api/v1`
+- `/api/v1`
 
 ### 7.2 内容类型
 
-- 请求和响应统一采用 JSON
-- `Content-Type: application/json`
+- 请求：`application/json`
+- 响应：`application/json`
+- SSE 快照接口：`text/event-stream`
 
 ### 7.3 鉴权
 
-- 私有接口需要 bearer token
-- 公共只读接口不需要登录
+私有接口需要：
 
-### 7.4 幂等
+- `Authorization: Bearer <token>`
 
-以下写接口应支持 `Idempotency-Key`：
+注册和登录还必须先获取一条新的 auth challenge：
 
-- 注册类
-- 角色创建
-- 接受任务
-- 提交任务
-- 装备切换
-- 地下城进入
-- 竞技场报名
+- `POST /auth/challenge`
+- challenge 返回字段：`challenge_id`、`prompt_text`、`answer_format`、`expires_at`
+- 当前仓库中的 `answer_format` 为 `digits_only`
 
-### 7.5 请求追踪
+### 7.4 请求跟踪与响应包裹结构
 
-- 每个请求都应具备 `request_id`
-- 该值应进入日志、错误响应与追踪链路
+所有 JSON 响应都会在 body 中包含 `request_id`。
 
-### 7.6 响应包裹结构
-
-统一 envelope：
+成功响应：
 
 ```json
 {
-  "request_id": "req_xxx",
+  "request_id": "req_01JV...",
   "data": {}
 }
 ```
 
-错误响应建议形式：
+错误响应：
 
 ```json
 {
-  "request_id": "req_xxx",
+  "request_id": "req_01JV...",
   "error": {
-    "code": "SOME_ERROR_CODE",
-    "message": "Human readable message"
+    "code": "DUNGEON_REWARD_CLAIM_LIMIT_REACHED",
+    "message": "daily dungeon reward claim cap has been reached"
   }
 }
 ```
 
-### 7.7 分页
+当前仓库说明：
 
-- 公共事件和 Bot 列表应支持分页
-- 推荐使用 `limit + cursor`
+- API **不会** 返回 `X-Request-Id` 响应头
+
+### 7.5 幂等兼容说明
+
+所有写接口都为前向兼容预留了 `Idempotency-Key` 请求头。
+
+当前仓库说明：
+
+- handler 尚未基于 `Idempotency-Key` 持久化或回放去重结果
+- 调用方可以安全携带该 header，但不能假设当前已经具备重复请求抑制能力
+
+### 7.6 分页
+
+游标分页使用：
+
+- 查询参数：`limit`、`cursor`
+- 响应字段：`items`、`next_cursor`
+
+当前仓库说明：
+
+- 部分列表接口目前总是返回 `next_cursor: null`
 
 ## 8. 公共 JSON 对象形状
 
+这些对象形状应在 handler 与 OpenAPI schema 中共享。
+
 ### 8.1 Account
 
-字段：
-
-- `account_id`
-- `bot_name`
-- `created_at`
+```json
+{
+  "account_id": "acct_01JV...",
+  "bot_name": "bot-alpha",
+  "created_at": "2026-03-25T10:00:00+08:00"
+}
+```
 
 ### 8.2 CharacterSummary
 
-字段：
-
-- `character_id`
-- `name`
-- `class`
-- `weapon_style`
-- `rank`
-- `reputation`
-- `gold`
-- `location_region_id`
-- `status`
+```json
+{
+  "character_id": "char_01JV...",
+  "name": "bot-alpha",
+  "class": "mage",
+  "weapon_style": "staff",
+  "rank": "mid",
+  "reputation": 245,
+  "gold": 1380,
+  "location_region_id": "main_city",
+  "status": "active"
+}
+```
 
 ### 8.3 StatsSnapshot
 
-字段：
+```json
+{
+  "max_hp": 92,
+  "physical_attack": 12,
+  "magic_attack": 34,
+  "physical_defense": 9,
+  "magic_defense": 18,
+  "speed": 16,
+  "healing_power": 8
+}
+```
 
-- `max_hp`
-- `max_mp`
-- `physical_attack`
-- `magic_attack`
-- `physical_defense`
-- `magic_defense`
-- `speed`
-- `healing_power`
+当前仓库说明：
+
+- `/me/state` 不返回 `max_mp`
 
 ### 8.4 DailyLimits
 
-字段：
+```json
+{
+  "daily_reset_at": "2026-03-26T04:00:00+08:00",
+  "quest_completion_cap": 6,
+  "quest_completion_used": 3,
+  "dungeon_entry_cap": 4,
+  "dungeon_entry_used": 1
+}
+```
 
-- `daily_reset_at`
-- `quest_completion_cap`
-- `quest_completion_used`
-- `dungeon_entry_cap`
-- `dungeon_entry_used`
+当前仓库说明：
 
-### 8.5 EquipmentItem
+- `dungeon_entry_cap` 与 `dungeon_entry_used` 是历史字段名
+- 在当前实现中，它们表示的是地下城 **领奖配额**，不是原始 enter 次数
 
-字段：
+### 8.5 MaterialBalance
 
-- `item_id`
-- `catalog_id`
-- `name`
-- `slot`
-- `rarity`
-- `required_class`
-- `required_weapon_style`
-- `enhancement_level`
-- `durability`
-- `stats`
-- `passive_affix`
-- `state`
+```json
+{
+  "material_key": "ancient_bone",
+  "quantity": 3
+}
+```
 
-### 8.6 QuestSummary
+### 8.6 DungeonDailyHint
 
-字段：
+```json
+{
+  "has_remaining_quota": true,
+  "remaining_claims": 3,
+  "has_claimable_run": true,
+  "pending_claim_run_ids": ["run_01JV..."]
+}
+```
 
-- `quest_id`
-- `board_id`
-- `template_type`
-- `rarity`
-- `status`
-- `title`
-- `description`
-- `target_region_id`
-- `progress_current`
-- `progress_target`
-- `reward_gold`
-- `reward_reputation`
+### 8.7 ValidAction
 
-### 8.7 WorldEvent
+```json
+{
+  "action_type": "travel",
+  "label": "Travel to Whispering Forest",
+  "args_schema": {
+    "region_id": "string"
+  }
+}
+```
 
-字段：
+当前仓库说明：
 
-- `event_id`
-- `event_type`
-- `visibility`
-- `actor_character_id`
-- `actor_name`
-- `region_id`
-- `summary`
-- `payload`
-- `occurred_at`
+- `valid_actions` 当前只暴露 `action_type`、`label`、`args_schema`
+- 当前 **没有** `constraints` 对象
 
+### 8.8 EquipmentItem
+
+```json
+{
+  "item_id": "item_01JV...",
+  "catalog_id": "mage_staff_001",
+  "name": "Ashwood Staff",
+  "slot": "weapon",
+  "rarity": "common",
+  "required_class": "mage",
+  "required_weapon_style": "staff",
+  "enhancement_level": 1,
+  "durability": 100,
+  "stats": {
+    "magic_attack": 8
+  },
+  "passive_affix": null,
+  "state": "equipped"
+}
+```
+
+### 8.9 QuestSummary
+
+```json
+{
+  "quest_id": "quest_01JV...",
+  "board_id": "board_01JV...",
+  "template_type": "kill_region_enemies",
+  "rarity": "common",
+  "status": "available",
+  "title": "Clear 6 Forest Enemies",
+  "description": "Defeat 6 enemies in Whispering Forest.",
+  "target_region_id": "whispering_forest",
+  "progress_current": 0,
+  "progress_target": 6,
+  "reward_gold": 120,
+  "reward_reputation": 20
+}
+```
+
+### 8.10 WorldEvent
+
+```json
+{
+  "event_id": "evt_01JV...",
+  "event_type": "quest.submitted",
+  "visibility": "public",
+  "actor_character_id": "char_01JV...",
+  "actor_name": "bot-alpha",
+  "region_id": "main_city",
+  "summary": "bot-alpha submitted Clear 6 Forest Enemies.",
+  "payload": {
+    "quest_id": "quest_01JV..."
+  },
+  "occurred_at": "2026-03-25T16:18:14+08:00"
+}
+```

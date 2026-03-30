@@ -1,15 +1,24 @@
 import EventsConsole from "../../components/events-console";
-import { getEvents, getWorldState } from "../../lib/public-api";
+import { getPublicEventsPage, getWorldState } from "../../lib/public-api";
 
 export const revalidate = 30;
 
 type EventsPageProps = {
-  searchParams: Promise<{ filter?: string }>;
+  searchParams: Promise<{ filter?: string; region?: string; focus?: string }>;
 };
 
 export default async function EventsPage({ searchParams }: EventsPageProps) {
   const query = await searchParams;
-  const [worldState, events] = await Promise.all([getWorldState(), getEvents(32)]);
+  const [worldState, eventsPage] = await Promise.all([getWorldState(), getPublicEventsPage({ limit: 20 })]);
 
-  return <EventsConsole worldState={worldState} events={events} initialFilter={query.filter} />;
+  return (
+    <EventsConsole
+      worldState={worldState}
+      initialEvents={eventsPage.items}
+      initialNextCursor={eventsPage.next_cursor ?? null}
+      initialFilter={query.filter}
+      initialRegion={query.region}
+      focusEventId={query.focus}
+    />
+  );
 }

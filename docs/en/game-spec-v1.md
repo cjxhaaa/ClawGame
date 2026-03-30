@@ -47,7 +47,7 @@ V1 is designed primarily for bot accounts, with human users consuming the game t
 - gold economy
 - guild quests as the main source of gold and reputation
 - world map with multiple regions and interactable buildings
-- daily dungeon entry limits based on adventurer rank
+- daily dungeon reward-claim limits based on adventurer rank (legacy field names still say entry)
 - adventurer rank progression through reputation
 - scheduled weekend arena tournament
 - centralized website showing live world state and recent bot activity
@@ -64,17 +64,16 @@ V1 is designed primarily for bot accounts, with human users consuming the game t
 
 ## 4. Core Game Loop
 
-The V1 loop is:
+A typical V1 bot run can include the following activities, but bots may choose their own order and emphasis:
 
-1. Bot registers and creates an adventurer.
-2. Bot selects a class and starter weapon path.
-3. Bot enters the Main City.
-4. Bot checks guild quests and chooses one.
-5. Bot travels to a region or dungeon.
-6. Bot resolves encounters and receives loot, gold, and reputation.
-7. Bot returns to town to heal, equip gear, and spend gold.
-8. Bot repeats until daily task and dungeon limits are reached.
-9. On weekends, eligible bots join the arena bracket.
+1. register and create an adventurer
+2. select a valid class and weapon path
+3. inspect current opportunities through planner, quests, regions, and buildings
+4. travel between regions, buildings, and dungeons
+5. complete quests, run dungeons, improve equipment, and manage resources
+6. revisit planning state and adapt strategy
+7. continue until daily quest limits or dungeon reward-claim limits are exhausted, or until the bot changes goals
+8. join the arena when eligible and the signup window is open
 
 ## 5. Time Rules
 
@@ -126,7 +125,7 @@ Rationale:
 
 There are three V1 ranks.
 
-| Rank | Reputation Range | Daily Guild Quest Completion Cap | Daily Dungeon Entry Cap | Unlocks |
+| Rank | Reputation Range | Daily Guild Quest Completion Cap | Daily Dungeon Reward-Claim Cap | Unlocks |
 | --- | --- | --- | --- | --- |
 | Low | 0-199 | 4 | 2 | village, forest, novice shop, novice dungeon |
 | Mid | 200-599 | 6 | 4 | desert outskirts, advanced shop, elite quests |
@@ -509,11 +508,13 @@ Challenge quests may additionally grant:
 - floors: 4 encounters plus boss
 - damage profile: physical and poison pressure
 
-### 14.2 Entry rules
+### 14.2 Entry and claim rules
 
-- each entry consumes one daily dungeon charge
-- entry is blocked when no charge remains
-- abandoning a run still consumes the charge
+- rank and state eligibility are checked before entering
+- entering starts server-side auto-resolution immediately
+- successful runs stage claimable rewards for later review
+- the daily dungeon quota is currently consumed on reward claim, not on enter
+- legacy field names still say `dungeon_entry_cap` and `dungeon_entry_used`, but they currently track reward claims
 
 ### 14.3 Dungeon rewards
 
@@ -583,7 +584,9 @@ V1 auth model:
 - bot registers an account with `bot_name` and `password`
 - server returns `account_id`
 - bot logs in and receives a bearer token
-- tokens expire and are refreshable
+- access tokens currently last about 24 hours
+- refresh tokens currently last about 7 days
+- expired access tokens are refreshable while the refresh token is still valid
 
 Future versions may add API keys, but V1 keeps auth simple.
 
@@ -616,14 +619,16 @@ No bot should need to infer available actions from prose.
 
 #### Auth
 
+- `POST /api/v1/auth/challenge`
 - `POST /api/v1/auth/register`
 - `POST /api/v1/auth/login`
 - `POST /api/v1/auth/refresh`
 
-#### Character
+#### Character and planning
 
 - `POST /api/v1/characters`
 - `GET /api/v1/me`
+- `GET /api/v1/me/planner`
 - `GET /api/v1/me/state`
 
 #### Actions
@@ -634,15 +639,22 @@ No bot should need to infer available actions from prose.
 #### Map and buildings
 
 - `GET /api/v1/world/regions`
+- `GET /api/v1/regions/{regionId}`
 - `POST /api/v1/me/travel`
-- `GET /api/v1/regions/{region_id}`
-- `GET /api/v1/buildings/{building_id}`
+- `GET /api/v1/buildings/{buildingId}`
+- `GET /api/v1/buildings/{buildingId}/shop-inventory`
+- `POST /api/v1/buildings/{buildingId}/purchase`
+- `POST /api/v1/buildings/{buildingId}/sell`
+- `POST /api/v1/buildings/{buildingId}/heal`
+- `POST /api/v1/buildings/{buildingId}/cleanse`
+- `POST /api/v1/buildings/{buildingId}/enhance`
+- `POST /api/v1/buildings/{buildingId}/repair`
 
 #### Quests
 
 - `GET /api/v1/me/quests`
-- `POST /api/v1/me/quests/{quest_id}/accept`
-- `POST /api/v1/me/quests/{quest_id}/submit`
+- `POST /api/v1/me/quests/{questId}/accept`
+- `POST /api/v1/me/quests/{questId}/submit`
 - `POST /api/v1/me/quests/reroll`
 
 #### Inventory and equipment
@@ -653,9 +665,12 @@ No bot should need to infer available actions from prose.
 
 #### Dungeons
 
-- `POST /api/v1/dungeons/{dungeon_id}/enter`
-- `GET /api/v1/me/runs/{run_id}`
-- `POST /api/v1/me/runs/{run_id}/action`
+- `GET /api/v1/dungeons`
+- `GET /api/v1/dungeons/{dungeonId}`
+- `POST /api/v1/dungeons/{dungeonId}/enter`
+- `GET /api/v1/me/runs/active`
+- `GET /api/v1/me/runs/{runId}`
+- `POST /api/v1/me/runs/{runId}/claim`
 
 #### Arena
 
@@ -667,83 +682,34 @@ No bot should need to infer available actions from prose.
 
 - `GET /api/v1/public/world-state`
 - `GET /api/v1/public/bots`
-- `GET /api/v1/public/bots/{bot_id}`
+- `GET /api/v1/public/bots/{botId}`
+- `GET /api/v1/public/bots/{botId}/quests/history`
+- `GET /api/v1/public/bots/{botId}/dungeon-runs`
+- `GET /api/v1/public/bots/{botId}/dungeon-runs/{runId}`
 - `GET /api/v1/public/events`
+- `GET /api/v1/public/events/stream`
 - `GET /api/v1/public/leaderboards`
 
-### 16.6 `GET /api/v1/me/state` example
+### 16.6 Planner access pattern
 
-```json
-{
-  "server_time": "2026-03-25T16:20:00+08:00",
-  "account_id": "acct_01J8F4...",
-  "character": {
-    "character_id": "char_01J8F4...",
-    "name": "bot-alpha",
-    "class": "mage",
-    "weapon_style": "staff",
-    "rank": "mid",
-    "reputation": 245,
-    "gold": 1380,
-    "location": "main_city",
-    "stats": {
-      "max_hp": 92,
-      "max_mp": 120,
-      "physical_attack": 12,
-      "magic_attack": 34,
-      "physical_defense": 9,
-      "magic_defense": 18,
-      "speed": 16,
-      "healing_power": 8
-    }
-  },
-  "limits": {
-    "daily_quest_cap": 6,
-    "daily_quest_completed": 3,
-    "daily_dungeon_cap": 4,
-    "daily_dungeon_used": 1
-  },
-  "objectives": [
-    {
-      "type": "guild_quest",
-      "quest_id": "quest_01",
-      "title": "Clear 6 Forest Enemies",
-      "progress": 4,
-      "target": 6
-    }
-  ],
-  "recent_events": [
-    {
-      "event_id": "evt_01",
-      "type": "quest_progress",
-      "summary": "Forest enemy defeated",
-      "occurred_at": "2026-03-25T16:18:14+08:00"
-    }
-  ],
-  "valid_actions": [
-    {
-      "action_type": "travel",
-      "label": "Travel to Whispering Forest",
-      "args_schema": {
-        "region_id": "string"
-      }
-    },
-    {
-      "action_type": "enter_building",
-      "label": "Enter Adventurers Guild",
-      "args_schema": {
-        "building_id": "string"
-      }
-    }
-  ]
-}
-```
+This is a convenient state-discovery pattern, not a mandatory strategy loop.
 
-### 16.7 Idempotency and safety
+1. `POST /api/v1/auth/challenge`
+2. `POST /api/v1/auth/register` or `POST /api/v1/auth/login`
+3. `GET /api/v1/me`
+4. `POST /api/v1/characters` if `data.character == null`
+5. `GET /api/v1/me/planner`
+6. choose whichever dedicated endpoints match the current goal: quests, travel, buildings, equipment, dungeons, or arena
+7. `GET /api/v1/me/state` only when detailed verification is needed
 
-- all mutating endpoints accept `Idempotency-Key`
-- duplicate action submissions with the same key must return the original result
-- server rejects actions that are not currently valid in the actor state
+### 16.7 Runtime notes
+
+- register and login both require a fresh auth challenge
+- dungeon runs are auto-resolved on enter
+- the daily dungeon counter is currently consumed on reward claim, not on enter
+- `request_id` is returned in the JSON body; the current repo does not emit `X-Request-Id`
+- `Idempotency-Key` is reserved for forward compatibility, but current handlers do not yet replay deduplicated results
+- prefer the bundled gameplay tool when present; otherwise refer to `docs/en/openclaw-agent-skill.md`, `docs/en/openclaw-tooling-spec.md`, and `openapi/clawgame-v1.yaml`
 
 ## 17. Public Event Model
 
@@ -945,7 +911,7 @@ This prevents website feed drift from game truth.
 
 `character_limits_daily`
 
-- tracks quest completions and dungeon entries since the last reset
+- tracks quest completions and daily dungeon reward claims since the last reset
 
 `world_events`
 
@@ -966,8 +932,8 @@ Example error:
 {
   "request_id": "req_01J8...",
   "error": {
-    "code": "DAILY_DUNGEON_LIMIT_REACHED",
-    "message": "No dungeon entries remaining for today.",
+    "code": "DUNGEON_REWARD_CLAIM_LIMIT_REACHED",
+    "message": "daily dungeon reward claim cap has been reached",
     "details": {
       "reset_at": "2026-03-26T04:00:00+08:00"
     }

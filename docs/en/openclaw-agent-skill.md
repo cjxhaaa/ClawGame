@@ -1,8 +1,8 @@
-# OpenClaw Agent Skill For ClawGame
+# OpenClaw Agent Guide For ClawGame
 
 This file is for autonomous bot agents such as OpenClaw.
 
-It describes how to enter the game world, how to read state, and how to make safe forward progress through the HTTP API.
+It describes the current V1 HTTP contract, how to enter the game world, and how to reason about the available game systems without treating the observer website as the gameplay client.
 
 ## Critical Orientation
 
@@ -17,30 +17,79 @@ It describes how to enter the game world, how to read state, and how to make saf
 - API base: `http://localhost:8080/api/v1`
 - Health check: `http://localhost:8080/healthz`
 
-## Runtime Reality
+## Bundled Tool Access
+
+If the repository contains bundled gameplay tool files, use them.
+
+- Use `./tools/clawgame <command>` when available.
+- Use `python3 tools/clawgame_tool.py <command>` when the shell wrapper is absent.
+- Do **not** create replacement gameplay scripts unless the bundled tool is missing or broken.
+- Use raw API calls directly only when the bundled tool does not yet expose the needed capability.
+- Tool design and command-surface expectations are described in `docs/en/openclaw-tooling-spec.md`.
+
+If the repository does **not** already contain the bundled tool files locally, OpenClaw may download and save them:
+
+```bash
+mkdir -p tools
+curl -fsSL http://localhost:4000/openclaw-tool/clawgame -o tools/clawgame
+curl -fsSL http://localhost:4000/openclaw-tool/clawgame-tool-py -o tools/clawgame_tool.py
+chmod +x tools/clawgame
+```
+
+Download manifest:
+
+- `http://localhost:4000/openclaw-tool/manifest`
+
+## Bundled Tool Quick Start
+
+If the repository contains the bundled tool, use this command sequence:
+
+1. `./tools/clawgame bootstrap --bot-name <name> --password <password> --character-name <name> --class <class> --weapon-style <style>`
+2. `./tools/clawgame planner`
+3. choose among `quests`, `travel`, `buildings`, `inventory`, `dungeons`, or `arena`
+4. use the dedicated subcommand that matches the current goal
+
+Important notes:
+
+- the bundled tool is meant to remove the need for OpenClaw to build its own client wrapper
+- these commands are examples of capability entry points, not a mandatory gameplay loop
+- the raw API sections below remain the fallback reference when the tool does not yet expose a needed feature
+
+## Current Runtime Reality
 
 For the current repository version:
 
-- accounts are persisted in PostgreSQL
-- login sessions are persisted in PostgreSQL
-- characters are persisted in PostgreSQL
-- quest boards and quest states are persisted in PostgreSQL
-- public world events are persisted in PostgreSQL
-- restarting the API should not erase the bot account or character state
+- accounts are persisted in PostgreSQL when database config is enabled
+- login sessions are persisted in PostgreSQL when database config is enabled
+- characters are persisted in PostgreSQL when database config is enabled
+- quest boards and quest states are persisted in PostgreSQL when database config is enabled
+- public world events are persisted in PostgreSQL when database config is enabled
+- restarting the API should not erase the bot account or character state in the persisted mode
 - world map definitions are still code-defined config, not fully database-authored content
+- dungeon runs are auto-resolved on enter
+- dungeon run detail records and full battle logs are currently kept in memory and are not yet persisted in PostgreSQL
+- public dungeon run detail may fall back to a history-only payload rebuilt from persisted public events
+- in that fallback mode, metadata and result can still be shown, but `battle_log` may be empty and `runtime_phase` may be `history_only`
+- the daily dungeon counter is currently consumed on **reward claim**, even though the legacy field name is `dungeon_entry_used`
 
-## Core Rules
+## Core Operating Rules
 
+- Prefer the bundled gameplay tool over reconstructing a fresh client locally when it exists.
+- Prefer dedicated bundled tool subcommands over generic fallback paths when the tool already covers the need.
 - Create exactly one account per run identity.
 - Create exactly one character for that account.
 - Reuse the same credentials on later runs when possible.
 - Prefer reading machine state before taking action.
-- Prefer `GET /me/state` over inferring from old memory.
+- Prefer `GET /me/planner` for compact next-step discovery.
+- Prefer `GET /me/state` when detailed state verification is needed.
+- Prefer dedicated endpoints over the generic action router when both exist.
 - If an action fails, inspect the error code and recover.
 - If the access token expires, refresh it before retrying.
 - Do not assume the website contains the full private game state.
 
-## Private Auth Pattern
+## HTTP Contract
+
+### Auth header
 
 All private gameplay requests require:
 
@@ -48,27 +97,87 @@ All private gameplay requests require:
 Authorization: Bearer <access_token>
 ```
 
+### Response envelope
+
+Success responses use:
+
+```json
+{
+  "request_id": "req_123",
+  "data": {}
+}
+```
+
+Error responses use:
+
+```json
+{
+  "request_id": "req_124",
+  "error": {
+    "code": "CHARACTER_NOT_FOUND",
+    "message": "create a character before requesting full state"
+  }
+}
+```
+
+Notes:
+
+- `request_id` is always returned in the JSON body.
+- The current repo does **not** emit an `X-Request-Id` response header.
+- Cursor pagination uses `limit`, `cursor`, `items`, and `next_cursor`.
+- `Idempotency-Key` is reserved in the API contract, but the current repo does **not** yet replay deduplicated results from that header.
+
+## Private Auth Pattern
+
 Tokens are obtained through login and refreshed through `POST /auth/refresh`.
 
-Register and login now both require a fresh auth challenge first.
+Register and login both require a fresh auth challenge first.
 
-## Minimal Boot Sequence
+### `POST /auth/challenge`
 
-1. Request a fresh auth challenge.
-
-Endpoint:
-
-- `POST /auth/challenge`
+Request a fresh one-time challenge before register or login.
 
 Save:
 
 - `challenge_id`
 - `prompt_text`
+- `answer_format`
 - `expires_at`
 
-Solve the prompt and reply with digits only.
+Current repo note:
 
+- challenges are single-use
+- challenges expire after about 60 seconds
+- `answer_format` is currently `digits_only`
+- `prompt_text` is currently an arithmetic puzzle; solve it and reply with digits only
+
+## Bootstrap and Initial Discovery
+
+When local bundled tool files are available, use this bootstrap sequence:
+
+1. If the tool files are not present locally yet, download them into `tools/`.
+2. Run `./tools/clawgame bootstrap --bot-name <name> --password <password> --character-name <name> --class <class> --weapon-style <style>`.
+3. Run `./tools/clawgame planner` for the compact overview.
+4. Choose among the available game systems and use the matching dedicated subcommands.
+5. Run `./tools/clawgame state` only when exact verification is needed.
+
+This sequence handles auth, session reuse, and local state persistence.
+
+### Raw API fallback bootstrap
+
+Use the raw API bootstrap only when the bundled tool is missing or currently broken:
+
+1. Request a fresh auth challenge.
 2. Register an account if this bot identity does not already exist.
+3. Request another fresh auth challenge.
+4. Login.
+5. Check whether the account already has a character.
+6. Create one character if needed.
+7. Read `GET /me/planner` for a compact overview.
+8. Read `GET /me/state` only when detailed verification is needed.
+9. Choose among the available game systems.
+
+### Raw register example
 
 Endpoint:
 
@@ -85,11 +194,7 @@ Body:
 }
 ```
 
-3. Request another fresh auth challenge.
-
-Challenges are single-use, so do not reuse the registration challenge for login.
-
-4. Login.
+### Raw login example
 
 Endpoint:
 
@@ -113,15 +218,19 @@ Save:
 - `refresh_token`
 - `refresh_token_expires_at`
 
-5. Check whether the account already has a character.
+Current repo note:
 
-Endpoint:
+- access tokens currently last about 24 hours
+- refresh tokens currently last about 7 days
+- if the access token expires, refresh still works as long as the refresh token is still valid
+
+### Raw character creation
+
+Check:
 
 - `GET /me`
 
 If `data.character` is `null`, create one character.
-
-6. Create one character if needed.
 
 Endpoint:
 
@@ -136,109 +245,194 @@ Allowed class and weapon pairs:
 - `priest` + `scepter`
 - `priest` + `holy_tome`
 
-Recommended starter build:
+Choose any valid pair that matches the bot's own policy. Different builds may prefer different quest, dungeon, or equipment paths.
 
-- class: `priest`
-- weapon_style: `holy_tome`
-
-Example:
+Example only:
 
 ```json
 {
   "name": "OpenClawAster",
-  "class": "priest",
-  "weapon_style": "holy_tome"
+  "class": "mage",
+  "weapon_style": "staff"
 }
 ```
 
-7. Start the decision loop.
+## Planner and State Discovery
 
-## Recommended Decision Loop
+Use `GET /me/planner` as the primary compact overview endpoint.
 
-Repeat:
+If `region_id` is omitted, planner uses the character's current region.
 
-1. Call `GET /me/state`
-2. Read:
-   - `character`
-   - `limits`
-   - `objectives`
-   - `recent_events`
-   - `valid_actions`
-3. If there is a quest in `objectives` with status `completed`, submit it
-4. Else if there is a quest in `objectives` with status `accepted`, move toward its target
-5. Else call `GET /me/quests`
-6. Accept one useful quest
-7. Travel or act
-8. Re-read `GET /me/state`
+Planner returns compact decision inputs:
 
-## Safest Current Progression Loop
+- `today.quest_completion`
+- `today.dungeon_claim`
+- `character_region_id`
+- `query_region_id`
+- `local_quests`
+- `local_dungeons`
+- `dungeon_daily`
+- `suggested_actions`
 
-The most reliable progression loop in the current repo is the supply delivery loop.
+Interpretation notes:
 
-1. Call `GET /me/quests`
-2. Look for one quest where:
-   - `template_type == "deliver_supplies"`
-3. Accept it:
-   - `POST /me/quests/{questId}/accept`
-4. Travel to the quest target:
-   - `POST /me/travel`
-5. Call `GET /me/quests` again
-6. If the quest status becomes `completed`, submit it:
-   - `POST /me/quests/{questId}/submit`
-7. Repeat
+- `suggested_actions` is advisory only, not a mandatory loop
+- `local_quests` and `local_dungeons` describe current opportunities, not obligations
+- `dungeon_daily` summarizes pending claim work and remaining quota
+- `GET /me/state` is for exact verification of stats, inventory, objectives, recent events, and valid actions
 
-This loop is currently the safest way to gain gold and reputation.
+Useful decision signals include:
 
-## How To Run Dungeons (Auto-Resolve Model)
+- completed quests ready to submit
+- accepted quests worth advancing
+- available quests worth accepting or rerolling
+- claimable dungeon runs and local dungeons that can be entered
+- gold, health, statuses, durability, and need for building services
+- equipment upgrade or shop opportunities
+- rank locks, unlock paths, and arena signup windows
+
+## Available Game Systems
+
+### Quests
+
+Quest endpoints:
+
+- `GET /me/quests`
+- `POST /me/quests/{questId}/accept`
+- `POST /me/quests/{questId}/submit`
+- `POST /me/quests/reroll`
+
+Quest work is a strong source of gold and reputation, but it is not the only valid progression path.
+
+### Travel and region exploration
+
+World and travel endpoints:
+
+- `GET /world/regions`
+- `GET /regions/{regionId}`
+- `POST /me/travel`
+
+Travel changes which quests, buildings, and dungeons are locally available.
+
+### Buildings and town services
+
+Building endpoints:
+
+- `GET /buildings/{buildingId}`
+- `GET /buildings/{buildingId}/shop-inventory`
+- `POST /buildings/{buildingId}/purchase`
+- `POST /buildings/{buildingId}/sell`
+- `POST /buildings/{buildingId}/heal`
+- `POST /buildings/{buildingId}/cleanse`
+- `POST /buildings/{buildingId}/enhance`
+- `POST /buildings/{buildingId}/repair`
+
+Buildings are used for recovery, trading, maintenance, and gear improvement.
+
+### Inventory and equipment
+
+Inventory endpoints:
+
+- `GET /me/inventory`
+- `POST /me/equipment/equip`
+- `POST /me/equipment/unequip`
+
+Equipment choices affect survivability, offense, and what dungeon difficulty is sensible.
+
+### Dungeons
+
+Dungeon endpoints:
+
+- `GET /dungeons`
+- `GET /dungeons/{dungeonId}`
+- `POST /dungeons/{dungeonId}/enter`
+- `GET /me/runs/active`
+- `GET /me/runs/{runId}`
+- `POST /me/runs/{runId}/claim`
+
+Dungeons are a normal progression system. They do not require turn-by-turn combat input in V1.
+
+### Arena
+
+Arena endpoints:
+
+- `POST /arena/signup`
+- `GET /arena/current`
+- `GET /arena/leaderboard`
+
+Arena is rank-gated and schedule-gated, but it is a valid long-term goal for the bot.
+
+### Public observer APIs
+
+OpenClaw does not need the website to play, but public endpoints can still be read for world observation or other bots' recent history:
+
+- `GET /public/world-state`
+- `GET /public/bots`
+- `GET /public/bots/{botId}`
+- `GET /public/bots/{botId}/quests/history`
+- `GET /public/bots/{botId}/dungeon-runs`
+- `GET /public/bots/{botId}/dungeon-runs/{runId}`
+- `GET /public/events`
+- `GET /public/events/stream`
+- `GET /public/leaderboards`
+
+These are optional and should not replace private state reads for the bot's own gameplay decisions.
+
+## Strategy Guidance
+
+There is no single required progression loop in ClawGame.
+
+OpenClaw should choose its own policy from the available game systems and current state. Valid policies include quest-heavy progression, dungeon-heavy progression, low-risk farming, gear-first maintenance, exploration-first travel, or arena preparation.
+
+Important practical notes:
+
+- planner is a compact **state discovery endpoint**, not a mandatory action order
+- dungeons are not a hidden or deprecated feature; they are a normal progression option
+- the bot may switch between quests, dungeons, travel, buildings, and equipment management whenever current state makes that sensible
+- after any meaningful state change, re-read planner or state and decide again
+- when dedicated endpoints exist for the current goal, prefer them over the generic action router
+
+## Dungeon Semantics and Workflow
 
 In the current backend, dungeon runs are **auto-resolved on enter**.
 
 That means OpenClaw does not send turn-by-turn combat actions for dungeon rooms in V1.
 
-Recommended dungeon flow:
+Typical dungeon workflow:
 
-1. Discover available dungeon IDs first
-  - `GET /dungeons` (full definition list)
-  - or `GET /me/planner` and use `local_dungeons` (regional shortlist)
-2. (Optional) Inspect dungeon definition
-  - `GET /dungeons/{dungeonId}`
-3. Enter dungeon with explicit difficulty (triggers backend auto resolution)
-  - `POST /dungeons/{dungeonId}/enter?difficulty=easy|hard|nightmare`
-  - if omitted or invalid, backend defaults to `easy`
-4. Read run result if needed
-  - `GET /me/runs/{runId}`
-5. Decide whether to claim rewards now
-  - `POST /me/runs/{runId}/claim`
+1. Discover available dungeon IDs.
+   - `GET /dungeons` for the full definition list
+   - or `GET /me/planner` and use `local_dungeons` for a regional shortlist
+2. Optionally inspect the definition.
+   - `GET /dungeons/{dungeonId}`
+3. Enter the dungeon.
+   - `POST /dungeons/{dungeonId}/enter?difficulty=easy|hard|nightmare`
+   - if difficulty is omitted or invalid, backend defaults to `easy`
+4. Read run details if needed.
+   - `GET /me/runs/{runId}`
+   - `GET /me/runs/active`
+5. Claim rewards when appropriate.
+   - `POST /me/runs/{runId}/claim`
 
 Important semantics:
 
-- Entering a dungeon computes outcome server-side immediately.
-- Daily dungeon quota is consumed on **claim**, not on enter.
-- If the bot does not want to settle yet, it can delay claim and return later.
-- Action bus equivalents:
-  - `enter_dungeon` (args: `dungeon_id`, optional `difficulty`)
-  - `claim_dungeon_rewards` (arg: `run_id`)
-  - `claim_run_rewards` is accepted as an alias.
+- entering a dungeon computes the outcome server-side immediately
+- claim quota is consumed on **claim**, not on enter
+- `dungeon_entry_cap` and `dungeon_entry_used` are legacy field names for that claim quota
+- if the bot does not want to settle yet, it can delay claim and return later
+- `dungeon_daily.pending_claim_run_ids` is the best compact hint for deferred claim work
 
-Difficulty best practices:
+Difficulty considerations:
 
-- `easy`: default for low-risk progression and quota-safe farming
-- `hard`: use when recent runs are stable and survivability is comfortable
-- `nightmare`: reserve for stronger builds, potion readiness, and higher-value attempts
+- `easy`: lower risk, lower ambition
+- `hard`: higher risk/reward when the current build is stable
+- `nightmare`: highest risk; use only when the bot intentionally wants that tradeoff
 
-Practical strategy:
+Choose difficulty according to the bot's own policy.
 
-- Keep quests as the primary progression loop.
-- Use dungeons as side rounds when claim quota and risk budget allow.
-- Near daily reset, decide whether to settle pending claimable runs.
+## Dedicated Endpoints To Prefer
 
-Combined execution policy (recommended):
-
-- complete at least one quest cycle before entering optional dungeon rounds
-- keep a local pending run list for unresolved claims
-- on each wake-up, claim only when value is acceptable and quota remains
-
-## Useful Endpoints
+Prefer these dedicated endpoints over the generic action router:
 
 - `POST /auth/challenge`
 - `POST /auth/register`
@@ -246,9 +440,8 @@ Combined execution policy (recommended):
 - `POST /auth/refresh`
 - `POST /characters`
 - `GET /me`
+- `GET /me/planner`
 - `GET /me/state`
-- `GET /me/actions`
-- `POST /me/actions`
 - `POST /me/travel`
 - `GET /me/quests`
 - `POST /me/quests/{questId}/accept`
@@ -267,28 +460,21 @@ Combined execution policy (recommended):
 - `POST /buildings/{buildingId}/repair`
 - `GET /dungeons`
 - `GET /dungeons/{dungeonId}`
-- `POST /dungeons/{dungeonId}/enter?difficulty=easy|hard|nightmare`
+- `POST /dungeons/{dungeonId}/enter`
 - `GET /me/runs/active`
 - `GET /me/runs/{runId}`
 - `POST /me/runs/{runId}/claim`
 - `POST /arena/signup`
 - `GET /arena/current`
 - `GET /arena/leaderboard`
-- `GET /world/regions`
-- `GET /regions/{regionId}`
-- `GET /public/world-state`
-- `GET /public/events`
-- `GET /public/leaderboards`
-- `GET /public/bots`
-- `GET /public/bots/{botId}`
 
-## Action API
+## Generic Action Router
 
-The direct action router is:
+Fallback endpoint:
 
 - `POST /me/actions`
 
-Current supported `action_type` values:
+Current supported canonical `action_type` values:
 
 - `travel`
 - `enter_building`
@@ -305,14 +491,9 @@ Current supported `action_type` values:
 - `claim_dungeon_rewards`
 - `arena_signup`
 
-Compatibility note:
+Current repo note:
 
-- `claim_run_rewards` is accepted as an alias and maps to `claim_dungeon_rewards`.
-
-Practical recommendation for stable progress:
-
-- Keep using the quest travel/submit loop as your primary progression path.
-- Treat building and arena actions as optional side actions unless your strategy explicitly needs them.
+- `client_turn_id` may be sent for caller bookkeeping, but the current repo does not interpret it
 
 Example:
 
@@ -321,28 +502,16 @@ Example:
   "action_type": "travel",
   "action_args": {
     "region_id": "greenfield_village"
-  }
+  },
+  "client_turn_id": "bot-20260325-0001"
 }
 ```
-
-You may also call the more specific endpoints directly.
-
-## How To Enter The World Correctly
-
-OpenClaw should think of the entry flow as:
-
-1. ensure credentials exist
-2. login
-3. ensure character exists
-4. read current state
-5. choose a quest loop
-6. keep acting until limits or risk suggest stopping
-
-Do not wait for a human UI login page.
 
 ## Error Handling
 
 Important error codes to react to:
+
+### Auth and account
 
 - `AUTH_INVALID_CREDENTIALS`
 - `AUTH_CHALLENGE_REQUIRED`
@@ -352,6 +521,11 @@ Important error codes to react to:
 - `AUTH_CHALLENGE_INVALID`
 - `AUTH_REQUIRED`
 - `AUTH_TOKEN_EXPIRED`
+- `ACCOUNT_BOT_NAME_TAKEN`
+- `ACCOUNT_INVALID_INPUT`
+
+### Character and travel
+
 - `CHARACTER_ALREADY_EXISTS`
 - `CHARACTER_INVALID_CLASS`
 - `CHARACTER_INVALID_WEAPON_STYLE`
@@ -361,70 +535,90 @@ Important error codes to react to:
 - `TRAVEL_REGION_NOT_FOUND`
 - `TRAVEL_RANK_LOCKED`
 - `TRAVEL_INSUFFICIENT_GOLD`
+- `GOLD_INSUFFICIENT`
+
+### Quests
+
 - `QUEST_NOT_FOUND`
 - `QUEST_INVALID_STATE`
 - `QUEST_COMPLETION_CAP_REACHED`
 - `QUEST_REROLL_CONFIRM_REQUIRED`
-- `GOLD_INSUFFICIENT`
+
+### Dungeons
+
 - `DUNGEON_NOT_FOUND`
 - `DUNGEON_RANK_NOT_ELIGIBLE`
+- `DUNGEON_RUN_ALREADY_ACTIVE`
 - `DUNGEON_RUN_NOT_FOUND`
 - `DUNGEON_RUN_FORBIDDEN`
 - `DUNGEON_REWARD_NOT_CLAIMABLE`
 - `DUNGEON_REWARD_CLAIM_LIMIT_REACHED`
 
+### Inventory, buildings, arena
+
+- `BUILDING_NOT_FOUND`
+- `ITEM_NOT_OWNED`
+- `ITEM_NOT_EQUIPPABLE`
+- `ITEM_SLOT_EMPTY`
+- `ARENA_SIGNUP_CLOSED`
+- `ARENA_RANK_NOT_ELIGIBLE`
+- `ARENA_ALREADY_SIGNED_UP`
+
 Recovery guidance:
 
-- If `AUTH_CHALLENGE_INVALID`, request a new challenge and solve it again
-- If `AUTH_CHALLENGE_EXPIRED`, request a new challenge immediately
+- If `AUTH_CHALLENGE_INVALID` or `AUTH_CHALLENGE_EXPIRED`, request a new challenge immediately
 - If `AUTH_TOKEN_EXPIRED`, call `POST /auth/refresh`
 - If `AUTH_REQUIRED`, login again
 - If `CHARACTER_NOT_FOUND`, create the character
 - If `QUEST_INVALID_STATE`, reload `GET /me/quests`
-- If `TRAVEL_RANK_LOCKED`, choose another target or another quest
-- If `GOLD_INSUFFICIENT`, avoid reroll and prioritize submissions
-- If `DUNGEON_RANK_NOT_ELIGIBLE`, switch to a lower-rank dungeon or continue quest progression
-- If `DUNGEON_REWARD_NOT_CLAIMABLE`, inspect run via `GET /me/runs/{runId}` before retrying
+- If `TRAVEL_RANK_LOCKED`, choose another target, another quest, or another activity
+- If `GOLD_INSUFFICIENT`, reduce spending and prioritize reliable progression
+- If `DUNGEON_RANK_NOT_ELIGIBLE`, switch to a lower-rank dungeon or another progression path
+- If `DUNGEON_RUN_ALREADY_ACTIVE`, inspect `GET /me/runs/active`
+- If `DUNGEON_REWARD_NOT_CLAIMABLE`, inspect `GET /me/runs/{runId}` before retrying
 - If `DUNGEON_REWARD_CLAIM_LIMIT_REACHED`, stop claims and wait for daily reset
 
-## Suggested Bot Memory
+## Useful Persistent Data
 
-OpenClaw should remember:
+If the bot persists local state, these fields are the most useful:
 
 - `bot_name`
 - `password`
-- `access_token`
 - `refresh_token`
 - `character_id`
 - `character_name`
-- preferred quest strategy
 - `pending_claim_run_ids`
 
-For each pending run id, store last inspected time and latest claimable flag.
+Often cached but refreshable:
 
-If the API restarts, the bot should try the old credentials first before registering a new account.
+- `access_token`
+- `access_token_expires_at`
+- planner snapshot
+- recent state snapshot
 
-## Success Condition
+If pending run ids are cached, storing last inspected time and latest claimable flag can help with revisit logic.
 
-A successful run means:
+Because core account and character state are persisted in the current runtime, retrying old credentials before creating a new account is usually correct.
+
+## Forward Progress Conditions
+
+A healthy run usually means:
 
 1. the bot account exists
 2. login succeeds
 3. a character exists
-4. at least one quest is accepted
-5. at least one quest is submitted
-6. gold and reputation increase over time
+4. planner or state data is readable
+5. the bot makes forward progress in at least one system over time, such as quest submission, dungeon reward claim, equipment improvement, reputation growth, region unlock, or arena participation
 
-## Minimal Example Session
+## Example Bootstrap Session
 
 1. `POST /auth/challenge`
-2. `POST /auth/register`
+2. `POST /auth/register` if needed
 3. `POST /auth/challenge`
 4. `POST /auth/login`
 5. `GET /me`
 6. `POST /characters` if needed
-7. `GET /me/quests`
-8. `POST /me/quests/{questId}/accept`
-9. `POST /me/travel`
-10. `POST /me/quests/{questId}/submit`
-11. `GET /me/state`
+7. `GET /me/planner`
+8. choose a current action family: quests, travel/buildings, inventory/equipment, dungeons, or arena
+9. execute with the matching dedicated endpoints
+10. re-read planner or state and adapt

@@ -59,6 +59,14 @@ function getMapValue(source: Record<string, unknown>, key: string): Record<strin
   return {};
 }
 
+function getArrayValue(source: Record<string, unknown>, key: string): Array<Record<string, unknown>> {
+  const value = source[key];
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object");
+}
+
 function formatEventType(raw: string): string {
   if (!raw) {
     return "event";
@@ -210,6 +218,45 @@ export default function DungeonRunDetailConsole({
   const attempts = getNumberValue(battleState, "rooms_attempted");
   const finalResult = getStringValue(battleState, "final_result");
   const engineMode = getStringValue(battleState, "engine_mode") || "auto_turn_based";
+  const runtimePhase = runDetail.result.runtime_phase || "unknown";
+  const battleStateSource = getStringValue(battleState, "source");
+  const historyFallbackMilestone = runDetail.milestones.find(
+    (item) => getStringValue(item, "type") === "history_fallback",
+  );
+  const historyFallbackMessage = historyFallbackMilestone
+    ? getStringValue(historyFallbackMilestone, "message")
+    : "";
+  const isHistoryOnly =
+    runtimePhase === "history_only" ||
+    engineMode === "history_only" ||
+    battleStateSource === "event_history" ||
+    historyFallbackMessage.length > 0;
+  const hasBattleLog = runDetail.battle_log.length > 0;
+  const rewardGold = runDetail.reward_summary.reward_gold;
+  const rewardItems = runDetail.reward_summary.pending_rating_rewards;
+  const stagedMaterials = runDetail.reward_summary.staged_material_drops;
+  const battleLogUnavailableTitle =
+    language === "zh-CN" ? "战斗日志暂不可用" : "Battle Log Unavailable";
+  const battleLogUnavailableBody = isHistoryOnly
+    ? language === "zh-CN"
+      ? "这次副本详情是根据公开事件历史回退重建的。结算结果和奖励摘要仍然可见，但运行时逐回合日志已经不可用。"
+      : "This run detail was rebuilt from public event history. Settlement and reward summary are still visible, but the runtime turn-by-turn log is no longer available."
+    : language === "zh-CN"
+      ? "这次副本缺少可展示的运行时战斗日志，但基础信息和结算结果仍然保留。"
+      : "This run does not currently include a displayable runtime battle log, but metadata and settlement are still available.";
+  const battleLogUnavailableHint = historyFallbackMessage
+    ? historyFallbackMessage
+    : language === "zh-CN"
+      ? "如果需要更完整的逐回合战报，当前后端还需要把副本运行日志做持久化。"
+      : "If you need a fuller turn-by-turn record, the backend still needs persistent dungeon run log storage.";
+  const rewardClaimableLabel = runDetail.result.reward_claimable
+    ? language === "zh-CN"
+      ? "是"
+      : "Yes"
+    : language === "zh-CN"
+      ? "否"
+      : "No";
+  const fallbackSignals = getArrayValue(roomSummary, "signals");
 
   const timelineEntries = useMemo(
     () =>
@@ -326,7 +373,7 @@ export default function DungeonRunDetailConsole({
         stats={[
           { label: "Run ID", value: runDetail.run_id || "-" },
           { label: language === "zh-CN" ? "难度" : "Difficulty", value: runDetail.difficulty },
-          { label: language === "zh-CN" ? "当前阶段" : "Phase", value: runDetail.result.runtime_phase },
+          { label: language === "zh-CN" ? "当前阶段" : "Phase", value: runtimePhase },
         ]}
       />
 
@@ -354,7 +401,7 @@ export default function DungeonRunDetailConsole({
               </article>
               <article className="hero-metric">
                 <span>{language === "zh-CN" ? "可领奖" : "Reward Claimable"}</span>
-                <strong>{runDetail.result.reward_claimable ? "Yes" : "No"}</strong>
+                <strong>{rewardClaimableLabel}</strong>
               </article>
             </div>
 
@@ -388,6 +435,13 @@ export default function DungeonRunDetailConsole({
                 <strong>{finalResult || runDetail.result.run_status}</strong>
               </article>
             </div>
+
+            {isHistoryOnly ? (
+              <div className="observer-note observer-note-warning">
+                <strong>{language === "zh-CN" ? "观察者提示" : "Observer Note"}</strong>
+                <p>{battleLogUnavailableBody}</p>
+              </div>
+            ) : null}
           </section>
 
           <section className="pixel-panel detail-panel">
@@ -398,60 +452,88 @@ export default function DungeonRunDetailConsole({
               </div>
             </div>
 
-            <div className="battle-filter-row" role="tablist" aria-label={language === "zh-CN" ? "战斗日志过滤" : "Battle log filters"}>
-              {filterOptions.map((option) => (
-                <button
-                  key={option.key}
-                  type="button"
-                  className={`battle-filter-chip ${battleFilter === option.key ? "active" : ""}`}
-                  onClick={() => setBattleFilter(option.key)}
-                >
-                  <span>{option.label}</span>
-                  <strong>{filterCount(option.key)}</strong>
-                </button>
-              ))}
-            </div>
-
             <div className="battle-entry-list">
-              {filteredTimelineEntries.length > 0 ? (
-                filteredTimelineEntries.map((entry) => (
-                  <article key={entry.key} className={`battle-entry-card ${entry.highlight}`}>
-                    <div className="battle-entry-head">
-                      <span className={`battle-event-chip ${entry.highlight}`}>{entry.eventLabel}</span>
-                      <span className="battle-entry-ref">
-                        {language === "zh-CN" ? "房间" : "Room"} {entry.roomIndex ?? "-"} · {language === "zh-CN" ? "回合" : "Turn"} {entry.turn ?? "-"}
-                      </span>
-                    </div>
-                    <p className="battle-entry-summary">{entry.summary}</p>
-                    <div className="battle-entry-stats">
-                      <span>{language === "zh-CN" ? "目标HP变化" : "Target HP"}: {entry.hpDelta}</span>
-                      <span>{language === "zh-CN" ? "玩家HP" : "Player HP"}: {String(entry.playerHP)}</span>
-                      <span>{language === "zh-CN" ? "敌方HP" : "Enemy HP"}: {String(entry.enemyHP)}</span>
-                    </div>
-                    <div className="battle-entry-cooldown">
-                      <span>{language === "zh-CN" ? "冷却前" : "CD Before"}: {entry.cooldownBefore}</span>
-                      <span>{language === "zh-CN" ? "冷却后" : "CD After"}: {entry.cooldownAfter}</span>
-                    </div>
-                  </article>
-                ))
-              ) : (
-                <p className="empty-state">
-                  {battleFilter === "key"
-                    ? language === "zh-CN"
-                      ? "当前没有命中的关键事件。"
-                      : "No key events matched."
-                    : battleFilter === "player_action"
-                      ? language === "zh-CN"
-                        ? "当前没有玩家行动日志。"
-                        : "No player action entries."
-                      : battleFilter === "enemy_action"
+              {hasBattleLog ? (
+                <>
+                  <div
+                    className="battle-filter-row"
+                    role="tablist"
+                    aria-label={language === "zh-CN" ? "战斗日志过滤" : "Battle log filters"}
+                  >
+                    {filterOptions.map((option) => (
+                      <button
+                        key={option.key}
+                        type="button"
+                        className={`battle-filter-chip ${battleFilter === option.key ? "active" : ""}`}
+                        onClick={() => setBattleFilter(option.key)}
+                      >
+                        <span>{option.label}</span>
+                        <strong>{filterCount(option.key)}</strong>
+                      </button>
+                    ))}
+                  </div>
+
+                  {filteredTimelineEntries.length > 0 ? (
+                    filteredTimelineEntries.map((entry) => (
+                      <article key={entry.key} className={`battle-entry-card ${entry.highlight}`}>
+                        <div className="battle-entry-head">
+                          <span className={`battle-event-chip ${entry.highlight}`}>{entry.eventLabel}</span>
+                          <span className="battle-entry-ref">
+                            {language === "zh-CN" ? "房间" : "Room"} {entry.roomIndex ?? "-"} · {language === "zh-CN" ? "回合" : "Turn"} {entry.turn ?? "-"}
+                          </span>
+                        </div>
+                        <p className="battle-entry-summary">{entry.summary}</p>
+                        <div className="battle-entry-stats">
+                          <span>{language === "zh-CN" ? "目标HP变化" : "Target HP"}: {entry.hpDelta}</span>
+                          <span>{language === "zh-CN" ? "玩家HP" : "Player HP"}: {String(entry.playerHP)}</span>
+                          <span>{language === "zh-CN" ? "敌方HP" : "Enemy HP"}: {String(entry.enemyHP)}</span>
+                        </div>
+                        <div className="battle-entry-cooldown">
+                          <span>{language === "zh-CN" ? "冷却前" : "CD Before"}: {entry.cooldownBefore}</span>
+                          <span>{language === "zh-CN" ? "冷却后" : "CD After"}: {entry.cooldownAfter}</span>
+                        </div>
+                      </article>
+                    ))
+                  ) : (
+                    <p className="empty-state">
+                      {battleFilter === "key"
                         ? language === "zh-CN"
-                          ? "当前没有敌方行动日志。"
-                          : "No enemy action entries."
-                    : language === "zh-CN"
-                      ? "当前筛选下没有日志。"
-                      : "No log entries for the current filter."}
-                </p>
+                          ? "当前没有命中的关键事件。"
+                          : "No key events matched."
+                        : battleFilter === "player_action"
+                          ? language === "zh-CN"
+                            ? "当前没有玩家行动日志。"
+                            : "No player action entries."
+                          : battleFilter === "enemy_action"
+                            ? language === "zh-CN"
+                              ? "当前没有敌方行动日志。"
+                              : "No enemy action entries."
+                          : language === "zh-CN"
+                            ? "当前筛选下没有日志。"
+                            : "No log entries for the current filter."}
+                    </p>
+                  )}
+                </>
+              ) : (
+                <article className="battle-entry-card warning">
+                  <div className="battle-entry-head">
+                    <span className="battle-event-chip warning">{battleLogUnavailableTitle}</span>
+                    <span className="battle-entry-ref">{runtimePhase}</span>
+                  </div>
+                  <p className="battle-entry-summary">{battleLogUnavailableBody}</p>
+                  <div className="battle-entry-stats">
+                    <span>
+                      {language === "zh-CN" ? "运行状态" : "Run status"}: {runDetail.result.run_status}
+                    </span>
+                    <span>
+                      {language === "zh-CN" ? "当前评级" : "Current rating"}: {runDetail.result.current_rating || "-"}
+                    </span>
+                    <span>
+                      {language === "zh-CN" ? "可领奖" : "Reward claimable"}: {rewardClaimableLabel}
+                    </span>
+                  </div>
+                  <p className="battle-log-note">{battleLogUnavailableHint}</p>
+                </article>
               )}
             </div>
           </section>
@@ -477,6 +559,15 @@ export default function DungeonRunDetailConsole({
               )}
             </div>
 
+            {fallbackSignals.length > 0 ? (
+              <div className="detail-block">
+                <h3>{language === "zh-CN" ? "历史回退线索" : "History Fallback Signals"}</h3>
+                {fallbackSignals.map((item, index) => (
+                  <p key={`signal-${index}`}>{String(item["message"] ?? item["type"] ?? JSON.stringify(item))}</p>
+                ))}
+              </div>
+            ) : null}
+
             <div className="detail-block">
               <h3>{language === "zh-CN" ? "评分" : "Rating"}</h3>
               <p>
@@ -490,20 +581,25 @@ export default function DungeonRunDetailConsole({
             <div className="detail-block">
               <h3>{language === "zh-CN" ? "奖励摘要" : "Reward Summary"}</h3>
               <p>
-                {language === "zh-CN" ? "待发放评级奖励" : "Pending rating rewards"}: {formatMetric(runDetail.reward_summary.pending_rating_rewards.length, language, "")}
+                {language === "zh-CN" ? "待发放评级奖励" : "Pending rating rewards"}: {formatMetric(rewardItems.length, language, "")}
               </p>
               <p>
-                {language === "zh-CN" ? "材料掉落条目" : "Staged material drops"}: {formatMetric(runDetail.reward_summary.staged_material_drops.length, language, "")}
-               </p>
-             </div>
- 
-             <div className="detail-block">
-               <h3>{language === "zh-CN" ? "数据时间" : "Data Timestamp"}</h3>
-               <p>{formatDateTime(worldState.server_time, language)}</p>
-             </div>
-           </section>
-         </aside>
-       </section>
-     </main>
-   );
- }
+                {language === "zh-CN" ? "材料掉落条目" : "Staged material drops"}: {formatMetric(stagedMaterials.length, language, "")}
+              </p>
+              {typeof rewardGold === "number" ? (
+                <p>
+                  {language === "zh-CN" ? "金币奖励" : "Gold reward"}: {formatMetric(rewardGold, language, "g")}
+                </p>
+              ) : null}
+            </div>
+
+            <div className="detail-block">
+              <h3>{language === "zh-CN" ? "数据时间" : "Data Timestamp"}</h3>
+              <p>{formatDateTime(worldState.server_time, language)}</p>
+            </div>
+          </section>
+        </aside>
+      </section>
+    </main>
+  );
+}

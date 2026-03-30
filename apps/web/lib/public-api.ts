@@ -68,10 +68,18 @@ export type PublicWorldState = {
 export type WorldEvent = {
   event_id: string;
   event_type: string;
+  visibility?: string;
+  actor_character_id?: string;
   actor_name?: string;
   region_id?: string;
   summary: string;
+  payload?: Record<string, unknown>;
   occurred_at: string;
+};
+
+export type PublicEventsPage = {
+  items: WorldEvent[];
+  next_cursor?: string | null;
 };
 
 export type LeaderboardEntry = {
@@ -204,6 +212,7 @@ export type DungeonRunDetail = {
   reward_summary: {
     pending_rating_rewards: Array<Record<string, unknown>>;
     staged_material_drops: Array<Record<string, unknown>>;
+    reward_gold?: number;
   };
 };
 
@@ -267,6 +276,17 @@ export const fallbackWorldState: PublicWorldState = {
 export const fallbackRegions: Region[] = [];
 export const fallbackRegionDetails: RegionDetail[] = [];
 export const fallbackEvents: WorldEvent[] = [];
+export const fallbackEvent: WorldEvent = {
+  event_id: "",
+  event_type: "unknown",
+  visibility: "public",
+  actor_character_id: "",
+  actor_name: "",
+  region_id: "",
+  summary: "",
+  payload: {},
+  occurred_at: new Date().toISOString(),
+};
 export const fallbackLeaderboards: Leaderboards = {
   reputation: [],
   gold: [],
@@ -429,11 +449,44 @@ export async function getRegionDetails(regions: Region[]) {
 }
 
 export async function getEvents(limit = 6) {
-  const payload = await fetchData<{ items: WorldEvent[] }>(`/api/v1/public/events?limit=${limit}`, {
-    items: fallbackEvents,
-  });
+  const payload = await getPublicEventsPage({ limit });
 
   return payload.items;
+}
+
+export async function getPublicEventsPage(params?: {
+  limit?: number;
+  cursor?: string;
+}) {
+  const search = new URLSearchParams();
+  if (params?.limit) search.set("limit", String(params.limit));
+  if (params?.cursor) search.set("cursor", params.cursor);
+  const suffix = search.toString();
+
+  return fetchData<PublicEventsPage>(`/api/v1/public/events${suffix ? `?${suffix}` : ""}`, {
+    items: fallbackEvents,
+    next_cursor: null,
+  });
+}
+
+export async function getPublicEventDetail(eventID: string): Promise<WorldEvent | null> {
+  try {
+    const response = await fetch(`${apiBaseUrl()}/api/v1/public/events/${encodeURIComponent(eventID)}`, {
+      next: { revalidate: 30 },
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const payload = (await response.json()) as Envelope<WorldEvent>;
+    return {
+      ...payload.data,
+      payload: payload.data.payload ?? {},
+    };
+  } catch {
+    return null;
+  }
 }
 
 export async function getLeaderboards() {
@@ -492,14 +545,42 @@ export async function getBotDungeonRuns(botID: string, days = 7) {
   return payload.items;
 }
 
-export async function getDungeonRunDetail(botID: string, runID: string) {
-  return fetchData<DungeonRunDetail>(
-    `/api/v1/public/bots/${encodeURIComponent(botID)}/dungeon-runs/${encodeURIComponent(runID)}`,
-    {
-      ...fallbackDungeonRunDetail,
-      run_id: runID,
-    },
-  );
+export async function getDungeonRunDetail(botID: string, runID: string): Promise<DungeonRunDetail | null> {
+  try {
+    const response = await fetch(
+      `${apiBaseUrl()}/api/v1/public/bots/${encodeURIComponent(botID)}/dungeon-runs/${encodeURIComponent(runID)}`,
+      {
+        next: { revalidate: 30 },
+      },
+    );
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const payload = (await response.json()) as Envelope<DungeonRunDetail>;
+    return {
+      ...payload.data,
+      room_summary: payload.data.room_summary ?? {},
+      battle_state: payload.data.battle_state ?? {},
+      battle_log: payload.data.battle_log ?? [],
+      milestones: payload.data.milestones ?? [],
+      result: {
+        ...fallbackDungeonRunDetail.result,
+        ...(payload.data.result ?? {}),
+      },
+      reward_summary: {
+        pending_rating_rewards: payload.data.reward_summary?.pending_rating_rewards ?? [],
+        staged_material_drops: payload.data.reward_summary?.staged_material_drops ?? [],
+        reward_gold:
+          typeof payload.data.reward_summary?.reward_gold === "number"
+            ? payload.data.reward_summary.reward_gold
+            : undefined,
+      },
+    };
+  } catch {
+    return null;
+  }
 }
 
 async function fetchData<T>(path: string, fallback: T): Promise<T> {

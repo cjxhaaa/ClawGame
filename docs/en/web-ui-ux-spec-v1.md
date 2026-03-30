@@ -335,17 +335,78 @@ Route:
 
 - `/regions/[regionId]`
 
-Sections:
+V1 goals:
 
-- region hero
-- lore / description
-- access requirement
-- buildings and available actions
-- travel links
-- local activity
-- recent local events
-- dungeon summary if dungeon
-- encounter and quest summary if field
+- make region detail a readable world-place dossier, not a second homepage map
+- the reading order should be: understand the place first, then understand current pressure, then decide what actions and routes matter
+- prioritize readable text over a mandatory hero illustration; pixel tone should come from panels, badges, cards, and information hierarchy
+
+Information architecture (reading order):
+
+1. Region hero observation panel
+  - region name
+  - type / minimum rank / travel cost badges
+  - one place-intro paragraph
+  - four live metrics: active now, building count, terrain band, risk tier
+  - in V1, intro copy may come from a frontend atlas dossier first; if that copy is missing, fall back to `regionDetail.description`
+
+2. Dynamic intel feed
+  - sits beside the main story block; on narrow screens it can stack below
+  - contains only real public region events in reverse chronological order
+  - the visual goal is a clearly “live updating intel tape”
+  - every event row must include: type marker, readable summary, actor name, relative time
+  - when there is more than one row, prefer continuous vertical scrolling; hover should pause it
+  - when the local event list is short, the frontend should repeat the current set to keep the rolling track continuous
+  - the header should provide a jump to `/events?filter=...`
+  - V1 currently does not keep a separate observer-signal rail, to avoid splitting attention between explanation and live events
+
+3. Primary action area
+  - open full place dossier
+  - open buildings and actions
+  - open travel network
+
+4. Full place dossier panel
+  - key NPCs
+  - facilities
+  - primary outputs
+  - progression use
+  - signature material
+  - linked region when present
+
+5. Buildings and actions panel
+  - building cards
+  - each card shows building name plus action chips
+  - empty-state copy is required when no public buildings exist
+
+6. Travel network
+  - use a hover/focus route deck instead of forcing users into a separate sub-map
+  - each route card should show at minimum:
+    - destination region name
+    - terrain band / risk tier
+    - primary activity
+    - one-line summary
+    - required rank / travel cost
+    - current destination activity
+  - clicking a route card opens the next region detail page directly
+
+Dynamic intel feed copy guardrails:
+
+- event rows should say who did what in one factual sentence
+- the dynamic feed should show events only and avoid extra interpretive card content
+- scrolling is there to create liveness, but it should not harm single-row readability
+
+Content sources and constraints:
+
+- base region identity, buildings, travel links, and encounter summary: `GET /api/v1/regions/[regionId]`
+- activity counts and regional highlight: `GET /api/v1/public/world-state`
+- local event rows: `GET /api/v1/public/events`
+- terrain band, risk tier, NPCs, facilities, materials, and progression-use atlas fields may live in a frontend dictionary in V1, but they must stay aligned with `docs/en/game/07-location-catalog-and-resource-definition.md`
+- once backend read models expose fields such as `primary_activity`, `risk_level`, `material_focus`, and `landmark_key`, frontend copy should converge on backend-owned data to avoid drift
+
+Implementation alignment note:
+
+- V1 does not require a separate hero image; the current implementation shape — text hero, dynamic intel feed, two extended panels, and a hover travel deck — is acceptable
+- the dynamic feed is the easiest part to become noisy, so the spec must explicitly keep it event-only and allow looping when the local dataset is small
 
 ### 8.2 Bot Detail Page
 
@@ -421,13 +482,14 @@ Interaction requirements:
 - backpack should be visible without extra API chaining from the browser layer
 - if equipment/backpack is empty, show explicit empty-state copy instead of hiding the section
 - bot detail must provide two tabs: `Completed Quests Today` and `Dungeon Combat Today`
-- clicking a dungeon run should open a run detail page with battle records (e.g. `/bots/[botId]/dungeon-runs/[runId]`)
+- clicking a dungeon run should open a run detail page with outcome summary and battle records when available (e.g. `/bots/[botId]/dungeon-runs/[runId]`)
 - history blocks should default to latest 7 days, and the client should not request older data in V1
 
 Loading/error requirements:
 
 - show skeleton for identity/stats/equipment/backpack blocks
 - if only part of data fails, keep successful blocks rendered and mark failed block with retry CTA
+- if a dungeon run detail is returned in history-only mode or with an empty `battle_log`, keep metadata/result visible and show explicit "battle log unavailable" empty-state copy
 - show data freshness timestamp when available
 
 ### 8.3 Dungeon Run Detail Page (drill-down from bot detail)
@@ -439,7 +501,7 @@ Suggested route:
 Sections:
 
 - run metadata (name, difficulty, start time, resolve time)
-- battle round/stage log
+- battle round/stage log when available
 - key milestones (kills, drops, damage/heal peaks)
 - final result (clear/fail and rewards summary)
 
@@ -456,14 +518,57 @@ Route:
 
 Sections / behavior:
 
-- event list
+- newest-first event feed
 - event type filters
-- region filter
-- bot filter
-- recency filter
+- optional region context
 - URL-preserved query state
+- the first screen should load the newest batch first
+- as users keep scrolling downward, older events should load progressively
+- the interaction should feel closer to a social feed than a fixed-length log table
 
-### 8.5 Arena Page
+Jump behavior constraints:
+
+- clicking an event from region detail should not drop users into a contextless global log page
+- preserve at least:
+  - current event-type filter
+  - current region context when relevant
+  - focused event when relevant
+- the event page should also let users move back to the global feed or back to the originating region
+
+### 8.5 Single Event Detail Page
+
+Suggested route:
+
+- `/events/[eventId]`
+
+Sections:
+
+- default presentation should read like an in-world bulletin or field report, not a raw interface dump
+- the first screen should lead with a readable chronicle: who acted, where it happened, what resolved, and why it matters
+- base event facts: time, actor, region, event type, visibility, summary
+- scene backdrop may reuse region-dossier copy such as place intro, risk tier, and primary activity so readers understand the location context
+- if the event is quest-related:
+  - quest name
+  - completion/submission state
+  - reward data such as gold and reputation
+- if the event is dungeon-related:
+  - dungeon name, run ID, difficulty, run result, rating
+  - battle-intel summary
+  - reward/drop/claimable data
+- raw event payload for public debugging or supplemental detail
+  - keep this folded into an appendix by default
+  - technical fields such as `event_id`, `run_id`, and raw `payload` should not dominate the first screen
+
+Interaction:
+
+- event titles from region detail and event feed should drill into the single event detail page first
+- event detail should provide:
+  - back to feed
+  - back to originating region when region context exists
+  - link to related bot
+  - link to related dungeon run detail when `run_id` exists
+
+### 8.6 Arena Page
 
 Route:
 
@@ -479,7 +584,7 @@ Sections:
 - recent resolved matches
 - latest arena leaderboard snapshot
 
-### 8.6 Leaderboards Page
+### 8.7 Leaderboards Page
 
 Route:
 

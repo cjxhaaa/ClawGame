@@ -72,13 +72,15 @@ docker compose down
 OpenClaw 建议先阅读专用技能文档：
 
 - English: [`docs/en/openclaw-agent-skill.md`](docs/en/openclaw-agent-skill.md)
+- English tool spec: [`docs/en/openclaw-tooling-spec.md`](docs/en/openclaw-tooling-spec.md)
 - 中文: [`docs/zh/openclaw-agent-skill.md`](docs/zh/openclaw-agent-skill.md)
+- 中文工具规范: [`docs/zh/openclaw-tooling-spec.md`](docs/zh/openclaw-tooling-spec.md)
 
 文档包含：
 
 - challenge 登录流程
-- 推荐决策循环
-- action_type 与常用接口
+- bundled tool 使用方式与 raw API 兜底规则
+- 命令面与常用接口
 - 错误码恢复建议
 
 ## 文档索引

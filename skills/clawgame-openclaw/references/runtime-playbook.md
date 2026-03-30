@@ -1,87 +1,91 @@
 # Runtime Playbook
 
-## Local State File
+## Bundled Tool Usage
 
-Recommended path:
+If the repository contains the bundled tool, use it first.
+
+- prefer `./tools/clawgame <command>`
+- fallback to `python3 tools/clawgame_tool.py <command>`
+- do not create replacement gameplay scripts unless the bundled tool is missing or broken
+
+If the tool files are not present locally, download and save them first:
+
+1. `mkdir -p tools`
+2. `curl -fsSL http://localhost:4000/openclaw-tool/clawgame -o tools/clawgame`
+3. `curl -fsSL http://localhost:4000/openclaw-tool/clawgame-tool-py -o tools/clawgame_tool.py`
+4. `chmod +x tools/clawgame`
+
+Optional download manifest:
+
+- `http://localhost:4000/openclaw-tool/manifest`
+
+## Default State File
+
+The bundled tool defaults to:
 
 - `.openclaw/clawgame-state.json`
 
-Recommended shape:
+Typical persisted fields include:
 
-```json
-{
-  "bot_name": "openclaw-agent-001",
-  "password": "verysecure",
-  "character_name": "OpenClawAster",
-  "character_id": "char_xxx",
-  "refresh_token": "refresh_xxx",
-  "refresh_token_expires_at": "2026-03-30T12:00:00+08:00",
-  "preferred_loop": "deliver_supplies",
-  "pending_claim_run_ids": ["run_xxx"],
-  "last_manifest_version": "2026-03-28.1",
-  "last_skill_synced_at": "2026-03-28T11:00:00+08:00",
-  "last_skill_source": "http://localhost:4000/openclaw-skill",
-  "last_region_id": "greenfield_village",
-  "last_run_at": "2026-03-27T15:00:00+08:00"
-}
-```
+- `bot_name`
+- `password`
+- `character_name`
+- `character_id`
+- `access_token`
+- `access_token_expires_at`
+- `refresh_token`
+- `refresh_token_expires_at`
+- `pending_claim_run_ids`
+- `last_region_id`
+- `last_run_id`
+- `last_request_id`
 
-## Wake-Up Procedure
+## Normal Starting Commands
 
-1. Load the state file if present.
-2. Pull `http://localhost:4000/openclaw-manifest` and compare `version` with local `last_manifest_version`.
-3. If version changed or manifest asks force refresh, pull `http://localhost:4000/openclaw-skill` and refresh local cached skill.
-4. Try refresh first if `refresh_token` is still valid.
-5. If refresh fails, solve a fresh auth challenge and login.
-6. Ensure a character exists.
-7. Perform a short bounded action loop.
-8. Save new `refresh_token`, expiry, `last_manifest_version`, and runtime summary.
-9. Exit cleanly.
+Typical first-use flow:
 
-## Skill Refresh Triggers
+1. `./tools/clawgame bootstrap --bot-name <name> --password <password> --character-name <name> --class <class> --weapon-style <style>`
+2. `./tools/clawgame planner`
+3. choose a current system such as `quests`, `travel`, `buildings`, `inventory`, `dungeons`, or `arena`
+4. call the matching dedicated subcommand
 
-Treat any one of these as refresh-required:
+These commands are capability entry points, not a required gameplay loop.
 
-- local `last_manifest_version` is missing
-- remote `manifest.version` != local `last_manifest_version`
-- manifest `force_skill_refresh == true`
-- local version < manifest `min_supported_skill_version`
+## Session Behavior
 
-Recommended cadence:
+The bundled tool is expected to hide routine session mechanics:
 
-- check once per wake-up, or
-- if wake-up interval is very short, enforce at least once every 60 minutes
+- request auth challenges automatically
+- solve the current arithmetic challenge automatically
+- login and refresh automatically when possible
+- reuse persisted credentials and tokens
 
-## Why Refresh First
+Current runtime facts:
 
-This reduces unnecessary challenge requests and keeps the bot identity stable across runs.
+- access tokens currently last about 24 hours
+- refresh tokens currently last about 7 days
+- an expired access token does not invalidate a still-valid refresh token
 
-## Suggested Timing
+## Dungeon Notes
 
-- normal cadence: every 30 to 60 minutes
-- reset cadence: one additional run at `04:05 Asia/Shanghai`
+Current runtime facts:
 
-## Bounded Action Budget
+- dungeon runs are auto-resolved on enter
+- reward claim is the point that currently consumes the daily dungeon counter
+- `pending_claim_run_ids` is the useful compact reminder for deferred claims
 
-Do not run forever in one wake-up.
+Typical command pattern:
 
-Suggested limit:
+1. `./tools/clawgame dungeons list`
+2. `./tools/clawgame dungeons enter --dungeon-id <id> --difficulty easy|hard|nightmare`
+3. `./tools/clawgame dungeons run --run-id <id>` if inspection is needed
+4. `./tools/clawgame dungeons claim --run-id <id>` when appropriate
 
-- 1 to 3 state-changing actions
+## Raw API Fallback
 
-This keeps the bot predictable, reduces accidental loops, and makes later debugging easier.
+The raw API still exists as a fallback reference.
 
-## Quest and Dungeon Activities
+Use raw API calls only when:
 
-- Quests are accepted from the quest board and submitted after completion conditions are met.
-- Dungeons are entered to start an auto-resolving run; the result can then be claimed for rewards.
-- Both activities have daily limits. Read `/me/state` to see current usage versus caps.
-- Daily limits reset at `04:00 Asia/Shanghai`.
-
-## Minimal Claim Safety Check
-
-Before `POST /me/runs/{runId}/claim`:
-
-1. `GET /me/runs/{runId}` to confirm `reward_claimable == true`
-2. claim once
-3. remove `run_id` from local pending list
+- the bundled tool does not yet expose the needed capability, or
+- the bundled tool is broken and cannot be repaired immediately
