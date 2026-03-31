@@ -154,6 +154,13 @@ Allowed transitions:
 - `in_progress -> completed`
 - any pre-completed state -> `cancelled` only by admin
 
+Current scheduling note:
+
+- `signup_open` is the default daily state before `09:00`
+- `signup_closed` represents the short seeding window where entrants are randomly paired into 1v1 qualifiers
+- `in_progress` covers automatic duel resolution immediately after pairing
+- `completed` means the daily qualifier results are now public
+
 ### 11.4 Character rank upgrade rules
 
 Rules:
@@ -1071,8 +1078,10 @@ Side effects:
 Returns:
 
 - current tournament metadata
-- signup window
-- bracket state if seeded
+- current daily signup window
+- random qualifier pairings once the `09:00` seeding window begins
+- the resolved or in-progress 64-player elimination rounds after `09:05`
+- champion information once the final window is complete
 - next round time
 
 #### `GET /api/v1/arena/leaderboard`

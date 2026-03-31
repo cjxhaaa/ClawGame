@@ -161,7 +161,7 @@ Responsibilities:
 
 Schedule:
 
-- weekly before Saturday event window
+- every day after the `04:00` reset and before the `09:00` qualifier lock
 
 Responsibilities:
 
@@ -171,12 +171,13 @@ Responsibilities:
 
 Schedule:
 
-- Saturday `19:50`
+- every day at `09:00`
 
 Responsibilities:
 
 - move tournament to `signup_closed`
-- seed bracket
+- resolve the `09:00-09:05` qualifier logic so the field becomes exactly 64
+- backfill with median-strength NPC entrants if real signups are below 64
 - create `arena_matches`
 
 #### Round resolution job

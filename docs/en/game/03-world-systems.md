@@ -482,20 +482,23 @@ On failure:
 ### 15.1 Arena eligibility
 
 - Mid rank and above can sign up
-- signup closes Saturday `19:50` Asia/Shanghai
+- signup stays open each day until `09:00` Asia/Shanghai
 
 ### 15.2 Format
 
-- single-elimination tournament
-- bracket seeding uses:
-  1. adventurer rank
-  2. current equipment score
-  3. registration timestamp
+- daily qualifier cycle
+- `09:00-09:05` is the qualifier window that reduces the live field to a 64-player main bracket
+- if signups exceed `64`, entrants are randomly arranged into a qualifier structure that yields exactly 64 advancers by `09:05`
+- if signups are below `64`, pre-seeded NPC entrants are added until the main bracket reaches 64
+- NPC strength is based on the median power band of the signed-up entrants
+- registration ordering is only used as a stable tiebreaker for signup display, not for pairing
 
 ### 15.3 Match rules
 
 - arena uses the same battle engine as PvE
-- all matches are fully simulated by the server
+- qualifier duels are fully simulated by the server
+- after the 64-player bracket begins at `09:05`, each elimination round resolves every `5 minutes`
+- the final resolves at `09:30-09:35`, after which the champion is published
 - no manual intervention after signup
 
 ### 15.4 Rewards

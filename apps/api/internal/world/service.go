@@ -497,51 +497,64 @@ func nextDailyReset(now time.Time) time.Time {
 }
 
 func currentArenaStatus(now time.Time) ArenaStatus {
-	weekday := now.Weekday()
 	hour := now.Hour()
 	minute := now.Minute()
+	stageMinute := minute - 5
 
-	if weekday == time.Saturday && (hour < 19 || (hour == 19 && minute < 50)) {
+	if hour < 9 {
 		return ArenaStatus{
 			Code:          "signup_open",
 			Label:         "Signups Open",
-			Details:       "Eligible high-rank bots can still enter this week's bracket.",
-			NextMilestone: "Signup closes Saturday 19:50",
+			Details:       "Eligible mid- and high-rank bots can sign up before the 09:00 qualifier cutoff.",
+			NextMilestone: "Qualifiers lock at 09:00",
 		}
 	}
 
-	if weekday == time.Saturday && hour == 19 && minute >= 50 {
+	if hour == 9 && minute < 5 {
 		return ArenaStatus{
 			Code:          "signup_locked",
-			Label:         "Bracket Locking",
-			Details:       "Seeding is being finalized before the first arena round.",
-			NextMilestone: "Tournament starts Saturday 20:00",
+			Label:         "Qualifiers Seeding",
+			Details:       "The 09:00-09:05 qualifier round is trimming the field to 64, with NPCs ready to backfill the main bracket if needed.",
+			NextMilestone: "Round of 64 starts at 09:05",
 		}
 	}
 
-	if weekday == time.Saturday && hour >= 20 {
+	if hour == 9 && minute < 35 {
+		roundLabel := "Round of 64"
+		nextMilestone := "Round of 32 starts at 09:10"
+		switch {
+		case stageMinute < 5:
+			roundLabel = "Round of 64"
+			nextMilestone = "Round of 32 starts at 09:10"
+		case stageMinute < 10:
+			roundLabel = "Round of 32"
+			nextMilestone = "Round of 16 starts at 09:15"
+		case stageMinute < 15:
+			roundLabel = "Round of 16"
+			nextMilestone = "Quarterfinals start at 09:20"
+		case stageMinute < 20:
+			roundLabel = "Quarterfinals"
+			nextMilestone = "Semifinals start at 09:25"
+		case stageMinute < 25:
+			roundLabel = "Semifinals"
+			nextMilestone = "Final starts at 09:30"
+		default:
+			roundLabel = "Final"
+			nextMilestone = "Champion is declared at 09:35"
+		}
 		return ArenaStatus{
 			Code:          "in_progress",
-			Label:         "In Progress",
-			Details:       "Arena rounds resolve every five minutes until a champion is crowned.",
-			NextMilestone: "Next round in 5 minutes",
-		}
-	}
-
-	if weekday == time.Sunday {
-		return ArenaStatus{
-			Code:          "results_live",
-			Label:         "Results Live",
-			Details:       "This week's bracket is complete and standings are visible on the public board.",
-			NextMilestone: "Next signup window opens Saturday",
+			Label:         "Bracket In Progress",
+			Details:       fmt.Sprintf("%s is auto-resolving now, with one round finishing every five minutes.", roundLabel),
+			NextMilestone: nextMilestone,
 		}
 	}
 
 	return ArenaStatus{
-		Code:          "preparing",
-		Label:         "Preparing",
-		Details:       "Guilds are training through the week while the next arena window approaches.",
-		NextMilestone: "Signup opens Saturday",
+		Code:          "results_live",
+		Label:         "Results Live",
+		Details:       "Today's 64-player bracket is complete and the champion is visible on the public board.",
+		NextMilestone: "Next qualifiers lock tomorrow 09:00",
 	}
 }
 
@@ -550,7 +563,9 @@ func arenaStatusArenaPopulation(code string) int {
 	case "signup_open", "signup_locked":
 		return 12
 	case "in_progress":
-		return 16
+		return 64
+	case "results_live":
+		return 1
 	default:
 		return 0
 	}
@@ -755,7 +770,7 @@ var seedEventTemplates = []eventTemplate{
 		ActorCharacterID: "char_nova",
 		ActorName:        "NovaScript",
 		RegionID:         "main_city",
-		Summary:          "NovaScript locked in an arena signup for the coming weekend bracket.",
+		Summary:          "NovaScript locked in a signup for tomorrow's 09:00 arena qualifiers.",
 		Payload:          map[string]any{"status": "signed_up"},
 		Offset:           34 * time.Minute,
 	},

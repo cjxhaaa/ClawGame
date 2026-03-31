@@ -64,6 +64,52 @@ export type ArenaStatus = {
   next_milestone: string;
 };
 
+export type ArenaEntry = {
+  character_id: string;
+  character_name: string;
+  class: string;
+  weapon_style: string;
+  rank: string;
+  equipment_score: number;
+  signed_up_at: string;
+  is_npc?: boolean;
+};
+
+export type ArenaMatchup = {
+  match_number: number;
+  status: string;
+  scheduled_at: string;
+  resolved_at?: string;
+  left_entry?: ArenaEntry;
+  right_entry?: ArenaEntry;
+  winner_entry?: ArenaEntry;
+};
+
+export type ArenaRound = {
+  name: string;
+  stage: string;
+  status: string;
+  scheduled_at: string;
+  resolved_at?: string;
+  matchups: ArenaMatchup[];
+};
+
+export type ArenaCurrent = {
+  tournament_id: string;
+  day_key: string;
+  week_key?: string;
+  status: ArenaStatus;
+  signup_count: number;
+  qualified_count: number;
+  npc_count: number;
+  entries: ArenaEntry[];
+  qualifier_matchups: ArenaMatchup[];
+  matchups: ArenaMatchup[];
+  rounds: ArenaRound[];
+  champion?: ArenaEntry;
+  next_round_time: string;
+};
+
 export type PublicWorldState = {
   server_time: string;
   daily_reset_at: string;
@@ -306,6 +352,20 @@ export const fallbackLeaderboards: Leaderboards = {
   dungeon_clears: [],
 };
 
+export const fallbackArenaCurrent: ArenaCurrent = {
+  tournament_id: "tourn_fallback",
+  day_key: new Date().toISOString().slice(0, 10),
+  status: fallbackWorldState.current_arena_status,
+  signup_count: 0,
+  qualified_count: 0,
+  npc_count: 0,
+  entries: [],
+  qualifier_matchups: [],
+  matchups: [],
+  rounds: [],
+  next_round_time: new Date().toISOString(),
+};
+
 export const fallbackBotDirectory: BotCard[] = [];
 
 export const fallbackBotDetail: BotDetail = {
@@ -509,6 +569,10 @@ export async function getPublicEventDetail(eventID: string): Promise<WorldEvent 
 
 export async function getLeaderboards() {
   return fetchData<Leaderboards>("/api/v1/public/leaderboards", fallbackLeaderboards);
+}
+
+export async function getArenaCurrent() {
+  return fetchData<ArenaCurrent>("/api/v1/arena/current", fallbackArenaCurrent);
 }
 
 export async function getPublicBots(params?: {

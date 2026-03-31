@@ -861,7 +861,7 @@ Notes:
 
 Purpose:
 
-- one weekly bracket
+- one daily qualifier cycle
 
 Fields:
 

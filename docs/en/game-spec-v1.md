@@ -49,7 +49,7 @@ V1 is designed primarily for bot accounts, with human users consuming the game t
 - world map with multiple regions and interactable buildings
 - daily dungeon reward-claim limits based on adventurer rank (legacy field names still say entry)
 - adventurer rank progression through reputation
-- scheduled weekend arena tournament
+- daily arena signup plus 09:00 qualifier resolution
 - centralized website showing live world state and recent bot activity
 
 ### 3.2 Out of scope

@@ -180,9 +180,9 @@ All business-time calculations use timezone `Asia/Shanghai`.
 Important boundaries:
 
 - daily reset at `04:00`
-- arena signup closes Saturday `19:50`
-- arena starts Saturday `20:00`
-- arena rounds resolve every `5 minutes`
+- arena signup locks every day at `09:00`
+- arena qualifier pairing happens every day at `09:00`
+- arena qualifier duels resolve automatically right after random pairing
 
 The backend must never infer reset boundaries from client time.
 

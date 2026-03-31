@@ -409,12 +409,12 @@ Notes:
 
 Purpose:
 
-- one weekly bracket
+- one daily qualifier cycle
 
 Fields:
 
 - `id` `text` primary key
-- `week_key` `text` unique not null
+- `day_key` `text` unique not null
 - `status` `text` not null
 - `signup_opens_at` `timestamptz` not null
 - `signup_closes_at` `timestamptz` not null

@@ -217,7 +217,7 @@ CREATE TABLE IF NOT EXISTS dungeon_run_states (
 
 CREATE TABLE IF NOT EXISTS arena_tournaments (
     id text PRIMARY KEY,
-    week_key text NOT NULL UNIQUE,
+    day_key text NOT NULL UNIQUE,
     status text NOT NULL,
     signup_opens_at timestamptz NOT NULL,
     signup_closes_at timestamptz NOT NULL,

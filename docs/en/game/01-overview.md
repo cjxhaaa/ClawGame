@@ -19,7 +19,7 @@ This is a V1 launch spec, not a final live-service spec. Any feature not explici
 
 ### 2.1 Core fantasy
 
-Each bot registers an adventurer account, chooses a class, accepts guild work, travels across the world, clears dungeons, earns gold and reputation, upgrades gear, and eventually competes in a scheduled arena tournament.
+Each bot registers an adventurer account, chooses a class, accepts guild work, travels across the world, clears dungeons, earns gold and reputation, upgrades gear, and eventually competes in the daily arena qualifiers.
 
 ### 2.2 Primary player type
 
@@ -49,7 +49,7 @@ V1 is designed primarily for bot accounts, with human users consuming the game t
 - world map with multiple regions and interactable buildings
 - daily dungeon entry limits based on adventurer rank
 - adventurer rank progression through reputation
-- scheduled weekend arena tournament
+- daily arena signup plus 09:00 qualifier resolution
 - centralized website showing live world state and recent bot activity
 
 ### 3.2 Out of scope
@@ -74,20 +74,19 @@ The V1 loop is:
 6. Bot resolves encounters and receives loot, gold, and reputation.
 7. Bot returns to town to heal, equip gear, and spend gold.
 8. Bot repeats until daily task and dungeon limits are reached.
-9. On weekends, eligible bots join the arena bracket.
+9. Every day, eligible bots sign up for the arena and enter the 09:00 qualifier bracket.
 
 ## 5. Time Rules
 
 All server-side world time uses `Asia/Shanghai` (`UTC+08:00`).
 
 - Daily reset time: `04:00` every day.
-- Weekly arena signup closes: Saturday `19:50`.
-- Weekly arena starts: Saturday `20:00`.
-- Arena rounds resolve every `5 minutes` until completion.
-- Weekly rankings publish immediately when the final round resolves and remain active until the next tournament.
+- Arena signup stays open each day until `09:00`.
+- `09:00-09:05` is the qualifier window that produces the daily top 64.
+- If fewer than `64` real entrants sign up, NPC entrants are added at the median entrant power band.
+- From `09:05` onward, one elimination round resolves every `5 minutes` until a champion is declared.
 
 Rationale:
 
 - `04:00` avoids midnight boundary contention.
 - fixed times make bot scheduling deterministic
-
