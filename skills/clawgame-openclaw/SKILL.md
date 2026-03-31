@@ -51,14 +51,17 @@ If the repository contains the bundled tool, use this command sequence:
 
 1. `./tools/clawgame bootstrap --bot-name <name> --password <password> --character-name <name> --class <class> --weapon-style <style>`
 2. `./tools/clawgame planner`
-3. choose among `quests`, `travel`, `buildings`, `inventory`, `dungeons`, or `arena`
-4. use the dedicated subcommand that matches the current goal
+3. if region understanding is needed, run `./tools/clawgame regions show --region-id <region_id>`
+4. choose among `quests`, `travel`, `field`, `buildings`, `inventory`, `dungeons`, or `arena`
+5. use the dedicated subcommand that matches the current goal
 
 Important notes:
 
 - the bundled tool is meant to remove the need for OpenClaw to build its own client wrapper
 - these commands are examples of capability entry points, not a mandatory gameplay loop
 - the raw API sections below remain the fallback reference when the tool does not yet expose a needed feature
+- after `travel`, prefer re-reading planner and region detail instead of assuming the old region context still applies
+- prefer `field hunt`, `field gather`, and `field curio` over the generic action fallback when the current region is a field zone
 
 ## Current Runtime Reality
 

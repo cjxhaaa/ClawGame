@@ -17,6 +17,12 @@ Fields:
 - `regions`: per-region population and recent event counts
 - `current_arena_status`
 
+Additional note:
+
+- `WorldState.regions` is meant to provide public observation summary.
+- It helps the homepage map answer where the world is hot, dangerous, or worth watching.
+- It should not become a carrier for full quest boards or per-region strategy recommendation.
+
 ### 10.2 BotCard
 
 Fields:
@@ -340,6 +346,10 @@ Current repo behavior:
 - `local_quests` excludes `submitted` and `expired` quests
 - `local_dungeons` marks `is_rank_eligible`, `has_remaining_quota`, and `can_enter`
 - `suggested_actions` is a compact hint list, not a full policy engine
+- `quest_runtime_hints` is also returned and now carries per-quest step metadata such as `current_step_key`, `current_step_label`, `current_step_hint`, `suggested_action_type`, `suggested_action_args`, and `available_choices`
+- when the queried region already exposes map-layer capability, `suggested_actions` also includes regional action hints
+- field regions can contribute `resolve_field_encounter:hunt`, `resolve_field_encounter:gather`, and `resolve_field_encounter:curio`
+- a dungeon region, or a region with an attached enterable dungeon, can contribute `enter_dungeon`
 
 Recommendation:
 
@@ -363,6 +373,22 @@ Fields per action:
 Current repo note:
 
 - this endpoint is intentionally lightweight and does not include full planner context
+- when the character is in a field region, the current implementation returns three explicit field interaction actions instead of one generic encounter action
+- the current canonical values are `resolve_field_encounter:hunt`, `resolve_field_encounter:gather`, and `resolve_field_encounter:curio`
+- quest-step actions may also appear here as `quest_interact` or `quest_choice`
+- when they appear, `label` and `args_schema` should surface the currently suggested quest step so OpenClaw does not need to infer the payload shape from free text alone
+
+Building-model note:
+
+- V1 functional buildings use one canonical taxonomy only:
+  - `guild`
+  - `equipment_shop`
+  - `apothecary`
+  - `blacksmith`
+  - `arena`
+  - `warehouse`
+- these are bot-facing capability surfaces and should be treated as the stable building families in read models, APIs, and tool output
+- other world locations may still expose interaction, quest, or lore hooks, but those should be modeled as neutral interaction points rather than as functional building families
 
 #### `POST /api/v1/me/actions`
 
@@ -401,6 +427,10 @@ Supported canonical `action_type` values:
 
 - `travel`
 - `enter_building`
+- `resolve_field_encounter`
+- `resolve_field_encounter:hunt`
+- `resolve_field_encounter:gather`
+- `resolve_field_encounter:curio`
 - `accept_quest`
 - `submit_quest`
 - `reroll_quests`
@@ -423,6 +453,32 @@ Recommendation:
 
 ### 12.4 Region APIs
 
+#### `12.4.0` Region Read Model Boundary
+
+The region read model should currently serve two goals:
+
+1. give the human observer site a readable answer to “what kind of place is this?”
+2. give OpenClaw a direct answer to “what can I do once I arrive here?”
+
+Because of that, the region read model should prioritize:
+
+- region identity
+- buildings and facilities
+- whether the region is dangerous
+- whether the region supports encounters
+- whether the region is connected to a dungeon
+- where the region can travel next
+- which region-local actions can be performed
+
+The following concerns should not be the primary responsibility of the region read model:
+
+- current quest board details
+- task recommendation order
+- long-term bot progression routing
+- planner-level reward comparison
+
+Those concerns should stay in `GET /api/v1/me/planner`, quest APIs, or higher strategy layers.
+
 #### `GET /api/v1/world/regions`
 
 Returns:
@@ -430,6 +486,15 @@ Returns:
 - all active regions
 - access requirements
 - building list summary
+
+Recommended future region-summary fields:
+
+- `interaction_layer`
+- `hostile_encounters`
+- `encounter_family`
+- `linked_dungeon`
+- `parent_region_id`
+- `available_region_actions`
 
 #### `GET /api/v1/regions/{regionId}`
 
@@ -439,6 +504,54 @@ Returns:
 - buildings
 - encounter summary when applicable
 - travel options from the region definition
+
+`GET /regions/{regionId}` should be treated as the main source of truth for the regional capability panel.
+
+Recommended minimum response shape:
+
+- `region`
+- `description`
+- `interaction_layer`
+- `hostile_encounters`
+- `encounter_family`
+- `buildings`
+- `travel_options`
+- `linked_dungeon`
+- `parent_region_id`
+- `available_region_actions`
+
+`available_region_actions` should directly answer “what can be done in this region right now.”
+
+Recommended first-batch canonical values:
+
+- `enter_building`
+- `resolve_field_encounter:hunt`
+- `resolve_field_encounter:gather`
+- `resolve_field_encounter:curio`
+- `enter_dungeon`
+
+These values describe regional capability only and should not mix in quest-board state.
+
+Current repo behavior:
+
+- `safe_hub` regions return `enter_building` when at least one enterable building exists
+- `field` regions return `resolve_field_encounter:hunt`, `resolve_field_encounter:gather`, and `resolve_field_encounter:curio`
+- `dungeon` regions return `enter_dungeon`
+- if a field region exposes `linked_dungeon`, region detail also includes `enter_dungeon`
+- this means `GET /api/v1/regions/{regionId}` already works as the main regional capability panel for OpenClaw
+
+Recommended OpenClaw consumption flow:
+
+1. call `GET /api/v1/me/planner` first for compact opportunity discovery
+2. call `GET /api/v1/regions/{regionId}` next for the authoritative regional capability panel
+3. call `GET /api/v1/buildings/{buildingId}` only when a specific facility has already been chosen
+4. call quest APIs only when the bot needs prioritization or quest-state drill-down
+
+This keeps the responsibilities separated:
+
+- planner tells the bot what opportunities are nearby
+- region detail tells the bot what the region actually allows
+- building detail tells the bot what a chosen facility supports
 
 #### `POST /api/v1/me/travel`
 
@@ -463,7 +576,27 @@ Side effects:
 - emits `travel.completed`
 - progresses region-travel quest objectives
 
+Recommendation:
+
+- after `travel`, the bot should usually refresh its regional understanding through `GET /api/v1/regions/{regionId}` or `GET /api/v1/me/planner`
+- if the only need is “what capability surfaces exist in this region,” prefer region detail over task-system reads
+
 ### 12.5 Building APIs
+
+Current V1 facility taxonomy should be kept intentionally small:
+
+- `guild`
+- `equipment_shop`
+- `apothecary`
+- `blacksmith`
+- `arena`
+- `warehouse`
+
+Facility-scope note:
+
+- `equipment_shop` is the current umbrella for basic weapon and armor buying/selling
+- `apothecary` is the preferred V1 label for potion purchase and paid HP recovery
+- product, backend, and tool-facing documentation should use only the six building families above
 
 #### `GET /api/v1/buildings/{buildingId}`
 
@@ -495,6 +628,45 @@ Current repo note:
 - `heal` maps to the lightweight action result `restore_hp`
 - `cleanse` maps to `remove_status`
 
+Current V1 action boundary:
+
+- `equipment_shop` should currently focus on:
+  - `purchase`
+  - `sell`
+- `apothecary` should currently focus on:
+  - `purchase`
+  - `heal`
+- `blacksmith` should currently focus on:
+  - `enhance`
+- `arena` should currently focus on:
+  - signup and bracket-viewing style actions
+- `guild` should currently focus on:
+  - quest board actions
+- `warehouse` may remain limited while storage gameplay is still being filled in
+
+Additional recommendation:
+
+- `GET /buildings/{buildingId}` together with `GET /regions/{regionId}` forms the facility capability surface for a region
+- when OpenClaw enters a new region, it can read the region first and then drill into specific buildings only when needed
+
+### 12.5.1 Map-Layer Regional Capability Actions
+
+To help OpenClaw quickly judge “what can be done in the current region” at the map layer, the backend uses the following regional capability action names:
+
+- `enter_building`
+- `resolve_field_encounter:hunt`
+- `resolve_field_encounter:gather`
+- `resolve_field_encounter:curio`
+- `enter_dungeon`
+
+Notes:
+
+- `enter_building` means the region contains at least one enterable facility
+- `resolve_field_encounter:*` means the region supports the corresponding field interaction mode
+- `enter_dungeon` means the region itself is a dungeon, or a dungeon is attached and enterable from the region
+
+This action set only solves “regional capability recognition.” It does not replace planner or task-system semantics.
+
 ### 12.6 Quest APIs
 
 #### `GET /api/v1/me/quests`
@@ -505,6 +677,66 @@ Returns:
 - all quests
 - active quest count
 - completion cap status
+
+Current field semantics:
+
+- `board_id`: current business-day board ID
+- `status`: currently fixed as `active`
+- `reroll_count`: number of rerolls already spent today
+- `active_quest_count`: number of quests in `accepted` or `completed`
+- `quests`: full quest array using the current `QuestSummary` shape
+- `limits`: daily quest-completion and dungeon-claim limits for the current character
+
+Quest-model planning notes:
+
+- `difficulty` values are `normal`, `hard`, and `nightmare`
+- `QuestSummary` now exposes explicit `difficulty` and `flow_kind`
+
+Current implementation notes:
+
+- the board uses a `04:00 Asia/Shanghai` business-day reset
+- first read and cross-day read both auto-ensure the board exists
+- the default board currently generates 6 template quests
+- `curio_followup_delivery` may be injected later by a resolved field `curio`, so it is not guaranteed to be present in the initial board snapshot
+
+Daily-board planning notes:
+
+- the product target is `3 normal + 2 hard + 1 nightmare`
+- `normal` should cover single-step clearing, gathering, and standard delivery
+- `hard` should cover cross-region handoff, recover-and-report, and dungeon-then-turn-in flows
+- `nightmare` should cover multi-step tasks with text-clue judgment
+
+Framework note:
+
+- `GET /api/v1/me/quests` should remain the board-summary entry point
+- step runtime, clue state, and branch options should not all be overloaded into `QuestSummary`
+- complex quests should expose runtime through a per-quest detail endpoint
+
+#### `GET /api/v1/me/quests/{questId}`
+
+Returns:
+
+- `quest`
+- `runtime`
+
+Current runtime fields:
+
+- `quest_id`
+- `current_step_key`
+- `current_step_label`
+- `current_step_hint`
+- `suggested_action_type`
+- `suggested_action_args`
+- `completed_step_keys`
+- `available_choices`
+- `clues`
+- `state_json`
+
+Current implementation note:
+
+- runtime is the main place where multi-step quest state is exposed
+- `state_json` currently carries machine-facing values such as `selected_choice_key`, `selected_choice_label`, discovered flags, and template-driven helper payloads
+- `current_step_label` and `current_step_hint` should be preferred over parsing `description` when OpenClaw decides the next move
 
 #### `POST /api/v1/me/quests/{questId}/accept`
 
@@ -517,6 +749,7 @@ Side effects:
 
 - marks `accepted`
 - emits `quest.accepted`
+- response also returns refreshed `quests` and `limits` state
 
 #### `POST /api/v1/me/quests/{questId}/submit`
 
@@ -535,6 +768,12 @@ Side effects:
 - emit `quest.submitted`
 - emit `character.rank_up` if applicable
 
+Current implementation notes:
+
+- submission itself only performs the `completed -> submitted` transition
+- reward and reputation application is handled by the character service
+- when the daily cap is exhausted, the API returns `QUEST_COMPLETION_CAP_REACHED`
+
 #### `POST /api/v1/me/quests/reroll`
 
 Request:
@@ -551,6 +790,98 @@ Behavior:
 - deducts reroll fee
 - expires remaining incomplete quests
 - generates replacement quests
+
+Current implementation notes:
+
+- reroll cost is currently fixed at `20 gold`
+- `submitted` and `completed` quests are kept on the board
+- all other quests are marked `expired`
+- replacement quests are appended back as `available`
+- missing confirmation returns `QUEST_REROLL_CONFIRM_REQUIRED`
+
+#### `POST /api/v1/me/field-encounter`
+
+Request:
+
+```json
+{
+  "approach": "hunt"
+}
+```
+
+Purpose:
+
+- resolve one field interaction in the current region
+- advance any affected quest progress as part of the same request
+
+Currently supported `approach` values:
+
+- `hunt`
+- `gather`
+- `curio`
+
+Quest-coupled effects:
+
+- `kill_region_enemies` advances from `enemies_defeated`
+- `collect_materials` advances from `materials_collected`
+- `curio` may create a `followup_quest`
+- when a `followup_quest` is created, it is inserted into the board and auto-accepted
+
+#### `POST /api/v1/me/actions`
+
+Quest-related action types:
+
+- `accept_quest`
+- `submit_quest`
+- `reroll_quests`
+- `resolve_field_encounter`
+- `resolve_field_encounter:hunt`
+- `resolve_field_encounter:gather`
+- `resolve_field_encounter:curio`
+
+Additional note:
+
+- these action types are the unified action-layer wrappers around the dedicated quest and field APIs
+- planner and OpenClaw can consume the action layer first, then drill into specialized endpoints when needed
+
+#### Quest Runtime mutation APIs
+
+To support extensible multi-step quests, the current repo exposes:
+
+- `GET /api/v1/me/quests/{questId}`
+- `POST /api/v1/me/quests/{questId}/choice`
+- `POST /api/v1/me/quests/{questId}/interact`
+
+Responsibilities:
+
+- `GET /me/quests/{questId}`: return `QuestSummary + QuestRuntime`
+- `POST /me/quests/{questId}/choice`: submit an inference, handoff, or branch choice
+- `POST /me/quests/{questId}/interact`: advance explicit quest steps that should not be inferred only from travel / field / dungeon actions
+
+Reasoning:
+
+- `normal` quests can still rely mostly on generic actions
+- `hard` and `nightmare` quests need explicit runtime so OpenClaw does not have to guess the next step
+- adding a new quest should mostly mean adding templates and step definitions, not creating a brand-new endpoint family each time
+
+Current implementation note:
+
+- `POST /me/quests/{questId}/choice` and `POST /me/quests/{questId}/interact` are also reachable through the generic `POST /api/v1/me/actions` router using `quest_choice` and `quest_interact`
+- planner and action panels should therefore be able to point to the same runtime step without duplicating quest logic in multiple places
+
+#### Quest progression through other APIs
+
+The quest system is not advanced only by quest-specific APIs. The following endpoints also mutate quest progress:
+
+- `POST /api/v1/me/travel`
+- `POST /api/v1/dungeons/{dungeonId}/enter`
+- `POST /api/v1/me/actions`
+
+Current coupling rules:
+
+- traveling into the target region auto-completes `deliver_supplies` and `curio_followup_delivery`
+- a successful dungeon resolution auto-completes matching `kill_dungeon_elite` and `clear_dungeon`
+- the unified action layer keeps the same quest effects for `travel`, `enter_dungeon`, and `resolve_field_encounter:*`
 
 ### 12.7 Inventory APIs
 
@@ -620,7 +951,7 @@ Returns:
 
 Purpose:
 
-- create a run and let the backend battle engine auto-resolve it
+- create a run, optionally snapshot a dungeon potion loadout, then let the backend battle engine auto-resolve it
 
 Validation:
 
@@ -628,14 +959,37 @@ Validation:
 - reward-claim daily quota remains
 - character not already in active run
 - omitted or invalid difficulty defaults to `easy`
+- if `potion_loadout` is provided, it may contain at most two potion IDs
+- selected potion IDs must be distinct
+- selected potion IDs must be available in the caller inventory and rank-legal for the caller
 
 Side effects:
 
 - create `dungeon_runs`
+- snapshot the selected potion loadout for this run
 - execute run resolution server-side
 - stage reward package when the run clears successfully
 - emit `dungeon.entered`
 - emit `dungeon.cleared`
+
+Optional request shape:
+
+```json
+{
+  "difficulty": "hard",
+  "potion_loadout": [
+    "potion_hp_t1",
+    "potion_def_t1"
+  ]
+}
+```
+
+Loadout rule:
+
+- OpenClaw may choose zero, one, or two potion IDs before entering a dungeon
+- if potion IDs are provided, those selected potion IDs are the only potion families the auto-battle engine may use during that run
+- quantity still comes from the caller inventory; choosing a potion family does not create free potions
+- if no `potion_loadout` is provided, the run enters without a potion loadout
 
 Success response shape includes at minimum:
 
@@ -648,6 +1002,7 @@ Success response shape includes at minimum:
 - `current_rating`
 - `reward_claimable`
 - `available_actions`
+- `potion_loadout`
 
 Current repo note:
 
@@ -733,6 +1088,13 @@ Returns:
 Returns:
 
 - aggregated public world snapshot for the observer website
+
+Current repo behavior:
+
+- each region summary in `regions` already carries gameplay-semantic fields
+- this includes `interaction_layer`, `risk_level`, `facility_focus`, `encounter_family`, `linked_dungeon`, and `hostile_encounters`
+- the current implementation also includes `available_region_actions`
+- because of that, public world state is no longer only “where are bots active,” but also starts to say “what can happen there”
 
 #### `GET /api/v1/public/bots`
 

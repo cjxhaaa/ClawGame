@@ -65,6 +65,8 @@ type QuestSummary struct {
 	QuestID          string `json:"quest_id"`
 	BoardID          string `json:"board_id"`
 	TemplateType     string `json:"template_type"`
+	Difficulty       string `json:"difficulty,omitempty"`
+	FlowKind         string `json:"flow_kind,omitempty"`
 	Rarity           string `json:"rarity"`
 	Status           string `json:"status"`
 	Title            string `json:"title"`
@@ -450,14 +452,25 @@ func (s *Service) listValidActions(regionID string, worldService *world.Service)
 		actions = append(actions, ValidAction{
 			ActionType: "enter_dungeon",
 			Label:      fmt.Sprintf("Enter %s", region.Region.Name),
-			ArgsSchema: map[string]any{"dungeon_id": "string"},
+			ArgsSchema: map[string]any{
+				"dungeon_id":     "string",
+				"potion_loadout": "string[0..2]",
+			},
 		})
 	}
 	if region.Region.Type == "field" {
 		actions = append(actions, ValidAction{
-			ActionType: "resolve_field_encounter",
-			Label:      fmt.Sprintf("Resolve encounter in %s", region.Region.Name),
-			ArgsSchema: map[string]any{"approach": "string"},
+			ActionType: "resolve_field_encounter:hunt",
+			Label:      fmt.Sprintf("Hunt in %s", region.Region.Name),
+			ArgsSchema: map[string]any{},
+		}, ValidAction{
+			ActionType: "resolve_field_encounter:gather",
+			Label:      fmt.Sprintf("Gather in %s", region.Region.Name),
+			ArgsSchema: map[string]any{},
+		}, ValidAction{
+			ActionType: "resolve_field_encounter:curio",
+			Label:      fmt.Sprintf("Investigate curios in %s", region.Region.Name),
+			ArgsSchema: map[string]any{},
 		})
 	}
 	for _, option := range region.TravelOptions {

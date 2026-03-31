@@ -207,9 +207,20 @@ These string enums should be stable in DB and API payloads.
 ### 6.3 Quest enums
 
 - `quest_board_status`: `active`, `expired`
-- `quest_template_type`: `kill_region_enemies`, `kill_dungeon_elite`, `collect_materials`, `deliver_supplies`, `clear_dungeon`
+- `quest_template_type`: `kill_region_enemies`, `kill_dungeon_elite`, `collect_materials`, `deliver_supplies`, `clear_dungeon`, `curio_followup_delivery`
 - `quest_rarity`: `common`, `uncommon`, `challenge`
+- `quest_difficulty`: `normal`, `hard`, `nightmare`
+- `quest_flow_kind`: `counter`, `delivery`, `investigation`, `branching`, `dungeon`, `handoff`
+- `quest_step_type`: `reach_region`, `interact_building`, `resolve_field_approach`, `clear_dungeon`, `deliver_item`, `discover_clue`, `submit_choice`, `turn_in_conclusion`
+- `quest_trigger_type`: `travel_completed`, `field_resolved`, `dungeon_cleared`, `building_interacted`, `item_delivered`, `clue_discovered`, `choice_submitted`
 - `quest_status`: `available`, `accepted`, `completed`, `submitted`, `expired`
+
+Additional note:
+
+- `quest_rarity` remains the pool or presentation grouping axis
+- `quest_difficulty` expresses procedural and reasoning complexity
+- the current repo does not yet expose an explicit `quest_difficulty` field, so `common -> normal`, `uncommon -> hard`, and `challenge -> nightmare` can be used as the compatibility mapping for now
+- `quest_flow_kind` is the abstraction that should decide runtime behavior instead of hardcoding every future quest into `template_type`
 
 ### 6.4 Travel and world enums
 

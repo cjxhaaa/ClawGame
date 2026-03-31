@@ -344,7 +344,34 @@ func NewServer(cfg config.API) *Server {
 
 			board := questService.ListQuests(character, limits)
 			localQuests := make([]characters.QuestSummary, 0, len(board.Quests))
+			suggestedActions := make([]string, 0, 6)
+			questRuntimeHints := make([]map[string]any, 0, 4)
 			for _, quest := range board.Quests {
+				if quest.Status == "accepted" {
+					if _, runtime, err := questService.GetQuestRuntime(character.CharacterID, quest.QuestID); err == nil {
+						if runtime.SuggestedActionType != "" {
+							suggestedActions = appendUniqueString(suggestedActions, runtime.SuggestedActionType)
+						}
+						if runtime.CurrentStepKey != "" {
+							questRuntimeHints = append(questRuntimeHints, map[string]any{
+								"quest_id":              quest.QuestID,
+								"template_type":         quest.TemplateType,
+								"difficulty":            quest.Difficulty,
+								"flow_kind":             quest.FlowKind,
+								"current_step_key":      runtime.CurrentStepKey,
+								"current_step_label":    runtime.CurrentStepLabel,
+								"current_step_hint":     runtime.CurrentStepHint,
+								"suggested_action_type": runtime.SuggestedActionType,
+								"suggested_action_args": runtime.SuggestedActionArgs,
+								"target_region_id":      quest.TargetRegionID,
+								"selected_choice":       runtime.State["selected_choice_key"],
+								"selected_choice_label": runtime.State["selected_choice_label"],
+								"available_choices":     runtime.AvailableChoices,
+								"completed_step_keys":   runtime.CompletedStepKeys,
+							})
+						}
+					}
+				}
 				if quest.TargetRegionID != queryRegionID {
 					continue
 				}
@@ -365,19 +392,20 @@ func NewServer(cfg config.API) *Server {
 				canEnter := isRankEligible && hasRemainingQuota
 
 				localDungeons = append(localDungeons, map[string]any{
-					"dungeon_id":            definition.DungeonID,
-					"name":                  definition.Name,
-					"region_id":             definition.RegionID,
-					"min_rank":              definition.MinRank,
-					"is_rank_eligible":      isRankEligible,
-					"has_remaining_quota":   hasRemainingQuota,
-					"can_enter":             canEnter,
-					"recommended_level_min": definition.RecommendedLevelMin,
-					"recommended_level_max": definition.RecommendedLevelMax,
+					"dungeon_id":              definition.DungeonID,
+					"name":                    definition.Name,
+					"region_id":               definition.RegionID,
+					"min_rank":                definition.MinRank,
+					"is_rank_eligible":        isRankEligible,
+					"has_remaining_quota":     hasRemainingQuota,
+					"can_enter":               canEnter,
+					"requires_potion_loadout": false,
+					"potion_slot_count":       2,
+					"recommended_level_min":   definition.RecommendedLevelMin,
+					"recommended_level_max":   definition.RecommendedLevelMax,
 				})
 			}
 
-			suggestedActions := make([]string, 0, 4)
 			if state.DungeonDaily.HasClaimableRun {
 				suggestedActions = append(suggestedActions, "claim_dungeon_rewards")
 			}
@@ -395,8 +423,13 @@ func NewServer(cfg config.API) *Server {
 					break
 				}
 			}
-			if detail, ok := worldService.GetRegion(queryRegionID); ok && detail.Region.Type == "field" {
-				suggestedActions = appendUniqueString(suggestedActions, "resolve_field_encounter")
+			if detail, ok := worldService.GetRegion(queryRegionID); ok {
+				for _, action := range detail.AvailableRegionActions {
+					switch action {
+					case "resolve_field_encounter:hunt", "resolve_field_encounter:gather", "resolve_field_encounter:curio", "enter_dungeon":
+						suggestedActions = appendUniqueString(suggestedActions, action)
+					}
+				}
 			}
 
 			writeEnvelope(w, r, http.StatusOK, map[string]any{
@@ -416,6 +449,7 @@ func NewServer(cfg config.API) *Server {
 				"character_region_id": character.LocationRegionID,
 				"query_region_id":     queryRegionID,
 				"local_quests":        localQuests,
+				"quest_runtime_hints": questRuntimeHints,
 				"local_dungeons":      localDungeons,
 				"dungeon_daily":       state.DungeonDaily,
 				"suggested_actions":   suggestedActions,
@@ -438,6 +472,7 @@ func NewServer(cfg config.API) *Server {
 				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to load valid actions")
 				return
 			}
+			actions = appendQuestRuntimeValidActions(actions, account, characterService, questService)
 
 			writeEnvelope(w, r, http.StatusOK, map[string]any{
 				"actions": actions,
@@ -467,6 +502,10 @@ func NewServer(cfg config.API) *Server {
 					writeError(w, r, http.StatusNotFound, "QUEST_NOT_FOUND", "quest does not exist on the current board")
 				case errors.Is(err, quests.ErrQuestInvalidState):
 					writeError(w, r, http.StatusBadRequest, "QUEST_INVALID_STATE", "quest is not in a valid state for this action")
+				case errors.Is(err, quests.ErrQuestChoiceNotAvailable):
+					writeError(w, r, http.StatusBadRequest, "QUEST_CHOICE_NOT_AVAILABLE", "quest choice is not available")
+				case errors.Is(err, quests.ErrQuestInteractionInvalid):
+					writeError(w, r, http.StatusBadRequest, "QUEST_INTERACTION_INVALID", "quest interaction is invalid")
 				case errors.Is(err, quests.ErrQuestCompletionCapReached):
 					writeError(w, r, http.StatusBadRequest, "QUEST_COMPLETION_CAP_REACHED", "daily quest completion cap has been reached")
 				case errors.Is(err, quests.ErrQuestRerollConfirmRequired):
@@ -499,6 +538,8 @@ func NewServer(cfg config.API) *Server {
 					writeError(w, r, http.StatusBadRequest, "DUNGEON_REWARD_NOT_CLAIMABLE", "run rewards are not claimable")
 				case errors.Is(err, dungeons.ErrDungeonRewardClaimCapReached), errors.Is(err, characters.ErrDungeonRewardClaimCap):
 					writeError(w, r, http.StatusBadRequest, "DUNGEON_REWARD_CLAIM_LIMIT_REACHED", "daily dungeon reward claim cap has been reached")
+				case errors.Is(err, dungeons.ErrDungeonPotionLoadoutInvalid):
+					writeError(w, r, http.StatusBadRequest, "DUNGEON_POTION_LOADOUT_INVALID", "select up to two owned potion types before entering a dungeon")
 				case errors.Is(err, inventory.ErrItemNotOwned):
 					writeError(w, r, http.StatusNotFound, "ITEM_NOT_OWNED", "item does not belong to character")
 				case errors.Is(err, inventory.ErrItemNotEquippable):
@@ -600,6 +641,114 @@ func NewServer(cfg config.API) *Server {
 			}
 
 			writeEnvelope(w, r, http.StatusOK, questService.ListQuests(character, limits))
+		})
+
+		r.Get("/me/quests/{questId}", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+
+			character, limits, err := currentCharacterWithLimits(account, characterService, worldService)
+			if err != nil {
+				writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before requesting quest detail")
+				return
+			}
+			_ = questService.ListQuests(character, limits)
+
+			quest, runtime, err := questService.GetQuestRuntime(character.CharacterID, chi.URLParam(r, "questId"))
+			if err != nil {
+				if errors.Is(err, quests.ErrQuestNotFound) {
+					writeError(w, r, http.StatusNotFound, "QUEST_NOT_FOUND", "quest does not exist on the current board")
+					return
+				}
+				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to load quest runtime")
+				return
+			}
+
+			writeEnvelope(w, r, http.StatusOK, map[string]any{
+				"quest":    quest,
+				"runtime":  runtime,
+				"can_view": true,
+			})
+		})
+
+		r.Post("/me/quests/{questId}/choice", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+
+			var request struct {
+				ChoiceKey string `json:"choice_key"`
+			}
+			if !decodeJSONBody(w, r, &request) {
+				return
+			}
+
+			character, limits, err := currentCharacterWithLimits(account, characterService, worldService)
+			if err != nil {
+				writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before choosing quest branches")
+				return
+			}
+			_ = questService.ListQuests(character, limits)
+
+			quest, runtime, err := questService.ApplyQuestChoice(character, chi.URLParam(r, "questId"), request.ChoiceKey)
+			if err != nil {
+				switch {
+				case errors.Is(err, quests.ErrQuestNotFound):
+					writeError(w, r, http.StatusNotFound, "QUEST_NOT_FOUND", "quest does not exist on the current board")
+				case errors.Is(err, quests.ErrQuestChoiceNotAvailable):
+					writeError(w, r, http.StatusBadRequest, "QUEST_CHOICE_NOT_AVAILABLE", "choice is not available for this quest")
+				default:
+					writeError(w, r, http.StatusBadRequest, "QUEST_INVALID_STATE", "quest choice could not be applied")
+				}
+				return
+			}
+
+			writeEnvelope(w, r, http.StatusOK, map[string]any{
+				"quest":   quest,
+				"runtime": runtime,
+			})
+		})
+
+		r.Post("/me/quests/{questId}/interact", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+
+			var request struct {
+				Interaction string `json:"interaction"`
+			}
+			if !decodeJSONBody(w, r, &request) {
+				return
+			}
+
+			character, limits, err := currentCharacterWithLimits(account, characterService, worldService)
+			if err != nil {
+				writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before advancing quest interactions")
+				return
+			}
+			_ = questService.ListQuests(character, limits)
+
+			quest, runtime, err := questService.AdvanceQuestInteraction(character, chi.URLParam(r, "questId"), request.Interaction)
+			if err != nil {
+				switch {
+				case errors.Is(err, quests.ErrQuestNotFound):
+					writeError(w, r, http.StatusNotFound, "QUEST_NOT_FOUND", "quest does not exist on the current board")
+				case errors.Is(err, quests.ErrQuestInteractionInvalid):
+					writeError(w, r, http.StatusBadRequest, "QUEST_INTERACTION_INVALID", "interaction is not valid for this quest")
+				default:
+					writeError(w, r, http.StatusBadRequest, "QUEST_INVALID_STATE", "quest interaction could not be applied")
+				}
+				return
+			}
+
+			writeEnvelope(w, r, http.StatusOK, map[string]any{
+				"quest":   quest,
+				"runtime": runtime,
+			})
 		})
 
 		r.Post("/me/quests/{questId}/accept", func(w http.ResponseWriter, r *http.Request) {
@@ -1047,8 +1196,27 @@ func NewServer(cfg config.API) *Server {
 				return
 			}
 
-			difficulty := strings.TrimSpace(r.URL.Query().Get("difficulty"))
-			run, err := dungeonService.EnterDungeon(character, limits, chi.URLParam(r, "dungeonId"), difficulty)
+			var request struct {
+				Difficulty    string   `json:"difficulty"`
+				PotionLoadout []string `json:"potion_loadout"`
+			}
+			if r.ContentLength > 0 {
+				if !decodeJSONBody(w, r, &request) {
+					return
+				}
+			}
+
+			difficulty := strings.TrimSpace(request.Difficulty)
+			if difficulty == "" {
+				difficulty = strings.TrimSpace(r.URL.Query().Get("difficulty"))
+			}
+			potionBag, err := inventoryService.BuildPotionLoadout(character, request.PotionLoadout)
+			if err != nil {
+				writeError(w, r, http.StatusBadRequest, "DUNGEON_POTION_LOADOUT_INVALID", "select up to two owned potion types before entering a dungeon")
+				return
+			}
+
+			run, err := dungeonService.EnterDungeon(character, limits, chi.URLParam(r, "dungeonId"), difficulty, request.PotionLoadout, potionBag)
 			if err != nil {
 				switch {
 				case errors.Is(err, dungeons.ErrDungeonNotFound):
@@ -1059,11 +1227,14 @@ func NewServer(cfg config.API) *Server {
 					writeError(w, r, http.StatusConflict, "DUNGEON_RUN_ALREADY_ACTIVE", "character already has an active dungeon run")
 				case errors.Is(err, dungeons.ErrDungeonRewardClaimCapReached):
 					writeError(w, r, http.StatusBadRequest, "DUNGEON_REWARD_CLAIM_LIMIT_REACHED", "daily dungeon reward claim cap has been reached")
+				case errors.Is(err, dungeons.ErrDungeonPotionLoadoutInvalid):
+					writeError(w, r, http.StatusBadRequest, "DUNGEON_POTION_LOADOUT_INVALID", "select up to two owned potion types before entering a dungeon")
 				default:
 					writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to enter dungeon")
 				}
 				return
 			}
+			inventoryService.ConsumeConsumables(character.CharacterID, dungeons.PotionUsageFromLog(run.RecentBattleLog))
 
 			definition, _ := dungeonService.GetDungeonDefinition(run.DungeonID)
 			_, completedQuests := questService.ProgressDungeonQuests(character, definition.RegionID, limits)
@@ -1582,6 +1753,7 @@ func buildCharacterState(account auth.Account, characterService *characters.Serv
 	}
 
 	state.Objectives = questService.ActiveObjectives(state.Character.CharacterID)
+	state.ValidActions = append(state.ValidActions, questService.ListRuntimeActions(state.Character.CharacterID)...)
 	state.DungeonDaily = buildDungeonDailyHint(state, dungeonService)
 	return state, nil
 }
@@ -1690,15 +1862,16 @@ func buildPublicWorldState(worldService *world.Service, snapshot characters.Runt
 			Highlight:        highlight,
 			BuildingCount:    len(detail.Buildings),
 			RegionGameplay: world.RegionGameplay{
-				InteractionLayer:  detail.InteractionLayer,
-				RiskLevel:         detail.RiskLevel,
-				FacilityFocus:     detail.FacilityFocus,
-				EncounterFamily:   detail.EncounterFamily,
-				CurioStatus:       runtimeCurioStatus(detail, populationByRegion[region.ID], eventCountByRegion[region.ID]),
-				CurioHint:         detail.CurioHint,
-				LinkedDungeon:     detail.LinkedDungeon,
-				ParentRegionID:    detail.ParentRegionID,
-				HostileEncounters: detail.HostileEncounters,
+				InteractionLayer:       detail.InteractionLayer,
+				RiskLevel:              detail.RiskLevel,
+				FacilityFocus:          detail.FacilityFocus,
+				EncounterFamily:        detail.EncounterFamily,
+				CurioStatus:            runtimeCurioStatus(detail, populationByRegion[region.ID], eventCountByRegion[region.ID]),
+				CurioHint:              detail.CurioHint,
+				LinkedDungeon:          detail.LinkedDungeon,
+				ParentRegionID:         detail.ParentRegionID,
+				HostileEncounters:      detail.HostileEncounters,
+				AvailableRegionActions: detail.AvailableRegionActions,
 			},
 		})
 	}
@@ -2120,15 +2293,16 @@ func publicDungeonRunPayloadFromRun(run dungeons.RunView, dungeonService *dungeo
 	definition, _ := dungeonService.GetDungeonDefinition(run.DungeonID)
 
 	return map[string]any{
-		"run_id":       run.RunID,
-		"dungeon_id":   run.DungeonID,
-		"dungeon_name": definition.Name,
-		"difficulty":   run.Difficulty,
-		"started_at":   run.StartedAt,
-		"resolved_at":  run.ResolvedAt,
-		"room_summary": run.RoomSummary,
-		"battle_state": run.BattleState,
-		"battle_log":   run.RecentBattleLog,
+		"run_id":         run.RunID,
+		"dungeon_id":     run.DungeonID,
+		"dungeon_name":   definition.Name,
+		"difficulty":     run.Difficulty,
+		"potion_loadout": run.PotionLoadout,
+		"started_at":     run.StartedAt,
+		"resolved_at":    run.ResolvedAt,
+		"room_summary":   run.RoomSummary,
+		"battle_state":   run.BattleState,
+		"battle_log":     run.RecentBattleLog,
 		"milestones": []map[string]any{
 			{
 				"type":    "rating",
@@ -2274,6 +2448,14 @@ func activeObjectivesFromBoard(board quests.BoardView) []characters.QuestSummary
 	return objectives
 }
 
+func appendQuestRuntimeValidActions(actions []characters.ValidAction, account auth.Account, characterService *characters.Service, questService *quests.Service) []characters.ValidAction {
+	character, ok := characterService.GetCharacterByAccount(account)
+	if !ok {
+		return actions
+	}
+	return append(actions, questService.ListRuntimeActions(character.CharacterID)...)
+}
+
 func findBuilding(worldService *world.Service, buildingID string) (world.Building, world.RegionDetail, bool) {
 	for _, region := range worldService.ListRegions() {
 		detail, ok := worldService.GetRegion(region.ID)
@@ -2350,7 +2532,7 @@ func handleBuildingAction(w http.ResponseWriter, r *http.Request, authService *a
 			return
 		}
 
-		view, purchased, _, err := inventoryService.PurchaseItem(character, catalogID)
+		view, purchased, consumable, _, err := inventoryService.PurchaseShopItem(character, catalogID)
 		if err != nil {
 			_, _ = characterService.GrantGold(character.CharacterID, price)
 			switch {
@@ -2365,7 +2547,12 @@ func handleBuildingAction(w http.ResponseWriter, r *http.Request, authService *a
 		}
 
 		response["inventory"] = view
-		response["item"] = purchased
+		if purchased != nil {
+			response["item"] = purchased
+		}
+		if consumable != nil {
+			response["consumable"] = consumable
+		}
 		response["price_gold"] = price
 	case "sell":
 		var payload struct {
@@ -2660,6 +2847,12 @@ func executeAction(account auth.Account, actionType string, actionArgs map[strin
 	case "resolve_field_encounter":
 		approach, _ := actionArgs["approach"].(string)
 		return resolveFieldEncounter(account, approach, characterService, questService, dungeonService, worldService)
+	case "resolve_field_encounter:hunt":
+		return resolveFieldEncounter(account, "hunt", characterService, questService, dungeonService, worldService)
+	case "resolve_field_encounter:gather":
+		return resolveFieldEncounter(account, "gather", characterService, questService, dungeonService, worldService)
+	case "resolve_field_encounter:curio":
+		return resolveFieldEncounter(account, "curio", characterService, questService, dungeonService, worldService)
 	case "accept_quest":
 		questID, _ := actionArgs["quest_id"].(string)
 		character, limits, err := currentCharacterWithLimits(account, characterService, worldService)
@@ -2723,6 +2916,54 @@ func executeAction(account auth.Account, actionType string, actionArgs map[strin
 			},
 			"state": state,
 		}, nil
+	case "quest_choice":
+		questID, _ := actionArgs["quest_id"].(string)
+		choiceKey, _ := actionArgs["choice_key"].(string)
+		character, limits, err := currentCharacterWithLimits(account, characterService, worldService)
+		if err != nil {
+			return nil, err
+		}
+		_ = questService.ListQuests(character, limits)
+		quest, runtime, err := questService.ApplyQuestChoice(character, questID, choiceKey)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{
+			"action_result": map[string]any{
+				"action_type": "quest_choice",
+				"quest_id":    quest.QuestID,
+				"choice_key":  choiceKey,
+			},
+			"state": map[string]any{
+				"quest":   quest,
+				"runtime": runtime,
+				"limits":  limits,
+			},
+		}, nil
+	case "quest_interact":
+		questID, _ := actionArgs["quest_id"].(string)
+		interaction, _ := actionArgs["interaction"].(string)
+		character, limits, err := currentCharacterWithLimits(account, characterService, worldService)
+		if err != nil {
+			return nil, err
+		}
+		_ = questService.ListQuests(character, limits)
+		quest, runtime, err := questService.AdvanceQuestInteraction(character, questID, interaction)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{
+			"action_result": map[string]any{
+				"action_type": "quest_interact",
+				"quest_id":    quest.QuestID,
+				"interaction": interaction,
+			},
+			"state": map[string]any{
+				"quest":   quest,
+				"runtime": runtime,
+				"limits":  limits,
+			},
+		}, nil
 	case "reroll_quests":
 		confirmCost, _ := actionArgs["confirm_cost"].(bool)
 		if !confirmCost {
@@ -2754,15 +2995,31 @@ func executeAction(account auth.Account, actionType string, actionArgs map[strin
 	case "enter_dungeon":
 		dungeonID, _ := actionArgs["dungeon_id"].(string)
 		difficulty, _ := actionArgs["difficulty"].(string)
+		potionLoadout := make([]string, 0, 2)
+		switch raw := actionArgs["potion_loadout"].(type) {
+		case []any:
+			for _, item := range raw {
+				if value, ok := item.(string); ok {
+					potionLoadout = append(potionLoadout, value)
+				}
+			}
+		case []string:
+			potionLoadout = append(potionLoadout, raw...)
+		}
 		character, limits, err := currentCharacterWithLimits(account, characterService, worldService)
 		if err != nil {
 			return nil, err
 		}
 
-		run, err := dungeonService.EnterDungeon(character, limits, dungeonID, difficulty)
+		potionBag, err := inventoryService.BuildPotionLoadout(character, potionLoadout)
+		if err != nil {
+			return nil, dungeons.ErrDungeonPotionLoadoutInvalid
+		}
+		run, err := dungeonService.EnterDungeon(character, limits, dungeonID, difficulty, potionLoadout, potionBag)
 		if err != nil {
 			return nil, err
 		}
+		inventoryService.ConsumeConsumables(character.CharacterID, dungeons.PotionUsageFromLog(run.RecentBattleLog))
 
 		definition, _ := dungeonService.GetDungeonDefinition(run.DungeonID)
 		_, completedQuests := questService.ProgressDungeonQuests(character, definition.RegionID, limits)

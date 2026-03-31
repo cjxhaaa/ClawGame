@@ -482,9 +482,10 @@ func (s *PostgresStore) LoadBoards() ([]quests.StoredBoard, error) {
 	}
 
 	questRows, err := s.db.Query(`
-		SELECT id, board_id, template_type, rarity, status, title, description,
-		       COALESCE(target_region_id, ''), progress_current, progress_target,
-		       reward_gold, reward_reputation
+		SELECT id, board_id, template_type, COALESCE(difficulty, ''), COALESCE(flow_kind, ''),
+		       rarity, status, title, description, COALESCE(target_region_id, ''),
+		       progress_current, progress_target, reward_gold, reward_reputation,
+		       COALESCE(runtime_state_json, '{}'::jsonb)
 		FROM quests
 		ORDER BY board_id ASC, id ASC
 	`)
@@ -496,10 +497,13 @@ func (s *PostgresStore) LoadBoards() ([]quests.StoredBoard, error) {
 	for questRows.Next() {
 		var quest characters.QuestSummary
 		var boardID string
+		var runtimeStateJSON []byte
 		if err := questRows.Scan(
 			&quest.QuestID,
 			&boardID,
 			&quest.TemplateType,
+			&quest.Difficulty,
+			&quest.FlowKind,
 			&quest.Rarity,
 			&quest.Status,
 			&quest.Title,
@@ -509,6 +513,7 @@ func (s *PostgresStore) LoadBoards() ([]quests.StoredBoard, error) {
 			&quest.ProgressTarget,
 			&quest.RewardGold,
 			&quest.RewardReputation,
+			&runtimeStateJSON,
 		); err != nil {
 			return nil, err
 		}
@@ -519,6 +524,16 @@ func (s *PostgresStore) LoadBoards() ([]quests.StoredBoard, error) {
 		}
 		quest.BoardID = boardID
 		board.Quests = append(board.Quests, quest)
+		if len(runtimeStateJSON) > 0 && string(runtimeStateJSON) != "null" && string(runtimeStateJSON) != "{}" {
+			if board.RuntimeByQuest == nil {
+				board.RuntimeByQuest = make(map[string]quests.StoredQuestRuntime)
+			}
+			var runtime quests.StoredQuestRuntime
+			if err := json.Unmarshal(runtimeStateJSON, &runtime); err != nil {
+				return nil, err
+			}
+			board.RuntimeByQuest[quest.QuestID] = runtime
+		}
 		boardsByID[boardID] = board
 	}
 	if err := questRows.Err(); err != nil {
@@ -558,21 +573,29 @@ func (s *PostgresStore) SaveBoard(board quests.StoredBoard) error {
 	}
 
 	for _, quest := range board.Quests {
+		runtimeStateJSON := []byte(`{}`)
+		if runtime, ok := board.RuntimeByQuest[quest.QuestID]; ok {
+			payload, err := json.Marshal(runtime)
+			if err != nil {
+				return err
+			}
+			runtimeStateJSON = payload
+		}
 		if _, err := tx.Exec(`
 			INSERT INTO quests (
-				id, board_id, character_id, template_type, rarity, status, title, description,
+				id, board_id, character_id, template_type, difficulty, flow_kind, rarity, status, title, description,
 				target_region_id, target_dungeon_id, target_enemy_key, progress_current, progress_target,
 				reward_gold, reward_reputation, reward_item_catalog_id, accepted_at, completed_at,
-				submitted_at, expires_at
+				submitted_at, expires_at, runtime_state_json
 			)
 			VALUES (
-				$1, $2, $3, $4, $5, $6, $7, $8,
-				NULLIF($9, ''), NULL, NULL, $10, $11,
-				$12, $13, NULL, NULL, NULL, NULL, $14
+				$1, $2, $3, $4, NULLIF($5, ''), NULLIF($6, ''), $7, $8, $9, $10,
+				NULLIF($11, ''), NULL, NULL, $12, $13,
+				$14, $15, NULL, NULL, NULL, NULL, $16, $17
 			)
-		`, quest.QuestID, board.BoardID, board.CharacterID, quest.TemplateType, quest.Rarity, quest.Status,
-			quest.Title, quest.Description, quest.TargetRegionID, quest.ProgressCurrent, quest.ProgressTarget,
-			quest.RewardGold, quest.RewardReputation, expiresAt); err != nil {
+		`, quest.QuestID, board.BoardID, board.CharacterID, quest.TemplateType, quest.Difficulty, quest.FlowKind,
+			quest.Rarity, quest.Status, quest.Title, quest.Description, quest.TargetRegionID, quest.ProgressCurrent,
+			quest.ProgressTarget, quest.RewardGold, quest.RewardReputation, expiresAt, runtimeStateJSON); err != nil {
 			return err
 		}
 	}
@@ -637,6 +660,9 @@ func (s *PostgresStore) ensureSchema() error {
 		`ALTER TABLE auth_sessions ADD COLUMN IF NOT EXISTS access_token text`,
 		`ALTER TABLE auth_sessions ADD COLUMN IF NOT EXISTS access_token_expires_at timestamptz`,
 		`ALTER TABLE auth_sessions ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT NOW()`,
+		`ALTER TABLE quests ADD COLUMN IF NOT EXISTS difficulty text`,
+		`ALTER TABLE quests ADD COLUMN IF NOT EXISTS flow_kind text`,
+		`ALTER TABLE quests ADD COLUMN IF NOT EXISTS runtime_state_json jsonb NOT NULL DEFAULT '{}'::jsonb`,
 		`CREATE INDEX IF NOT EXISTS idx_auth_sessions_access_token ON auth_sessions(access_token)`,
 		`CREATE TABLE IF NOT EXISTS auth_challenges (
 			id text PRIMARY KEY,

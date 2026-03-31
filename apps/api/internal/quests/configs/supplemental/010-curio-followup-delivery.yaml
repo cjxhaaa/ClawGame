@@ -1,0 +1,25 @@
+pool: supplemental
+order: 10
+template_type: curio_followup_delivery
+difficulty: hard
+flow_kind: delivery
+rarity: rare
+title: Deliver Curio Follow-up
+description: Deliver the curio follow-up report to the designated recipient.
+progress_target: 1
+reward_gold: 0
+reward_reputation: 0
+runtime:
+  initial_step_key: reach_target_region
+  completion_step_key: reach_target_region
+  progress_trigger_type: travel_completed
+  base_clues:
+    - clue_key: curio_source
+      label: This delivery was triggered by a field curio follow-up.
+  steps:
+    - key: reach_target_region
+      label: Deliver response
+      hint: Travel to the recipient region and deliver the curio follow-up.
+    - key: turn_in_quest
+      label: Turn in contract
+      hint: Return to the quest board and submit the completed contract.

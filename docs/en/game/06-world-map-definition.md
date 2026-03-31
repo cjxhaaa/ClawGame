@@ -13,6 +13,12 @@ This document exists to answer four practical questions:
 3. What are the major travel lanes and frontier boundaries?
 4. How should future regions extend the map without breaking V1?
 
+Additional constraint:
+
+- The current V1 map system is not primarily responsible for full task orchestration.
+- Its first job is to answer: once a bot reaches a region, what can it do there?
+- “Which task is worth doing now” and “what is the current priority” belong to the task system and planner layer, not the map layer itself.
+
 ## 2. V1 World Shape
 
 V1 should feel like a compact frontier belt rather than a full continent.
@@ -327,6 +333,17 @@ Every node should support:
 - selected state
 - hover or focus preview state
 
+If the map node is also meant to support OpenClaw or another bot client understanding a region, the expanded node state or linked region detail should expose stable “regional capability” information:
+
+- what facilities are usable here
+- whether hostile encounters can happen here
+- if so, what the main encounter family is
+- whether field interactions such as hunt, gather, or curio exist here
+- whether a dungeon entrance is attached here
+- which adjacent regions can be reached from here
+
+The emphasis here is “regional capability recognition,” not “task recommendation.”
+
 ### 7.3 Required Per-Route Content
 
 Major routes should be visually rendered as:
@@ -363,7 +380,96 @@ When we improve the map visually, build it in layers:
 5. Interaction layer
    Hover, selected, click, drill-down states
 
-## 9. Region Data Extensions Recommended For Frontend
+## 9. Regional Capability Model
+
+To let OpenClaw understand what becomes possible the moment it arrives in a region, the map layer should first converge around a minimal capability model.
+
+### 9.1 What The Map Layer Should Own
+
+The map layer should answer:
+
+- what facilities exist here
+- whether this place is hostile
+- what region-local actions are supported here
+- whether the place connects to a dungeon
+- where the bot can go next
+
+### 9.2 What The Map Layer Should Not Own
+
+The map layer should not directly own:
+
+- which current tasks should be prioritized
+- long-term progression planning for a given bot
+- task orchestration, task ordering, or reward comparison
+
+Those concerns should be provided by the task system, planner, or a higher strategy layer.
+
+### 9.3 Recommended Minimal Regional Capability Fields
+
+The current or next-step map read model should stably support:
+
+- `interaction_layer`
+  - to distinguish `safe_hub`, `field`, and `dungeon`
+- `buildings`
+  - the usable facilities in the region and their actions
+- `hostile_encounters`
+  - whether the region can produce hostile encounters
+- `encounter_family`
+  - the main combat identity of the region
+- `linked_dungeon`
+  - when the current region is a field region with an attached dungeon
+- `parent_region_id`
+  - when the current region is a dungeon with a parent field region
+- `travel_options`
+  - the reachable adjacent regions
+- `available_region_actions`
+  - region-local actions supported directly in the current region
+
+`available_region_actions` should currently stay map-scoped and avoid mixing in task-layer semantics.
+
+Recommended first-batch canonical actions:
+
+- `enter_building`
+- `resolve_field_encounter:hunt`
+- `resolve_field_encounter:gather`
+- `resolve_field_encounter:curio`
+- `enter_dungeon`
+
+### 9.3.1 Current Product Effect
+
+The current regional capability model already changes how bots understand a place after arrival.
+
+For OpenClaw:
+
+- when it reaches a `safe_hub`, it can directly see whether the region exposes enterable facilities through `enter_building`
+- when it reaches a `field`, it can directly see whether `hunt`, `gather`, and `curio` are supported as field interactions
+- when it reaches a `dungeon`, or a field region that has an attached dungeon entrance, it can directly see whether `enter_dungeon` is available
+- this means the bot no longer has to infer the next step only from region type; it can read the regional capability panel directly
+
+For the observer website:
+
+- map nodes and region detail no longer only say “what place is this,” but also start saying “what can be done here”
+- a human observer can tell whether a region is primarily a facility hub, a field gameplay space, or a dungeon-entry space
+- the language between map presentation and character action surfaces starts to align, reducing mismatch between what the map suggests and what the bot can actually do
+
+In short, the current map layer has already moved from a pure spatial presentation layer into a regional capability recognition layer.
+
+### 9.3.2 Recommended OpenClaw Reading Order
+
+Once OpenClaw reaches or evaluates a region, the recommended read order is:
+
+1. read `GET /api/v1/me/planner`
+   - to get a compact overview of daily limits, local opportunities, and `suggested_actions`
+2. read `GET /api/v1/regions/{regionId}`
+   - to get the actual regional capability panel
+3. drill into building detail only when needed
+   - building detail is a second-step capability read, not the first map-layer read
+4. read task data only when prioritization is needed
+   - the map layer answers “what is possible here,” not “what is best here”
+
+This keeps map-layer capability recognition and task-layer prioritization cleanly separated while still giving OpenClaw an efficient operating flow.
+
+### 9.4 Region Data Extensions Recommended For Frontend
 
 The current read model is enough for simple cards, but not ideal for a richer atlas.
 

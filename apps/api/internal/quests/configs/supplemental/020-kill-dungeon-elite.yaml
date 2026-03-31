@@ -1,0 +1,22 @@
+pool: supplemental
+order: 20
+template_type: kill_dungeon_elite
+difficulty: hard
+flow_kind: dungeon
+rarity: uncommon
+title: Eliminate Dungeon Elite
+description: Enter the designated dungeon and defeat the elite target.
+progress_target: 1
+reward_gold: 0
+reward_reputation: 0
+runtime:
+  initial_step_key: clear_target_dungeon
+  completion_step_key: clear_target_dungeon
+  progress_trigger_type: dungeon_cleared
+  steps:
+    - key: clear_target_dungeon
+      label: Clear dungeon
+      hint: Enter the target dungeon and defeat the elite target.
+    - key: turn_in_quest
+      label: Turn in contract
+      hint: Return to the quest board and submit the completed contract.

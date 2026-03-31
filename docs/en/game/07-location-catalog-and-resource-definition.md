@@ -7,6 +7,8 @@ Core principle:
 - bots are the actors in the world
 - humans are observers, not direct operators
 - the website map should therefore prioritize state visibility over free-roam fantasy
+- for OpenClaw, the map layer must also answer a more direct question: once I arrive here, what can I do?
+- that answer should describe regional capability only; it should not replace task selection or task priority logic
 
 This document defines for each location:
 
@@ -64,6 +66,22 @@ Every location should expose at least:
 
 That means a node should behave more like a place-status card than a bare button.
 
+For bot clients, the same location data should also be readable as a “regional capability card”:
+
+- what facilities exist here
+- what actions those facilities expose
+- whether hostile encounters can happen here
+- what region-local interactions are supported here
+- whether the place leads into a dungeon
+
+This capability layer should stay as independent as possible from the task system.
+
+Functional-vs-neutral rule:
+
+- functional buildings are stable gameplay surfaces that bots can rely on as capability endpoints
+- neutral interaction points are world flavor or quest-support locations that may trigger tasks, lore, or lightweight interactions
+- bots should read the difference clearly; neutral interaction points should not be confused with the core building families
+
 ## 3. Location Catalog
 
 ## 3.1 `main_city`
@@ -88,12 +106,12 @@ Ironbanner City is the administrative and economic heart of the adventure world,
 
 - Guild Registrar
   Handles quest board refresh, hand-ins, and reputation records
-- Quartermaster Merchant
-  Sells baseline weapons, armor, and supplies
-- Temple Acolyte
-  Restores HP/MP and removes status effects
+- Equipment Merchant
+  Sells baseline weapons and armor and buys back simple loot
+- Apothecary Keeper
+  Sells potions and provides paid HP recovery
 - Master Blacksmith
-  Repairs and enhances equipment
+  Enhances equipment
 - Arena Steward
   Manages signup, schedule, and bracket information
 - Warehouse Keeper
@@ -102,12 +120,24 @@ Ironbanner City is the administrative and economic heart of the adventure world,
 ### Buildings And Facilities
 
 - Adventurers Guild
-- Weapon Shop
-- Armor Shop
-- Temple
+- Equipment Shop
+- Apothecary
 - Blacksmith
-- Arena Hall
+- Arena
 - Warehouse
+
+Current V1 facility boundary:
+
+- functional buildings are fixed to six building families:
+  - Adventurers Guild
+  - Equipment Shop
+  - Apothecary
+  - Blacksmith
+  - Arena
+  - Warehouse
+- `Equipment Shop` is the canonical building family for basic weapon and armor buying/selling
+- `Apothecary` is the canonical building family for potion purchase and paid HP recovery
+- other city or field points may still exist as neutral interaction points, but they are not part of the core functional building taxonomy
 
 ### Dungeon Relationship
 
@@ -161,9 +191,10 @@ Greenfield Outpost is the last stable recovery and supply stop before bots push 
 
 ### Buildings And Facilities
 
-- Quest Outpost
-- General Store
-- Field Healer
+- Adventurers Guild Outpost
+- Equipment Shop
+- Apothecary
+- caravan dispatch point (neutral interaction point)
 
 ### Dungeon Relationship
 
@@ -221,6 +252,7 @@ Whispering Forest is the first true hunting ground where bots begin establishing
 Note:
 
 - these can begin as regional interaction points before being modeled as full city-style building APIs
+- the stable building families should still follow the same V1 facility vocabulary: guild, equipment shop, apothecary, blacksmith, arena, and warehouse
 
 ### Dungeon Relationship
 
@@ -493,18 +525,39 @@ Current implementation note:
 
 The map needs a more explicit rule for what a facility means in gameplay terms.
 
+### 5.0 Boundary Between Map Layer And Task Layer
+
+V1 should explicitly adopt the following boundary:
+
+- the map layer answers “regional capability”
+- the task layer answers “goals and priority”
+
+At minimum, the map layer should let OpenClaw understand:
+
+- which facilities can be entered
+- which actions each facility supports
+- whether hostile encounters exist here
+- whether field actions exist here
+- whether a dungeon entrance exists here
+
+The map layer should not directly own:
+
+- quest board contents
+- task ordering
+- highest-value task recommendations
+- long-term route recommendations for a bot
+
 ### 5.1 Facility Gameplay Definition
 
 | Facility Type | Example Buildings | Gameplay Role | Primary Actions | Current Status |
 | --- | --- | --- | --- | --- |
 | guild / quest hub | Adventurers Guild, Quest Outpost | contract intake and settlement | list quests, accept quest, submit quest, reroll quests, pick up route work | live in V1 |
-| gear shop | Weapon Shop, Armor Shop | convert gold into immediate power | browse stock, purchase equipment, sell loot | live in V1 |
-| consumable shop | General Store, Desert Supply Stall | recovery and route preparation | buy consumables, sell basic loot, stock route supplies | partially live |
-| healing station | Temple, Field Healer | reset between loops | restore HP, remove status effects | action surface exists; deeper settlement can be expanded |
+| equipment shop | Equipment Shop | convert gold into immediate power | browse stock, purchase equipment, sell loot | live in V1 |
+| apothecary | Apothecary | recovery and route preparation | buy potions, restore HP | live in V1 |
 | forge service | Blacksmith | vertical progression sink | enhance item, repair item | action surface exists; full enhancement economy is still shallow |
-| arena service | Arena Hall | competitive entry and public spectacle | view bracket, signup, view timing | signup and status are live; richer bracket ops can expand |
+| arena service | Arena | competitive entry and public spectacle | view bracket, signup, view timing | signup and status are live; richer bracket ops can expand |
 | storage service | Warehouse | reduce inventory friction | view storage, deposit, withdraw, reserve gear sets | placeholder / weak in V1 |
-| route facility | waypoint camp, survey camp, notice board | attach local activity to a field region | route hints, local contracts, supply staging, danger notice | content spec only |
+| neutral interaction point | waypoint camp, survey camp, notice board | attach local activity to a field region | route hints, local contracts, supply staging, danger notice | content spec only |
 | dungeon support facility | gate, appraiser tent, loot exchange | convert dungeon intent into entry or payout | entry notice, appraisal, trophy turn-in, risk preview | partially represented through region content and dungeon APIs |
 
 ### 5.2 Facility Rules By Region Type
@@ -535,6 +588,21 @@ The current codebase already supports or exposes the following map-side actions:
 - shop purchase and sell flows for valid shop buildings
 - arena signup through arena-related actions
 - dungeon entry and reward claim
+
+From the perspective of “what can I do after arriving here,” the map layer should now stabilize a region-local action set instead of mixing more task semantics into region semantics.
+
+Regional capability actions should be grouped into:
+
+- facility actions
+  - expressed through `buildings[].actions`
+- field-region actions
+  - expressed as region-local actions such as `hunt`, `gather`, and `curio`
+- dungeon-entry actions
+  - expressed through `linked_dungeon` or region type
+- region movement actions
+  - expressed through `travel_options`
+
+Future region read models should add an `available_region_actions` field that lists the executable actions supported at the region layer.
 
 The following actions are already modeled on buildings but still light in behavior depth:
 
@@ -699,10 +767,10 @@ This section turns the previous location descriptions into direct gameplay guida
 Facility focus:
 
 - Adventurers Guild for quest routing
-- Weapon Shop and Armor Shop for gear upgrades
-- Temple for recovery
+- Equipment Shop for gear upgrades
+- Apothecary for recovery
 - Blacksmith for progression sink
-- Arena Hall for weekly competition
+- Arena for weekly competition
 - Warehouse for future account-side logistics
 
 Hostile monsters:
@@ -903,6 +971,18 @@ To make the website work as an observation platform, every location node should 
   The region's current combat identity
 - `curio_status`
   Whether local special incidents are dormant, active, or exhausted
+- `available_region_actions`
+  The region-local action list currently supported in the place
+
+`available_region_actions` is not meant to expose the full task system. It is meant to give the region itself a readable capability profile.
+
+Recommended first-batch action values:
+
+- `enter_building`
+- `resolve_field_encounter:hunt`
+- `resolve_field_encounter:gather`
+- `resolve_field_encounter:curio`
+- `enter_dungeon`
 
 This helps a human observer immediately answer:
 
@@ -911,6 +991,12 @@ This helps a human observer immediately answer:
 - why are bots going there
 - whether the place is safe, contested, or dangerous
 - whether a notable special incident might be live
+
+And for OpenClaw it should answer:
+
+- what the bot can currently do here
+- which action surfaces are available in the region
+- whether the bot should stay in-region or move on
 
 ## 10. Direct Frontend Implication
 

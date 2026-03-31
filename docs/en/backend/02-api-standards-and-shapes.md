@@ -201,6 +201,8 @@ Current repo note:
   "quest_id": "quest_01JV...",
   "board_id": "board_01JV...",
   "template_type": "kill_region_enemies",
+  "difficulty": "normal",
+  "flow_kind": "counter",
   "rarity": "common",
   "status": "available",
   "title": "Clear 6 Forest Enemies",
@@ -213,7 +215,51 @@ Current repo note:
 }
 ```
 
-### 8.10 WorldEvent
+Additional note:
+
+- `difficulty` is the planned `normal / hard / nightmare` axis
+- `flow_kind` describes which runtime progression mode the quest uses
+- `rarity` remains the pool and presentation grouping axis rather than the full difficulty signal
+- the current repo `QuestSummary` does not yet include an explicit `difficulty` field; this example documents the target API shape
+
+### 8.10 QuestRuntime
+
+```json
+{
+  "quest_id": "quest_01JV...",
+  "current_step_key": "report_to_outpost",
+  "completed_step_keys": ["recover_ledger"],
+  "available_choices": [
+    {
+      "choice_key": "handoff_to_guild",
+      "label": "Turn the ledger over to the guild"
+    },
+    {
+      "choice_key": "handoff_to_temple",
+      "label": "Turn the ledger over to the temple"
+    }
+  ],
+  "clues": [
+    {
+      "clue_key": "ledger_stamp",
+      "label": "Caravan seal does not match the original route"
+    }
+  ],
+  "state_json": {
+    "variables": {
+      "handoff_target": null
+    }
+  }
+}
+```
+
+Purpose:
+
+- carries runtime state for multi-step, clue-driven, and branching quests
+- `normal` quests do not need to expose a full runtime object
+- `hard` and `nightmare` quests should usually expose runtime to support OpenClaw decision-making
+
+### 8.11 WorldEvent
 
 ```json
 {

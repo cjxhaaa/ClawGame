@@ -385,6 +385,16 @@ def sync_me_like_payload(state: dict[str, Any], data: dict[str, Any] | None) -> 
             state["pending_claim_run_ids"] = [item for item in pending if isinstance(item, str)]
 
 
+def sync_region_detail(state: dict[str, Any], detail: dict[str, Any] | None) -> None:
+    if not isinstance(detail, dict):
+        return
+    region = detail.get("region")
+    if isinstance(region, dict):
+        region_id = region.get("region_id")
+        if isinstance(region_id, str):
+            state["last_region_id"] = region_id
+
+
 def sync_run_view(state: dict[str, Any], run_view: dict[str, Any] | None) -> None:
     if not isinstance(run_view, dict):
         return
@@ -584,6 +594,22 @@ def extract_data(envelope: dict[str, Any]) -> dict[str, Any] | None:
     return data if data is not None else None
 
 
+def fetch_region_detail(
+    ctx: RuntimeContext,
+    client: APIClient,
+    region_id: str | None,
+    *,
+    command: str,
+) -> tuple[dict[str, Any] | None, str | None]:
+    if not isinstance(region_id, str) or not region_id:
+        return None, None
+    envelope = client.request(command, "GET", f"/regions/{region_id}")
+    set_last_request_id(ctx.state, envelope)
+    data = extract_data(envelope)
+    sync_region_detail(ctx.state, data if isinstance(data, dict) else None)
+    return data, envelope.get("request_id")
+
+
 def cmd_register(args: argparse.Namespace, ctx: RuntimeContext, client: APIClient) -> CommandResult:
     bot_name = require_text(args.bot_name, command="register", field="bot_name", fallback=ctx.state.get("bot_name"))
     password = require_text(args.password, command="register", field="password", fallback=ctx.state.get("password"))
@@ -672,6 +698,12 @@ def cmd_bootstrap(args: argparse.Namespace, ctx: RuntimeContext, client: APIClie
     planner_envelope = authenticated_request(ctx, client, "planner", "GET", "/me/planner")
     planner_data = extract_data(planner_envelope)
     sync_me_like_payload(ctx.state, planner_data if isinstance(planner_data, dict) else None)
+    region_data, region_request_id = fetch_region_detail(
+        ctx,
+        client,
+        ctx.state.get("last_region_id"),
+        command="bootstrap region",
+    )
     save_state(ctx.state_file, ctx.state)
 
     return CommandResult(
@@ -679,6 +711,7 @@ def cmd_bootstrap(args: argparse.Namespace, ctx: RuntimeContext, client: APIClie
         {
             "me": me_data,
             "planner": planner_data,
+            "region": region_data,
             "state_summary": {
                 "bot_name": ctx.state.get("bot_name"),
                 "character_name": ctx.state.get("character_name"),
@@ -687,7 +720,7 @@ def cmd_bootstrap(args: argparse.Namespace, ctx: RuntimeContext, client: APIClie
                 "pending_claim_run_ids": ctx.state.get("pending_claim_run_ids", []),
             },
         },
-        planner_envelope.get("request_id") or me_envelope.get("request_id"),
+        region_request_id or planner_envelope.get("request_id") or me_envelope.get("request_id"),
     )
 
 
@@ -722,6 +755,21 @@ def cmd_actions(args: argparse.Namespace, ctx: RuntimeContext, client: APIClient
     return CommandResult("actions", extract_data(envelope), envelope.get("request_id"))
 
 
+def cmd_field(args: argparse.Namespace, ctx: RuntimeContext, client: APIClient) -> CommandResult:
+    envelope = authenticated_request(
+        ctx,
+        client,
+        f"field {args.approach}",
+        "POST",
+        "/me/field-encounter",
+        body={"approach": args.approach},
+    )
+    data = extract_data(envelope)
+    sync_action_payload(ctx.state, data if isinstance(data, dict) else None)
+    save_state(ctx.state_file, ctx.state)
+    return CommandResult(f"field {args.approach}", data, envelope.get("request_id"))
+
+
 def cmd_regions_list(args: argparse.Namespace, ctx: RuntimeContext, client: APIClient) -> CommandResult:
     envelope = client.request("regions list", "GET", "/world/regions")
     set_last_request_id(ctx.state, envelope)
@@ -731,15 +779,30 @@ def cmd_regions_list(args: argparse.Namespace, ctx: RuntimeContext, client: APIC
 def cmd_regions_show(args: argparse.Namespace, ctx: RuntimeContext, client: APIClient) -> CommandResult:
     envelope = client.request("regions show", "GET", f"/regions/{args.region_id}")
     set_last_request_id(ctx.state, envelope)
-    return CommandResult("regions show", extract_data(envelope), envelope.get("request_id"))
+    data = extract_data(envelope)
+    sync_region_detail(ctx.state, data if isinstance(data, dict) else None)
+    save_state(ctx.state_file, ctx.state)
+    return CommandResult("regions show", data, envelope.get("request_id"))
 
 
 def cmd_travel(args: argparse.Namespace, ctx: RuntimeContext, client: APIClient) -> CommandResult:
     envelope = authenticated_request(ctx, client, "travel", "POST", "/me/travel", body={"region_id": args.region_id})
     data = extract_data(envelope)
     sync_action_payload(ctx.state, data if isinstance(data, dict) else None)
+    planner_envelope = authenticated_request(ctx, client, "travel planner", "GET", "/me/planner", query={"region_id": args.region_id})
+    planner_data = extract_data(planner_envelope)
+    sync_me_like_payload(ctx.state, planner_data if isinstance(planner_data, dict) else None)
+    region_data, region_request_id = fetch_region_detail(ctx, client, args.region_id, command="travel region")
     save_state(ctx.state_file, ctx.state)
-    return CommandResult("travel", data, envelope.get("request_id"))
+    return CommandResult(
+        "travel",
+        {
+            "travel": data,
+            "planner": planner_data,
+            "region": region_data,
+        },
+        region_request_id or planner_envelope.get("request_id") or envelope.get("request_id"),
+    )
 
 
 def cmd_quests_list(args: argparse.Namespace, ctx: RuntimeContext, client: APIClient) -> CommandResult:
@@ -1014,6 +1077,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     actions = subparsers.add_parser("actions", help="list valid current actions")
     actions.set_defaults(func=cmd_actions)
+
+    field = subparsers.add_parser("field", help="resolve a field interaction in the current region")
+    field_sub = field.add_subparsers(dest="field_command", required=True)
+    field_hunt = field_sub.add_parser("hunt", help="resolve a hunt encounter in the current field region")
+    field_hunt.set_defaults(func=cmd_field, approach="hunt")
+    field_gather = field_sub.add_parser("gather", help="resolve a gathering encounter in the current field region")
+    field_gather.set_defaults(func=cmd_field, approach="gather")
+    field_curio = field_sub.add_parser("curio", help="resolve a curio encounter in the current field region")
+    field_curio.set_defaults(func=cmd_field, approach="curio")
 
     regions = subparsers.add_parser("regions", help="world region discovery")
     regions_sub = regions.add_subparsers(dest="regions_command", required=True)

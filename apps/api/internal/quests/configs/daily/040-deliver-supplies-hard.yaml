@@ -1,0 +1,41 @@
+pool: daily
+order: 40
+template_type: deliver_supplies
+difficulty: hard
+flow_kind: delivery
+rarity: uncommon
+title: Reinforce the Forest Outpost
+description: Deliver higher-value supplies to Whispering Forest.
+target_region_id: whispering_forest
+progress_target: 1
+reward_gold: 165
+reward_reputation: 34
+runtime:
+  initial_step_key: confirm_route
+  completion_step_key: reach_target_region
+  progress_trigger_type: travel_completed
+  requires_route_confirm: true
+  base_clues:
+    - clue_key: route_manifest
+      label: The guild manifest recommends confirming the supply route before departure.
+  steps:
+    - key: confirm_route
+      label: Confirm route
+      hint: Inspect the manifest and confirm the outbound delivery route.
+      action_type: quest_interact
+    - key: reach_target_region
+      label: Deliver to outpost
+      hint: Travel to the target region after confirming the route.
+    - key: turn_in_quest
+      label: Turn in contract
+      hint: Return to the quest board and submit the completed contract.
+  interaction_specs:
+    - step_key: confirm_route
+      label: Confirm route
+      hint: Review the forest route and lock the delivery path before departure.
+      next_step_key: reach_target_region
+      clues:
+        - clue_key: route_confirmed
+          label: The delivery route has been confirmed and the caravan can depart safely.
+      state:
+        route_confirmed: true

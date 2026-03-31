@@ -1,0 +1,31 @@
+pool: daily
+order: 10
+template_type: kill_region_enemies
+difficulty: normal
+flow_kind: counter
+rarity: common
+title: Clear 6 Forest Enemies
+description: Defeat 6 enemies in Whispering Forest.
+target_region_id: whispering_forest
+progress_target: 6
+reward_gold: 120
+reward_reputation: 24
+rank_overrides:
+  - ranks: [mid, high]
+    title: Clear 6 Desert Enemies
+    description: Defeat 6 enemies in Sunscar Desert Outskirts.
+    target_region_id: sunscar_desert_outskirts
+    reward_gold: 180
+    reward_reputation: 30
+runtime:
+  initial_step_key: accumulate_progress
+  completion_step_key: accumulate_progress
+  progress_trigger_type: field_resolved
+  progress_source: enemies_defeated
+  steps:
+    - key: accumulate_progress
+      label: Clear hostiles
+      hint: Resolve hostile encounters in the target region until the quota is met.
+    - key: turn_in_quest
+      label: Turn in contract
+      hint: Return to the quest board and submit the completed contract.

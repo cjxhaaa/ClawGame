@@ -23,6 +23,7 @@ var (
 	ErrDungeonRunForbidden          = errors.New("dungeon run forbidden")
 	ErrDungeonRewardClaimNotAllowed = errors.New("dungeon reward not claimable")
 	ErrDungeonRewardClaimCapReached = errors.New("dungeon reward claim cap reached")
+	ErrDungeonPotionLoadoutInvalid  = errors.New("dungeon potion loadout invalid")
 )
 
 type DefinitionView struct {
@@ -48,6 +49,7 @@ type RunView struct {
 	RunID                     string                   `json:"run_id"`
 	DungeonID                 string                   `json:"dungeon_id"`
 	Difficulty                string                   `json:"difficulty"`
+	PotionLoadout             []string                 `json:"potion_loadout"`
 	StartedAt                 string                   `json:"started_at"`
 	ResolvedAt                string                   `json:"resolved_at"`
 	RunStatus                 string                   `json:"run_status"`
@@ -123,7 +125,7 @@ func RankAllows(currentRank, requiredRank string) bool {
 	return rankAllows(currentRank, requiredRank)
 }
 
-func (s *Service) EnterDungeon(character characters.Summary, _ characters.DailyLimits, dungeonID, difficulty string) (RunView, error) {
+func (s *Service) EnterDungeon(character characters.Summary, _ characters.DailyLimits, dungeonID, difficulty string, potionLoadout []string, potionBag []combat.PotionItem) (RunView, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -133,6 +135,15 @@ func (s *Service) EnterDungeon(character characters.Summary, _ characters.DailyL
 	}
 	if !rankAllows(character.Rank, def.MinRank) {
 		return RunView{}, ErrDungeonRankNotEligible
+	}
+	if len(potionLoadout) > 2 || len(potionBag) > 2 {
+		return RunView{}, ErrDungeonPotionLoadoutInvalid
+	}
+	if len(potionLoadout) == 2 && (strings.TrimSpace(potionLoadout[0]) == "" || strings.TrimSpace(potionLoadout[1]) == "" || potionLoadout[0] == potionLoadout[1]) {
+		return RunView{}, ErrDungeonPotionLoadoutInvalid
+	}
+	if len(potionLoadout) == 1 && strings.TrimSpace(potionLoadout[0]) == "" {
+		return RunView{}, ErrDungeonPotionLoadoutInvalid
 	}
 	difficulty = normalizeDifficulty(difficulty)
 	if activeRunID, ok := s.activeRunByCharacter[character.CharacterID]; ok {
@@ -147,7 +158,7 @@ func (s *Service) EnterDungeon(character characters.Summary, _ characters.DailyL
 	now := s.clock().Format(time.RFC3339)
 	runID := nextID("run")
 
-	battleResult := simulateDungeonRun(character, def, difficulty, runID)
+	battleResult := simulateDungeonRun(character, def, difficulty, runID, potionBag)
 	rating := ratingFromRoomClear(battleResult.HighestRoomCleared, def.RoomCount)
 	pendingRatingRewards := []map[string]any{}
 	if battleResult.Cleared {
@@ -178,6 +189,7 @@ func (s *Service) EnterDungeon(character characters.Summary, _ characters.DailyL
 		RunID:                     runID,
 		DungeonID:                 def.DungeonID,
 		Difficulty:                difficulty,
+		PotionLoadout:             append([]string(nil), potionLoadout...),
 		StartedAt:                 now,
 		ResolvedAt:                now,
 		RunStatus:                 runStatus,
@@ -359,14 +371,14 @@ type simulatedRunResult struct {
 	Log                []map[string]any
 }
 
-func simulateDungeonRun(character characters.Summary, def DefinitionView, difficulty, runID string) simulatedRunResult {
+func simulateDungeonRun(character characters.Summary, def DefinitionView, difficulty, runID string, potionBag []combat.PotionItem) simulatedRunResult {
 	player := combat.BaselineCombatant(character.Class)
 	player.EntityID = character.CharacterID
 	player.Name = character.Name
 	player.Team = "a"
 	player.IsPlayerSide = true
 	player.CurrentHP = maxInt(1, player.MaxHP)
-	player.PotionBag = combat.DefaultPotionBag(character.Rank)
+	player.PotionBag = copyPotionBag(potionBag)
 
 	startHP := player.CurrentHP
 	runPotionUsed := 0
@@ -453,6 +465,27 @@ func simulateDungeonRun(character characters.Summary, def DefinitionView, diffic
 		EndedInRoomIndex:   def.RoomCount,
 		Log:                log,
 	}
+}
+
+func copyPotionBag(items []combat.PotionItem) []combat.PotionItem {
+	copied := make([]combat.PotionItem, len(items))
+	copy(copied, items)
+	return copied
+}
+
+func PotionUsageFromLog(log []map[string]any) map[string]int {
+	usage := map[string]int{}
+	for _, entry := range log {
+		if eventType, _ := entry["event_type"].(string); eventType != "potion.consumed" {
+			continue
+		}
+		potionID, _ := entry["potion_id"].(string)
+		if strings.TrimSpace(potionID) == "" {
+			continue
+		}
+		usage[potionID]++
+	}
+	return usage
 }
 
 type difficultyMultiplier struct {

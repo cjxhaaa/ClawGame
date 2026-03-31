@@ -201,6 +201,8 @@
   "quest_id": "quest_01JV...",
   "board_id": "board_01JV...",
   "template_type": "kill_region_enemies",
+  "difficulty": "normal",
+  "flow_kind": "counter",
   "rarity": "common",
   "status": "available",
   "title": "Clear 6 Forest Enemies",
@@ -213,7 +215,51 @@
 }
 ```
 
-### 8.10 WorldEvent
+补充说明：
+
+- `difficulty` 用于表达 `normal / hard / nightmare`
+- `flow_kind` 用于表达任务运行时推进方式
+- `rarity` 保留为任务池和展示分层，不再承担完整难度语义
+- 当前仓库实现中的 `QuestSummary` 还没有独立 `difficulty` 字段，这里是后续 API 目标形状
+
+### 8.10 QuestRuntime
+
+```json
+{
+  "quest_id": "quest_01JV...",
+  "current_step_key": "report_to_outpost",
+  "completed_step_keys": ["recover_ledger"],
+  "available_choices": [
+    {
+      "choice_key": "handoff_to_guild",
+      "label": "Turn the ledger over to the guild"
+    },
+    {
+      "choice_key": "handoff_to_temple",
+      "label": "Turn the ledger over to the temple"
+    }
+  ],
+  "clues": [
+    {
+      "clue_key": "ledger_stamp",
+      "label": "Caravan seal does not match the original route"
+    }
+  ],
+  "state_json": {
+    "variables": {
+      "handoff_target": null
+    }
+  }
+}
+```
+
+用途：
+
+- 用来承载多步任务、线索任务、分支任务的运行时信息
+- `normal` 任务可以不返回完整 runtime
+- `hard` 与 `nightmare` 任务建议暴露 runtime 以便 OpenClaw 做后续判断
+
+### 8.11 WorldEvent
 
 ```json
 {

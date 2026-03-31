@@ -1,0 +1,65 @@
+pool: daily
+order: 60
+template_type: clear_dungeon
+difficulty: nightmare
+flow_kind: dungeon
+rarity: challenge
+title: Cleanse Ancient Catacomb
+description: Clear Ancient Catacomb without being defeated.
+target_region_id: ancient_catacomb
+progress_target: 1
+reward_gold: 320
+reward_reputation: 70
+runtime:
+  initial_step_key: inspect_clue
+  inspect_step_key: inspect_clue
+  choice_step_key: submit_choice
+  completion_step_key: clear_target_dungeon
+  progress_trigger_type: dungeon_cleared
+  requires_choice: true
+  requires_inspection: true
+  base_clues:
+    - clue_key: nightmare_briefing
+      label: This contract expects at least one explicit judgment before the final turn-in.
+  steps:
+    - key: inspect_clue
+      label: Inspect clue
+      hint: Study the dungeon briefing before deciding your plan.
+      action_type: quest_interact
+    - key: submit_choice
+      label: Choose approach
+      hint: Commit to the approach you will use for the dungeon push.
+      action_type: quest_choice
+    - key: clear_target_dungeon
+      label: Clear dungeon
+      hint: Enter the target dungeon and complete the run.
+    - key: turn_in_quest
+      label: Turn in contract
+      hint: Return to the quest board and submit the completed contract.
+  interaction_specs:
+    - step_key: inspect_clue
+      label: Inspect briefing
+      hint: Review the catacomb briefing and extract the tactical clue before entering.
+      next_step_key: submit_choice
+      clues:
+        - clue_key: catacomb_faultline
+          label: The briefing marks a fault line behind the catacomb altar that may change the safe route.
+      state:
+        briefing_inspected: true
+  choice_specs:
+    - choice_key: follow_standard_brief
+      label: Follow the standard guild brief
+      next_step_key: clear_target_dungeon
+      clues:
+        - clue_key: brief_plan
+          label: The party will follow the standard marked route through the catacomb.
+      state:
+        breach_plan: standard_brief
+    - choice_key: trust_field_clue
+      label: Trust the strongest field clue
+      next_step_key: clear_target_dungeon
+      clues:
+        - clue_key: field_plan
+          label: The party will adapt to the field clue instead of the standard route.
+      state:
+        breach_plan: field_clue

@@ -254,6 +254,81 @@ tool 应暴露能力，而不是固定推进循环。
   - 对应 `GET /regions/{regionId}`
 - `travel --region-id <region_id>`
   - 对应 `POST /me/travel`
+  - 条件允许时应在返回中一并带回目标地区的 planner 与地区详情刷新结果
+
+### 野外命令
+
+- `field hunt`
+  - 对应 `POST /me/field-encounter`，并传入 `approach=hunt`
+- `field gather`
+  - 对应 `POST /me/field-encounter`，并传入 `approach=gather`
+- `field curio`
+  - 对应 `POST /me/field-encounter`，并传入 `approach=curio`
+
+当角色当前位于野外地区时，应优先使用这些专用 field 命令，而不是退回泛型 action 兜底。
+
+### 地区能力消费顺序
+
+OpenClaw 在地图层的推荐读取顺序应明确为：
+
+1. 先读 `planner`
+   - 用于获得紧凑的“今日资源限制 + 本地区机会 + suggested_actions”总览
+2. 再读 `regions show`
+   - 用于确认目标地区的 `available_region_actions`、`buildings`、`travel_options`、`linked_dungeon`
+3. 如需进入设施，再读 `buildings show`
+   - 只在已经决定进入具体建筑时钻取建筑详情
+4. 如需做任务排序，再读 `quests list`
+   - 任务系统负责“值不值得做”，不由地图层负责
+5. 如需精确校验角色状态，再读 `state`
+   - 只在需要材料、库存、详细 objective、完整 valid actions 时使用
+
+也就是说：
+
+- `planner` 负责先给一个紧凑决策视图
+- `regions show` 负责回答“到了这里能做什么”
+- `quests list` 负责回答“这些机会里哪些和任务相关”
+- `state` 负责最后的精确校验
+
+### 建筑解释规则
+
+OpenClaw 在读取地区设施时，应明确区分两层：
+
+- 功能建筑
+  - 当前 V1 规范固定为 `guild`、`equipment_shop`、`apothecary`、`blacksmith`、`arena`、`warehouse`
+  - 这些是稳定的 Bot 能力入口，可直接用于 building 命令与动作决策
+- 中立交互点
+  - 用于承载任务、叙事、路线提示、神龛、遗迹、调度点等轻量地点交互
+  - 它们可以出现在地区详情中，但不应默认被当成完整建筑系统来处理
+
+也就是说：
+
+- 只有 6 类功能建筑默认进入 building 命令体系
+- 其他设施默认按地区交互点理解，除非 API 明确暴露为建筑能力入口
+
+### 到达地区后的推荐决策流程
+
+当 OpenClaw 完成一次 `travel` 后，建议立刻重新读取目标地区能力，而不是继续沿用旅行前判断。
+
+推荐顺序：
+
+1. 执行 `travel --region-id <region_id>`
+2. 读取 `planner --region-id <region_id>`
+3. 读取 `regions show --region-id <region_id>`
+4. 按 `available_region_actions` 进行分流
+
+分流建议：
+
+- 若包含 `enter_building`，说明该地区至少有一类设施入口，可以继续查看 `buildings`
+- 若包含 `resolve_field_encounter:hunt`
+  - 说明该地区支持标准野外战斗推进
+- 若包含 `resolve_field_encounter:gather`
+  - 说明该地区支持偏材料收集的野外交互
+- 若包含 `resolve_field_encounter:curio`
+  - 说明该地区支持奇遇型探索与潜在后续任务种子
+- 若包含 `enter_dungeon`
+  - 说明该地区自身是地城，或该地区挂接一个可进入地城
+
+这个流程的核心不是强迫固定循环，而是保证 OpenClaw 每次先重新理解“当前地区能力面板”。
 
 ### 任务命令
 
@@ -276,6 +351,20 @@ tool 应暴露能力，而不是固定推进循环。
   - 对应 `POST /me/equipment/unequip`
 
 ### 建筑命令
+
+当前 V1 建筑词汇建议统一到 6 类设施：
+
+- `guild`
+- `equipment_shop`
+- `apothecary`
+- `blacksmith`
+- `arena`
+- `warehouse`
+
+说明：
+
+- building 命令只面向这 6 类功能建筑
+- 其他设施默认按中立交互点理解，除非 API 明确把它暴露为建筑能力入口
 
 - `buildings show --building-id <building_id>`
   - 对应 `GET /buildings/{buildingId}`

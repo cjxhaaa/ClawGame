@@ -244,7 +244,10 @@ Fields:
 - `id` `text` primary key
 - `board_id` `text` not null references `quest_boards(id)`
 - `character_id` `text` not null references `characters(id)`
+- `template_id` `text` null references `quest_templates(id)`
 - `template_type` `text` not null
+- `difficulty` `text` not null
+- `flow_kind` `text` not null
 - `rarity` `text` not null
 - `status` `text` not null
 - `title` `text` not null
@@ -252,8 +255,10 @@ Fields:
 - `target_region_id` `text` null references `regions(id)`
 - `target_dungeon_id` `text` null
 - `target_enemy_key` `text` null
+- `current_step_key` `text` null
 - `progress_current` `int` not null default `0`
 - `progress_target` `int` not null
+- `state_json` `jsonb` not null
 - `reward_gold` `int` not null
 - `reward_reputation` `int` not null
 - `reward_item_catalog_id` `text` null references `items_catalog(id)`
@@ -267,8 +272,77 @@ Indexes:
 - index on `character_id`
 - index on `(character_id, status)`
 - index on `board_id`
+- index on `template_id`
+- index on `(character_id, current_step_key)`
 
-### 9.13 `dungeon_definitions`
+Notes:
+
+- `state_json` stores discovered clues, completed steps, branch choices, and runtime variables
+- `progress_current/progress_target` remain useful for simple counter quests
+- multi-step quests should not rely on a single numeric progress pair to represent the whole runtime
+
+### 9.13 `quest_templates`
+
+Purpose:
+
+- reusable quest blueprints used to generate daily or special quest instances
+- persistent mirror of the quest-template catalog when templates are promoted into relational storage
+
+Current source-of-truth note:
+
+- YAML files under `apps/api/internal/quests/configs/` should be treated as the primary authoring surface for quest templates
+- `quest_templates` rows are a future persistence/admin surface, not the required day-one editing path
+
+Fields:
+
+- `id` `text` primary key
+- `template_type` `text` not null
+- `difficulty` `text` not null
+- `flow_kind` `text` not null
+- `rarity` `text` not null
+- `title` `text` not null
+- `description` `text` not null
+- `targeting_rules_json` `jsonb` not null
+- `step_graph_json` `jsonb` not null
+- `generation_rules_json` `jsonb` not null
+- `reward_profile_id` `text` null
+- `narrative_json` `jsonb` not null
+- `is_daily_pool` `boolean` not null default `true`
+- `is_active` `boolean` not null default `true`
+
+Indexes:
+
+- index on `(difficulty, is_daily_pool, is_active)`
+- index on `(flow_kind, is_active)`
+
+Notes:
+
+- template authoring should prefer YAML-first changes and service-side validation at startup
+- one template file should carry quest identity, targeting, runtime steps, interaction specs, choice specs, progression triggers, and optional rank overrides together
+- `step_graph_json` and `generation_rules_json` should remain structurally compatible with the YAML representation so the catalog can later move between file-backed and database-backed sources without redefining the model
+
+### 9.14 `quest_progress_events`
+
+Purpose:
+
+- idempotent trigger log for quest progression
+
+Fields:
+
+- `id` `text` primary key
+- `character_id` `text` not null references `characters(id)`
+- `quest_id` `text` not null references `quests(id)`
+- `trigger_type` `text` not null
+- `source_event_id` `text` not null
+- `payload_json` `jsonb` not null
+- `applied_at` `timestamptz` not null
+
+Indexes:
+
+- unique index on `(quest_id, source_event_id)`
+- index on `(character_id, trigger_type)`
+
+### 9.15 `dungeon_definitions`
 
 Purpose:
 
@@ -286,7 +360,7 @@ Fields:
 - `room_config_json` `jsonb` not null
 - `is_active` `boolean` not null default `true`
 
-### 9.14 `dungeon_runs`
+### 9.16 `dungeon_runs`
 
 Purpose:
 
@@ -314,7 +388,7 @@ Indexes:
 - index on `character_id`
 - index on `(character_id, status)`
 
-### 9.15 `dungeon_run_states`
+### 9.17 `dungeon_run_states`
 
 Purpose:
 
@@ -331,7 +405,7 @@ Notes:
 
 - stores room state, combat snapshot, staged kill drops, pending rating rewards, and available action context
 
-### 9.16 `arena_tournaments`
+### 9.18 `arena_tournaments`
 
 Purpose:
 
@@ -349,7 +423,7 @@ Fields:
 - `bracket_size` `int` not null
 - `snapshot_json` `jsonb` null
 
-### 9.17 `arena_entries`
+### 9.19 `arena_entries`
 
 Purpose:
 
@@ -371,7 +445,7 @@ Indexes:
 - unique index on `(tournament_id, character_id)`
 - index on `tournament_id`
 
-### 9.18 `arena_matches`
+### 9.20 `arena_matches`
 
 Purpose:
 
@@ -395,7 +469,7 @@ Indexes:
 
 - unique index on `(tournament_id, round_number, match_number)`
 
-### 9.19 `leaderboard_snapshots`
+### 9.21 `leaderboard_snapshots`
 
 Purpose:
 
@@ -413,7 +487,7 @@ Indexes:
 
 - index on `(leaderboard_type, scope_key)`
 
-### 9.20 `world_events`
+### 9.22 `world_events`
 
 Purpose:
 
@@ -441,7 +515,7 @@ Indexes:
 - index on `actor_character_id`
 - index on `region_id`
 
-### 9.21 `idempotency_keys`
+### 9.23 `idempotency_keys`
 
 Purpose:
 

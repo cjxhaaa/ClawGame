@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"clawgame/apps/api/internal/characters"
+	"clawgame/apps/api/internal/combat"
 )
 
 var (
@@ -18,6 +19,7 @@ var (
 	ErrSlotNotOccupied   = errors.New("slot not occupied")
 	ErrCatalogNotFound   = errors.New("catalog item not found")
 	ErrItemEquipped      = errors.New("item is currently equipped")
+	ErrConsumableMissing = errors.New("consumable missing")
 )
 
 type EquipmentItem struct {
@@ -36,20 +38,35 @@ type EquipmentItem struct {
 }
 
 type InventoryView struct {
-	EquipmentScore int             `json:"equipment_score"`
-	Equipped       []EquipmentItem `json:"equipped"`
-	Inventory      []EquipmentItem `json:"inventory"`
+	EquipmentScore int               `json:"equipment_score"`
+	Equipped       []EquipmentItem   `json:"equipped"`
+	Inventory      []EquipmentItem   `json:"inventory"`
+	Consumables    []ConsumableStack `json:"consumables"`
 }
 
 type ShopItem struct {
 	CatalogID      string         `json:"catalog_id"`
 	Name           string         `json:"name"`
+	ItemType       string         `json:"item_type"`
 	Slot           string         `json:"slot"`
 	Rarity         string         `json:"rarity"`
 	PriceGold      int            `json:"price_gold"`
 	RequiredClass  string         `json:"required_class,omitempty"`
 	RequiredWeapon string         `json:"required_weapon_style,omitempty"`
 	Stats          map[string]int `json:"stats"`
+	Family         string         `json:"family,omitempty"`
+	Tier           int            `json:"tier,omitempty"`
+	EffectSummary  string         `json:"effect_summary,omitempty"`
+}
+
+type ConsumableStack struct {
+	CatalogID     string `json:"catalog_id"`
+	Name          string `json:"name"`
+	ItemType      string `json:"item_type"`
+	Family        string `json:"family"`
+	Tier          int    `json:"tier"`
+	Quantity      int    `json:"quantity"`
+	EffectSummary string `json:"effect_summary"`
 }
 
 type catalogItem struct {
@@ -67,15 +84,31 @@ type shopCatalogItem struct {
 	PriceGold int
 }
 
+type consumableCatalogItem struct {
+	CatalogID     string
+	Name          string
+	ItemType      string
+	Family        string
+	Tier          int
+	PriceGold     int
+	MinRank       string
+	EffectSummary string
+	BuildingTypes []string
+}
+
 type Service struct {
-	mu               sync.Mutex
-	itemsByCharacter map[string][]EquipmentItem
+	mu                     sync.Mutex
+	itemsByCharacter       map[string][]EquipmentItem
+	consumablesByCharacter map[string]map[string]int
 }
 
 var itemCounter uint64
 
 func NewService() *Service {
-	return &Service{itemsByCharacter: make(map[string][]EquipmentItem)}
+	return &Service{
+		itemsByCharacter:       make(map[string][]EquipmentItem),
+		consumablesByCharacter: make(map[string]map[string]int),
+	}
 }
 
 func (s *Service) GetInventory(character characters.Summary) InventoryView {
@@ -83,7 +116,8 @@ func (s *Service) GetInventory(character characters.Summary) InventoryView {
 	defer s.mu.Unlock()
 
 	items := s.ensureCharacterItemsLocked(character)
-	return buildView(items)
+	consumables := s.ensureConsumablesForCharacterLocked(character)
+	return buildView(items, consumables)
 }
 
 func (s *Service) EquipItem(character characters.Summary, itemID string) (InventoryView, error) {
@@ -112,7 +146,7 @@ func (s *Service) EquipItem(character characters.Summary, itemID string) (Invent
 
 	items[index].State = "equipped"
 	s.itemsByCharacter[character.CharacterID] = items
-	return buildView(items), nil
+	return buildView(items, s.ensureConsumablesForCharacterLocked(character)), nil
 }
 
 func (s *Service) UnequipItem(character characters.Summary, slot string) (InventoryView, error) {
@@ -124,7 +158,7 @@ func (s *Service) UnequipItem(character characters.Summary, slot string) (Invent
 		if items[i].State == "equipped" && items[i].Slot == slot {
 			items[i].State = "inventory"
 			s.itemsByCharacter[character.CharacterID] = items
-			return buildView(items), nil
+			return buildView(items, s.ensureConsumablesForCharacterLocked(character)), nil
 		}
 	}
 
@@ -167,12 +201,32 @@ func (s *Service) ListShopInventory(buildingType string, character characters.Su
 		items = append(items, ShopItem{
 			CatalogID:      entry.Item.CatalogID,
 			Name:           entry.Item.Name,
+			ItemType:       "equipment",
 			Slot:           entry.Item.Slot,
 			Rarity:         entry.Item.Rarity,
 			PriceGold:      entry.Item.PriceGold,
 			RequiredClass:  entry.Item.RequiredClass,
 			RequiredWeapon: entry.Item.RequiredWeaponStyle,
 			Stats:          copyStats(entry.Item.Stats),
+		})
+	}
+
+	for _, entry := range consumableShopCatalog {
+		if len(entry.BuildingTypes) > 0 && !containsString(entry.BuildingTypes, buildingType) {
+			continue
+		}
+		if !rankAtLeast(character.Rank, entry.MinRank) {
+			continue
+		}
+
+		items = append(items, ShopItem{
+			CatalogID:     entry.CatalogID,
+			Name:          entry.Name,
+			ItemType:      entry.ItemType,
+			PriceGold:     entry.PriceGold,
+			Family:        entry.Family,
+			Tier:          entry.Tier,
+			EffectSummary: entry.EffectSummary,
 		})
 	}
 
@@ -184,6 +238,33 @@ func (s *Service) ListShopInventory(buildingType string, character characters.Su
 	})
 
 	return items
+}
+
+func (s *Service) PurchaseShopItem(character characters.Summary, catalogID string) (InventoryView, *EquipmentItem, *ConsumableStack, int, error) {
+	if _, ok := shopCatalogByID[strings.TrimSpace(catalogID)]; ok {
+		view, purchased, price, err := s.PurchaseItem(character, catalogID)
+		if err != nil {
+			return InventoryView{}, nil, nil, 0, err
+		}
+		return view, &purchased, nil, price, nil
+	}
+
+	entry, ok := consumableShopCatalogByID[strings.TrimSpace(catalogID)]
+	if !ok || !rankAtLeast(character.Rank, entry.MinRank) {
+		return InventoryView{}, nil, nil, 0, ErrCatalogNotFound
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	items := s.ensureCharacterItemsLocked(character)
+	consumables := s.ensureConsumablesForCharacterLocked(character)
+	consumables[entry.CatalogID]++
+	s.consumablesByCharacter[character.CharacterID] = consumables
+
+	view := buildView(items, consumables)
+	stack := buildConsumableStack(entry, consumables[entry.CatalogID])
+	return view, nil, &stack, entry.PriceGold, nil
 }
 
 func (s *Service) PurchaseItem(character characters.Summary, catalogID string) (InventoryView, EquipmentItem, int, error) {
@@ -218,7 +299,7 @@ func (s *Service) PurchaseItem(character characters.Summary, catalogID string) (
 	items = append(items, purchased)
 	s.itemsByCharacter[character.CharacterID] = items
 
-	return buildView(items), purchased, template.PriceGold, nil
+	return buildView(items, s.ensureConsumablesForCharacterLocked(character)), purchased, template.PriceGold, nil
 }
 
 func (s *Service) GrantItemFromCatalog(character characters.Summary, catalogID string) (InventoryView, EquipmentItem, error) {
@@ -251,7 +332,7 @@ func (s *Service) GrantItemFromCatalog(character characters.Summary, catalogID s
 	items = append(items, reward)
 	s.itemsByCharacter[character.CharacterID] = items
 
-	return buildView(items), reward, nil
+	return buildView(items, s.ensureConsumablesForCharacterLocked(character)), reward, nil
 }
 
 func (s *Service) SellItem(character characters.Summary, itemID string) (InventoryView, EquipmentItem, int, error) {
@@ -273,7 +354,7 @@ func (s *Service) SellItem(character characters.Summary, itemID string) (Invento
 	items = append(items[:index], items[index+1:]...)
 	s.itemsByCharacter[character.CharacterID] = items
 
-	return buildView(items), target, price, nil
+	return buildView(items, s.ensureConsumablesForCharacterLocked(character)), target, price, nil
 }
 
 func (s *Service) ensureCharacterItemsLocked(character characters.Summary) []EquipmentItem {
@@ -287,6 +368,38 @@ func (s *Service) ensureCharacterItemsLocked(character characters.Summary) []Equ
 	s.itemsByCharacter[character.CharacterID] = items
 	copied := make([]EquipmentItem, len(items))
 	copy(copied, items)
+	return copied
+}
+
+func (s *Service) ensureConsumablesLocked(characterID string) map[string]int {
+	if items, ok := s.consumablesByCharacter[characterID]; ok {
+		copied := make(map[string]int, len(items))
+		for key, value := range items {
+			copied[key] = value
+		}
+		return copied
+	}
+
+	s.consumablesByCharacter[characterID] = map[string]int{}
+	return map[string]int{}
+}
+
+func (s *Service) ensureConsumablesForCharacterLocked(character characters.Summary) map[string]int {
+	if items, ok := s.consumablesByCharacter[character.CharacterID]; ok {
+		copied := make(map[string]int, len(items))
+		for key, value := range items {
+			copied[key] = value
+		}
+		return copied
+	}
+
+	starter := starterConsumablesFor(character.Rank)
+	s.consumablesByCharacter[character.CharacterID] = starter
+
+	copied := make(map[string]int, len(starter))
+	for key, value := range starter {
+		copied[key] = value
+	}
 	return copied
 }
 
@@ -333,7 +446,7 @@ func starterItemsFor(character characters.Summary) []EquipmentItem {
 	return items
 }
 
-func buildView(items []EquipmentItem) InventoryView {
+func buildView(items []EquipmentItem, consumables map[string]int) InventoryView {
 	equipped := make([]EquipmentItem, 0)
 	bag := make([]EquipmentItem, 0)
 	for _, item := range items {
@@ -355,7 +468,60 @@ func buildView(items []EquipmentItem) InventoryView {
 		}
 	}
 
-	return InventoryView{EquipmentScore: score, Equipped: equipped, Inventory: bag}
+	return InventoryView{
+		EquipmentScore: score,
+		Equipped:       equipped,
+		Inventory:      bag,
+		Consumables:    buildConsumableStacks(consumables),
+	}
+}
+
+func buildConsumableStacks(consumables map[string]int) []ConsumableStack {
+	stacks := make([]ConsumableStack, 0, len(consumables))
+	for catalogID, quantity := range consumables {
+		if quantity <= 0 {
+			continue
+		}
+		entry, ok := consumableShopCatalogByID[catalogID]
+		if !ok {
+			continue
+		}
+		stacks = append(stacks, buildConsumableStack(entry, quantity))
+	}
+
+	sort.Slice(stacks, func(i, j int) bool {
+		if stacks[i].Tier != stacks[j].Tier {
+			return stacks[i].Tier < stacks[j].Tier
+		}
+		return stacks[i].CatalogID < stacks[j].CatalogID
+	})
+
+	return stacks
+}
+
+func buildConsumableStack(entry consumableCatalogItem, quantity int) ConsumableStack {
+	return ConsumableStack{
+		CatalogID:     entry.CatalogID,
+		Name:          entry.Name,
+		ItemType:      entry.ItemType,
+		Family:        entry.Family,
+		Tier:          entry.Tier,
+		Quantity:      quantity,
+		EffectSummary: entry.EffectSummary,
+	}
+}
+
+func starterConsumablesFor(rank string) map[string]int {
+	potions := combat.DefaultPotionBag(rank)
+	items := make(map[string]int, len(potions))
+	for _, potion := range potions {
+		quantity := potion.Quantity
+		if quantity < 6 {
+			quantity = 6
+		}
+		items[potion.PotionID] = quantity
+	}
+	return items
 }
 
 func itemCompatible(character characters.Summary, item EquipmentItem) bool {
@@ -407,6 +573,81 @@ func containsString(items []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func rankAtLeast(currentRank, requiredRank string) bool {
+	order := map[string]int{
+		"low":  1,
+		"mid":  2,
+		"high": 3,
+	}
+
+	if strings.TrimSpace(requiredRank) == "" {
+		return true
+	}
+
+	return order[strings.TrimSpace(currentRank)] >= order[strings.TrimSpace(requiredRank)]
+}
+
+func (s *Service) BuildPotionLoadout(character characters.Summary, potionIDs []string) ([]combat.PotionItem, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if len(potionIDs) == 0 {
+		return []combat.PotionItem{}, nil
+	}
+	if len(potionIDs) > 2 {
+		return nil, ErrConsumableMissing
+	}
+
+	consumables := s.ensureConsumablesForCharacterLocked(character)
+	loadout := make([]combat.PotionItem, 0, len(potionIDs))
+	seen := map[string]struct{}{}
+	for _, potionID := range potionIDs {
+		potionID = strings.TrimSpace(potionID)
+		if potionID == "" {
+			return nil, ErrConsumableMissing
+		}
+		if _, ok := seen[potionID]; ok {
+			return nil, ErrConsumableMissing
+		}
+		seen[potionID] = struct{}{}
+		entry, ok := consumableShopCatalogByID[potionID]
+		if !ok || !rankAtLeast(character.Rank, entry.MinRank) {
+			return nil, ErrConsumableMissing
+		}
+		quantity := consumables[potionID]
+		if quantity <= 0 {
+			return nil, ErrConsumableMissing
+		}
+		potion, ok := combat.PotionCatalog[potionID]
+		if !ok {
+			return nil, ErrConsumableMissing
+		}
+		potion.Quantity = quantity
+		loadout = append(loadout, potion)
+	}
+
+	return loadout, nil
+}
+
+func (s *Service) ConsumeConsumables(characterID string, usage map[string]int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	consumables := s.ensureConsumablesLocked(characterID)
+	for catalogID, quantity := range usage {
+		if quantity <= 0 {
+			continue
+		}
+		remaining := consumables[catalogID] - quantity
+		if remaining <= 0 {
+			delete(consumables, catalogID)
+			continue
+		}
+		consumables[catalogID] = remaining
+	}
+	s.consumablesByCharacter[characterID] = consumables
 }
 
 func sellPriceFor(item EquipmentItem) int {
@@ -693,7 +934,7 @@ var shopCatalog = []shopEntry{
 			},
 			PriceGold: 65,
 		},
-		BuildingTypes: []string{"weapon_shop", "general_store"},
+		BuildingTypes: []string{"equipment_shop"},
 	},
 	{
 		Item: shopCatalogItem{
@@ -708,7 +949,7 @@ var shopCatalog = []shopEntry{
 			},
 			PriceGold: 65,
 		},
-		BuildingTypes: []string{"weapon_shop", "general_store"},
+		BuildingTypes: []string{"equipment_shop"},
 	},
 	{
 		Item: shopCatalogItem{
@@ -723,7 +964,7 @@ var shopCatalog = []shopEntry{
 			},
 			PriceGold: 62,
 		},
-		BuildingTypes: []string{"weapon_shop", "general_store"},
+		BuildingTypes: []string{"equipment_shop"},
 	},
 	{
 		Item: shopCatalogItem{
@@ -736,7 +977,7 @@ var shopCatalog = []shopEntry{
 			},
 			PriceGold: 58,
 		},
-		BuildingTypes: []string{"armor_shop", "general_store"},
+		BuildingTypes: []string{"equipment_shop"},
 	},
 	{
 		Item: shopCatalogItem{
@@ -749,7 +990,7 @@ var shopCatalog = []shopEntry{
 			},
 			PriceGold: 58,
 		},
-		BuildingTypes: []string{"armor_shop", "general_store"},
+		BuildingTypes: []string{"equipment_shop"},
 	},
 	{
 		Item: shopCatalogItem{
@@ -762,7 +1003,7 @@ var shopCatalog = []shopEntry{
 			},
 			PriceGold: 40,
 		},
-		BuildingTypes: []string{"armor_shop", "general_store"},
+		BuildingTypes: []string{"equipment_shop"},
 	},
 }
 
@@ -770,6 +1011,33 @@ var shopCatalogByID = func() map[string]shopCatalogItem {
 	items := make(map[string]shopCatalogItem, len(shopCatalog))
 	for _, entry := range shopCatalog {
 		items[entry.Item.CatalogID] = entry.Item
+	}
+	return items
+}()
+
+var consumableShopCatalog = []consumableCatalogItem{
+	{CatalogID: "potion_hp_t1", Name: "Minor HP Potion", ItemType: "consumable", Family: "hp", Tier: 1, PriceGold: 12, MinRank: "low", EffectSummary: "Restore 25% max HP, capped at 220.", BuildingTypes: []string{"apothecary"}},
+	{CatalogID: "potion_atk_t1", Name: "Minor Attack Potion", ItemType: "consumable", Family: "atk", Tier: 1, PriceGold: 14, MinRank: "low", EffectSummary: "Increase primary attack by 10% for 3 rounds.", BuildingTypes: []string{"apothecary"}},
+	{CatalogID: "potion_def_t1", Name: "Minor Defense Potion", ItemType: "consumable", Family: "def", Tier: 1, PriceGold: 14, MinRank: "low", EffectSummary: "Increase defenses by 10% for 3 rounds.", BuildingTypes: []string{"apothecary"}},
+	{CatalogID: "potion_spd_t1", Name: "Minor Speed Potion", ItemType: "consumable", Family: "spd", Tier: 1, PriceGold: 14, MinRank: "low", EffectSummary: "Increase speed by 8% for 3 rounds.", BuildingTypes: []string{"apothecary"}},
+	{CatalogID: "potion_hp_t2", Name: "Standard HP Potion", ItemType: "consumable", Family: "hp", Tier: 2, PriceGold: 22, MinRank: "mid", EffectSummary: "Restore 35% max HP, capped at 520.", BuildingTypes: []string{"apothecary"}},
+	{CatalogID: "potion_atk_t2", Name: "Standard Attack Potion", ItemType: "consumable", Family: "atk", Tier: 2, PriceGold: 24, MinRank: "mid", EffectSummary: "Increase primary attack by 16% for 3 rounds.", BuildingTypes: []string{"apothecary"}},
+	{CatalogID: "potion_def_t2", Name: "Standard Defense Potion", ItemType: "consumable", Family: "def", Tier: 2, PriceGold: 24, MinRank: "mid", EffectSummary: "Increase defenses by 16% for 3 rounds.", BuildingTypes: []string{"apothecary"}},
+	{CatalogID: "potion_spd_t2", Name: "Standard Speed Potion", ItemType: "consumable", Family: "spd", Tier: 2, PriceGold: 24, MinRank: "mid", EffectSummary: "Increase speed by 12% for 3 rounds.", BuildingTypes: []string{"apothecary"}},
+	{CatalogID: "potion_hp_t3", Name: "Superior HP Potion", ItemType: "consumable", Family: "hp", Tier: 3, PriceGold: 36, MinRank: "high", EffectSummary: "Restore 45% max HP, capped at 980.", BuildingTypes: []string{"apothecary"}},
+	{CatalogID: "potion_atk_t3", Name: "Superior Attack Potion", ItemType: "consumable", Family: "atk", Tier: 3, PriceGold: 38, MinRank: "high", EffectSummary: "Increase primary attack by 24% for 4 rounds.", BuildingTypes: []string{"apothecary"}},
+	{CatalogID: "potion_def_t3", Name: "Superior Defense Potion", ItemType: "consumable", Family: "def", Tier: 3, PriceGold: 38, MinRank: "high", EffectSummary: "Increase defenses by 24% for 4 rounds.", BuildingTypes: []string{"apothecary"}},
+	{CatalogID: "potion_spd_t3", Name: "Superior Speed Potion", ItemType: "consumable", Family: "spd", Tier: 3, PriceGold: 38, MinRank: "high", EffectSummary: "Increase speed by 18% for 4 rounds.", BuildingTypes: []string{"apothecary"}},
+}
+
+var consumableShopCatalogByID = func() map[string]consumableCatalogItem {
+	items := make(map[string]consumableCatalogItem, len(consumableShopCatalog))
+	for _, entry := range consumableShopCatalog {
+		if potion, ok := combat.PotionCatalog[entry.CatalogID]; ok {
+			entry.Family = potion.Family
+			entry.Tier = potion.Tier
+		}
+		items[entry.CatalogID] = entry
 	}
 	return items
 }()

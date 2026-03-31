@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -23,10 +24,11 @@ type Region struct {
 }
 
 type Building struct {
-	ID      string   `json:"building_id"`
-	Name    string   `json:"name"`
-	Type    string   `json:"type"`
-	Actions []string `json:"actions"`
+	ID       string   `json:"building_id"`
+	Name     string   `json:"name"`
+	Type     string   `json:"type"`
+	Category string   `json:"category"`
+	Actions  []string `json:"actions"`
 }
 
 type TravelOption struct {
@@ -68,15 +70,16 @@ type CurioQuestSeed struct {
 }
 
 type RegionGameplay struct {
-	InteractionLayer  string `json:"interaction_layer"`
-	RiskLevel         string `json:"risk_level"`
-	FacilityFocus     string `json:"facility_focus"`
-	EncounterFamily   string `json:"encounter_family"`
-	CurioStatus       string `json:"curio_status"`
-	CurioHint         string `json:"curio_hint,omitempty"`
-	LinkedDungeon     string `json:"linked_dungeon,omitempty"`
-	ParentRegionID    string `json:"parent_region_id,omitempty"`
-	HostileEncounters bool   `json:"hostile_encounters"`
+	InteractionLayer       string   `json:"interaction_layer"`
+	RiskLevel              string   `json:"risk_level"`
+	FacilityFocus          string   `json:"facility_focus"`
+	EncounterFamily        string   `json:"encounter_family"`
+	CurioStatus            string   `json:"curio_status"`
+	CurioHint              string   `json:"curio_hint,omitempty"`
+	LinkedDungeon          string   `json:"linked_dungeon,omitempty"`
+	ParentRegionID         string   `json:"parent_region_id,omitempty"`
+	HostileEncounters      bool     `json:"hostile_encounters"`
+	AvailableRegionActions []string `json:"available_region_actions,omitempty"`
 }
 
 type RegionDetail struct {
@@ -188,6 +191,7 @@ func (s *Service) ListRegions() []Region {
 func (s *Service) GetRegion(regionID string) (RegionDetail, bool) {
 	for _, region := range seedRegions {
 		if region.Region.ID == regionID {
+			region.RegionGameplay.AvailableRegionActions = regionAvailableActions(region)
 			return region, true
 		}
 	}
@@ -213,6 +217,7 @@ func (s *Service) GetPublicWorldState() PublicWorldState {
 		activity.TravelCostGold = region.Region.TravelCostGold
 		activity.BuildingCount = len(region.Buildings)
 		activity.RegionGameplay = region.RegionGameplay
+		activity.RegionGameplay.AvailableRegionActions = regionAvailableActions(region)
 		regions = append(regions, activity)
 	}
 
@@ -296,6 +301,38 @@ func buildFieldEncounter(detail RegionDetail, approach string) FieldEncounterRes
 	default:
 		return buildForestFieldEncounter(detail, approach)
 	}
+}
+
+func regionAvailableActions(detail RegionDetail) []string {
+	actions := make([]string, 0, 5)
+
+	if hasFunctionalBuilding(detail.Buildings) {
+		actions = append(actions, "enter_building")
+	}
+
+	if detail.Region.Type == "field" {
+		actions = append(actions,
+			"resolve_field_encounter:hunt",
+			"resolve_field_encounter:gather",
+			"resolve_field_encounter:curio",
+		)
+	}
+
+	if detail.Region.Type == "dungeon" || strings.TrimSpace(detail.LinkedDungeon) != "" {
+		actions = append(actions, "enter_dungeon")
+	}
+
+	return actions
+}
+
+func hasFunctionalBuilding(buildings []Building) bool {
+	for _, building := range buildings {
+		if building.Category == "functional_building" {
+			return true
+		}
+	}
+
+	return false
 }
 
 func buildForestFieldEncounter(detail RegionDetail, approach string) FieldEncounterResult {
@@ -543,13 +580,12 @@ var seedRegions = []RegionDetail{
 			HostileEncounters: false,
 		},
 		Buildings: []Building{
-			{ID: "guild_main_city", Name: "Adventurers Guild", Type: "guild", Actions: []string{"list_quests", "accept_quest", "submit_quest", "reroll_quests"}},
-			{ID: "weapon_shop_main_city", Name: "Weapon Shop", Type: "weapon_shop", Actions: []string{"browse_stock", "purchase", "sell_loot"}},
-			{ID: "armor_shop_main_city", Name: "Armor Shop", Type: "armor_shop", Actions: []string{"browse_stock", "purchase", "sell_loot"}},
-			{ID: "temple_main_city", Name: "Temple", Type: "temple", Actions: []string{"restore_hp", "remove_status"}},
-			{ID: "blacksmith_main_city", Name: "Blacksmith", Type: "blacksmith", Actions: []string{"enhance_item", "repair_item"}},
-			{ID: "arena_hall_main_city", Name: "Arena Hall", Type: "arena_hall", Actions: []string{"view_bracket", "signup"}},
-			{ID: "warehouse_main_city", Name: "Warehouse", Type: "warehouse", Actions: []string{"view_storage"}},
+			{ID: "guild_main_city", Name: "Adventurers Guild", Type: "guild", Category: "functional_building", Actions: []string{"list_quests", "accept_quest", "submit_quest", "reroll_quests"}},
+			{ID: "equipment_shop_main_city", Name: "Equipment Shop", Type: "equipment_shop", Category: "functional_building", Actions: []string{"browse_stock", "purchase", "sell_loot"}},
+			{ID: "apothecary_main_city", Name: "Apothecary", Type: "apothecary", Category: "functional_building", Actions: []string{"purchase", "restore_hp"}},
+			{ID: "blacksmith_main_city", Name: "Blacksmith", Type: "blacksmith", Category: "functional_building", Actions: []string{"enhance_item"}},
+			{ID: "arena_main_city", Name: "Arena", Type: "arena", Category: "functional_building", Actions: []string{"view_bracket", "signup"}},
+			{ID: "warehouse_main_city", Name: "Warehouse", Type: "warehouse", Category: "functional_building", Actions: []string{"view_storage"}},
 		},
 		TravelOptions: []TravelOption{
 			{RegionID: "greenfield_village", Name: "Greenfield Village", TravelCostGold: 0, RequiresRank: "low"},
@@ -572,9 +608,10 @@ var seedRegions = []RegionDetail{
 			HostileEncounters: false,
 		},
 		Buildings: []Building{
-			{ID: "quest_outpost_village", Name: "Quest Outpost", Type: "quest_outpost", Actions: []string{"pick_up_supplies", "turn_in_contracts"}},
-			{ID: "general_store_village", Name: "General Store", Type: "general_store", Actions: []string{"buy_consumables", "sell_loot"}},
-			{ID: "field_healer_village", Name: "Field Healer", Type: "healer", Actions: []string{"restore_hp", "remove_status"}},
+			{ID: "guild_outpost_village", Name: "Adventurers Guild Outpost", Type: "guild", Category: "functional_building", Actions: []string{"list_quests", "accept_quest", "submit_quest"}},
+			{ID: "equipment_shop_village", Name: "Equipment Shop", Type: "equipment_shop", Category: "functional_building", Actions: []string{"browse_stock", "purchase", "sell_loot"}},
+			{ID: "apothecary_village", Name: "Apothecary", Type: "apothecary", Category: "functional_building", Actions: []string{"purchase", "restore_hp"}},
+			{ID: "caravan_dispatch_village", Name: "Caravan Dispatch Point", Type: "caravan_dispatch", Category: "neutral_interaction_point", Actions: []string{"pick_up_supplies", "turn_in_contracts"}},
 		},
 		TravelOptions: []TravelOption{
 			{RegionID: "main_city", Name: "Main City", TravelCostGold: 0, RequiresRank: "low"},

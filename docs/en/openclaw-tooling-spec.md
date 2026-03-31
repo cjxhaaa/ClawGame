@@ -254,6 +254,77 @@ Expected behavior:
   - wraps `GET /regions/{regionId}`
 - `travel --region-id <region_id>`
   - wraps `POST /me/travel`
+  - should return the travel result together with refreshed planner and region detail for the destination when possible
+
+### Field commands
+
+- `field hunt`
+  - wraps `POST /me/field-encounter` with `approach=hunt`
+- `field gather`
+  - wraps `POST /me/field-encounter` with `approach=gather`
+- `field curio`
+  - wraps `POST /me/field-encounter` with `approach=curio`
+
+Field commands should be preferred over the generic action fallback when the current region is a field region.
+
+### Regional Capability Consumption Order
+
+OpenClaw should use a clear read order at the map layer:
+
+1. read `planner` first
+   - to get a compact summary of daily limits, local opportunities, and `suggested_actions`
+2. read `regions show`
+   - to confirm `available_region_actions`, `buildings`, `travel_options`, and `linked_dungeon` for the target region
+3. read `buildings show` only when entering a specific facility
+   - building detail is a drill-down, not the first discovery surface
+4. read `quests list` only when task ordering is needed
+   - the task layer decides what is worth doing, not the map layer
+5. read `state` only when exact validation is needed
+   - for inventory, materials, detailed objectives, and full `valid_actions`
+
+In short:
+
+- `planner` gives the compact next-step overview
+- `regions show` answers “what can be done here”
+- `quests list` answers “which of these opportunities connect to tasks”
+- `state` is the precise verification layer
+
+### Building Interpretation Rule
+
+OpenClaw should classify region facilities into two separate layers:
+
+- functional buildings
+  - canonical V1 families are `guild`, `equipment_shop`, `apothecary`, `blacksmith`, `arena`, and `warehouse`
+  - these are stable bot-facing capability surfaces and should be used for building commands and action selection
+- neutral interaction points
+  - these exist to support quests, lore, travel flavor, dispatch points, shrines, ruins, and other light regional interactions
+  - they may appear in region detail, but they should not be assumed to support the full building command surface
+
+In short:
+
+- use building commands for the six functional building families
+- treat everything else as a regional interaction point unless the API explicitly exposes a building capability surface for it
+
+### Recommended Post-Travel Decision Flow
+
+After OpenClaw completes `travel`, it should immediately refresh region understanding instead of continuing with pre-travel assumptions.
+
+Recommended flow:
+
+1. run `travel --region-id <region_id>`
+2. run `planner --region-id <region_id>`
+3. run `regions show --region-id <region_id>`
+4. branch on `available_region_actions`
+
+Branching guidance:
+
+- if `enter_building` exists, the region contains at least one facility entry surface and building drill-down is now meaningful
+- if `resolve_field_encounter:hunt` exists, the region supports standard field combat progress
+- if `resolve_field_encounter:gather` exists, the region supports material-oriented field interaction
+- if `resolve_field_encounter:curio` exists, the region supports curiosity/exploration interaction and possible follow-up task seeds
+- if `enter_dungeon` exists, the region itself is a dungeon or it exposes an attached dungeon entrance
+
+The point of this flow is not to force a single loop. It is to make sure OpenClaw re-reads the current regional capability panel before choosing the next action.
 
 ### Quest commands
 
@@ -276,6 +347,20 @@ Expected behavior:
   - wraps `POST /me/equipment/unequip`
 
 ### Building commands
+
+Current V1 building vocabulary should stay aligned with the six supported facility families:
+
+- `guild`
+- `equipment_shop`
+- `apothecary`
+- `blacksmith`
+- `arena`
+- `warehouse`
+
+Notes:
+
+- building commands are for these six functional building families
+- other facilities should be treated as neutral interaction points unless the API explicitly exposes them as building capability surfaces
 
 - `buildings show --building-id <building_id>`
   - wraps `GET /buildings/{buildingId}`

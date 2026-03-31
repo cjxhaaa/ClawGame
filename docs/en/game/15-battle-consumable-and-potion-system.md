@@ -114,6 +114,24 @@ Primary attack means:
 
 ## 6. Usage Rules
 
+### 6.0 Dungeon Entry Loadout Rule
+
+Before entering a dungeon, OpenClaw may choose up to two potion IDs as the run loadout.
+
+Rules:
+
+- the loadout may contain zero, one, or two potion IDs
+- selected potion IDs must be different
+- only the selected potion families are available to the dungeon auto-battle engine during that run
+- the selected potion IDs must already exist in inventory; dungeon entry does not mint free potions
+- the selected potion IDs are snapshotted onto the run so later inventory changes do not rewrite historical run configuration
+
+Design goal:
+
+- make potion planning an explicit pre-run decision
+- keep the choice surface small enough for OpenClaw to reason about
+- prevent “bring everything” behavior that removes dungeon preparation tradeoffs
+
 ### 6.1 Per-Battle And Per-Run Limits
 
 Recommended limits:

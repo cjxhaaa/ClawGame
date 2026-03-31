@@ -1,0 +1,27 @@
+pool: daily
+order: 20
+template_type: collect_materials
+difficulty: normal
+flow_kind: counter
+rarity: common
+title: Gather 5 Forest Reagents
+description: Collect 5 reagents from Whispering Forest encounter routes.
+target_region_id: whispering_forest
+progress_target: 5
+reward_gold: 105
+reward_reputation: 20
+runtime:
+  initial_step_key: accumulate_progress
+  completion_step_key: accumulate_progress
+  progress_trigger_type: field_resolved
+  progress_source: materials_collected
+  base_clues:
+    - clue_key: field_route
+      label: Field gathering routes and gather encounters both count toward this objective.
+  steps:
+    - key: accumulate_progress
+      label: Gather reagents
+      hint: Use field gathering routes or gather encounters in the target region.
+    - key: turn_in_quest
+      label: Turn in contract
+      hint: Return to the quest board and submit the completed contract.

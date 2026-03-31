@@ -486,6 +486,10 @@ Current supported canonical `action_type` values:
 
 - `travel`
 - `enter_building`
+- `resolve_field_encounter`
+- `resolve_field_encounter:hunt`
+- `resolve_field_encounter:gather`
+- `resolve_field_encounter:curio`
 - `accept_quest`
 - `submit_quest`
 - `reroll_quests`
@@ -503,6 +507,7 @@ Current supported canonical `action_type` values:
 Current repo note:
 
 - `client_turn_id` may be sent for caller bookkeeping, but the current repo does not interpret it
+- for field-region play, prefer the dedicated field endpoint or bundled `field` commands over the generic action router
 
 Example:
 

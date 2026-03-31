@@ -1,0 +1,65 @@
+pool: daily
+order: 50
+template_type: investigate_anomaly
+difficulty: hard
+flow_kind: investigation
+rarity: uncommon
+title: Audit the Shrine Ledger
+description: Inspect the disputed shrine ledger, choose the likely handler, and deliver the report to Greenfield Village.
+target_region_id: greenfield_village
+progress_target: 1
+reward_gold: 210
+reward_reputation: 42
+runtime:
+  initial_step_key: inspect_clue
+  inspect_step_key: inspect_clue
+  choice_step_key: submit_choice
+  completion_step_key: reach_target_region
+  progress_trigger_type: travel_completed
+  requires_choice: true
+  requires_inspection: true
+  base_clues:
+    - clue_key: ledger_dispute
+      label: The ledger contains conflicting signatures and requires a judgment before delivery.
+  steps:
+    - key: inspect_clue
+      label: Inspect clue
+      hint: Read the ledger and surface the key contradiction.
+      action_type: quest_interact
+    - key: submit_choice
+      label: Choose recipient
+      hint: Decide who should receive the report based on the ledger evidence.
+      action_type: quest_choice
+    - key: reach_target_region
+      label: Deliver report
+      hint: Travel to the target region and deliver the investigation report.
+    - key: turn_in_quest
+      label: Turn in contract
+      hint: Return to the quest board and submit the completed contract.
+  interaction_specs:
+    - step_key: inspect_clue
+      label: Inspect ledger
+      hint: Review the signatures and note the contradiction before choosing a recipient.
+      next_step_key: submit_choice
+      clues:
+        - clue_key: signature_gap
+          label: The ledger signature dates do not line up with the temple stamp.
+      state:
+        ledger_inspected: true
+  choice_specs:
+    - choice_key: handoff_to_guild
+      label: Turn the ledger over to the guild
+      next_step_key: reach_target_region
+      clues:
+        - clue_key: guild_chain
+          label: The guild archivist is now expecting the report at Greenfield Village.
+      state:
+        handoff_target: guild
+    - choice_key: handoff_to_temple
+      label: Turn the ledger over to the temple
+      next_step_key: reach_target_region
+      clues:
+        - clue_key: temple_chain
+          label: The temple courier should receive the report when you arrive in Greenfield Village.
+      state:
+        handoff_target: temple

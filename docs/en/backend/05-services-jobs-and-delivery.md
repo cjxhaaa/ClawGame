@@ -30,11 +30,61 @@ These are not HTTP endpoints. They are the main backend functions the team shoul
 
 - `EnsureDailyQuestBoard(characterID, businessDate) -> QuestBoard`
 - `ListQuests(characterID) -> QuestBoardView`
+- `GetQuestRuntime(characterID, questID) -> QuestRuntime`
 - `AcceptQuest(characterID, questID) -> Quest`
-- `UpdateQuestProgress(characterID, trigger) -> []QuestProgressChange`
+- `GenerateBoardQuests(characterID, businessDate, boardProfile) -> []Quest`
+- `BuildQuestFromTemplate(characterID, templateID, seed) -> Quest`
+- `ApplyQuestTrigger(characterID, trigger) -> []QuestProgressChange`
+- `ApplyQuestChoice(characterID, questID, choiceKey, payload) -> QuestRuntime`
+- `AdvanceQuestInteraction(characterID, questID, interaction) -> QuestRuntime`
 - `CompleteQuestIfEligible(questID) -> Quest`
 - `SubmitQuest(characterID, questID) -> QuestSubmissionResult`
 - `RerollQuestBoard(characterID) -> QuestBoardView`
+
+Additional note:
+
+- the quest-template catalog should now load from YAML files under `apps/api/internal/quests/configs/`
+- English-facing/backend-facing configuration design should be documented before new template fields are introduced
+- `GenerateBoardQuests` assembles the daily board using the `3 normal + 2 hard + 1 nightmare` shape
+- `BuildQuestFromTemplate` instantiates a concrete quest from a reusable blueprint
+- `ApplyQuestTrigger` is the unified progression entry point for travel, field, dungeon, and building-derived events
+- `ApplyQuestChoice` handles reasoning branches for `nightmare` quests
+- `AdvanceQuestInteraction` handles explicit quest steps without forcing everything into the generic action layer
+
+#### 13.4.1 Quest YAML catalog layout
+
+Recommended directory layout:
+
+```text
+apps/api/internal/quests/configs/
+  /daily
+    010-kill-region-enemies.yaml
+    020-collect-materials.yaml
+    030-deliver-supplies-normal.yaml
+    040-deliver-supplies-hard.yaml
+    050-investigate-anomaly.yaml
+    060-clear-dungeon-nightmare.yaml
+  /supplemental
+    010-curio-followup-delivery.yaml
+    020-kill-dungeon-elite.yaml
+```
+
+Each YAML file should define:
+
+- quest identity: `template_type`, `difficulty`, `flow_kind`, `rarity`
+- generation metadata: pool, order, daily/supplemental placement
+- localized-facing content used by the current runtime: `title`, `description`
+- target and reward placeholders
+- runtime step graph: `initial_step_key`, `completion_step_key`, `steps`
+- explicit interaction definitions
+- explicit choice definitions
+- progression rules: trigger type, progress source, and guard requirements
+- optional rank overrides
+
+Delivery note:
+
+- adding a new quest should primarily mean adding a new YAML file
+- Go code changes should only be needed when a genuinely new mechanic is introduced, not for ordinary template variation
 
 ### 13.5 Inventory service functions
 
@@ -181,6 +231,8 @@ Responsibilities:
 
 - submission enforces daily cap
 - progress updates should be idempotent per source event
+- the same source trigger must not advance the same quest twice
+- multi-step quest progression must be replayable and recoverable
 
 ### 15.5 Dungeon runs
 

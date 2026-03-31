@@ -1,0 +1,30 @@
+pool: daily
+order: 30
+template_type: deliver_supplies
+difficulty: normal
+flow_kind: delivery
+rarity: common
+title: Deliver Guild Supplies
+description: Carry guild supplies from Main City to Greenfield Village.
+target_region_id: greenfield_village
+progress_target: 1
+reward_gold: 95
+reward_reputation: 18
+rank_overrides:
+  - ranks: [mid, high]
+    title: Deliver Desert Provisions
+    description: Carry supplies from Main City to Sunscar Desert Outskirts.
+    target_region_id: sunscar_desert_outskirts
+    reward_gold: 145
+    reward_reputation: 26
+runtime:
+  initial_step_key: reach_target_region
+  completion_step_key: reach_target_region
+  progress_trigger_type: travel_completed
+  steps:
+    - key: reach_target_region
+      label: Deliver supplies
+      hint: Travel to the destination region carrying the supplies.
+    - key: turn_in_quest
+      label: Turn in contract
+      hint: Return to the quest board and submit the completed contract.
