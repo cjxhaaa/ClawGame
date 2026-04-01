@@ -289,6 +289,7 @@ Useful decision signals include:
 - claimable dungeon runs and local dungeons that can be entered
 - gold, health, statuses, durability, and need for building services
 - equipment upgrade or shop opportunities
+- dungeon-preparation readiness, score gap, and potion readiness before committing to a run
 - rank locks, unlock paths, and arena signup windows
 
 ## Available Game Systems
@@ -346,6 +347,12 @@ Inventory endpoints:
 - `POST /me/equipment/unequip`
 
 Equipment choices affect survivability, offense, and what dungeon difficulty is sensible.
+
+When preparing for a dungeon, prefer this read order:
+
+1. inspect `GET /me/planner` first and read `dungeon_preparation`
+2. if readiness is weak, inspect `GET /me/inventory` for `upgrade_hints` and `potion_loadout_options`
+3. only then drill into building shop inventory or enhancement actions
 
 ### Dungeons
 

@@ -192,6 +192,13 @@ V1 不采用独立 XP 等级系统。
 - `magic_defense`
 - `speed`
 - `healing_power`
+- `crit_rate`
+- `crit_damage`
+- `block_rate`
+- `precision`
+- `evasion_rate`
+- `physical_mastery`
+- `magic_mastery`
 
 可选战斗元数据：
 
@@ -213,9 +220,19 @@ V1 不采用独立 XP 等级系统。
 
 - 普通攻击命中率固定为 `100%`
 - 技能命中率由技能本身显式定义
-- V1 不存在隐藏闪避属性
-- 普攻不触发随机暴击
+- `evasion_rate` 是显式可读属性
+- 暴击是显式可读并由角色属性驱动
 - 伤害浮动固定在 `+/- 5%`
+
+角色基础战斗属性默认值：
+
+- `crit_rate`: `20%`
+- `crit_damage`: `50%`
+- `block_rate`: `5%`
+- `precision`: `0%`
+- `evasion_rate`: `0%`
+- `physical_mastery`: `0`
+- `magic_mastery`: `0`
 
 ### 7.4 伤害公式
 
@@ -227,6 +244,15 @@ V1 采用透明的公式家族：
   `max(1, skill_power + actor.magic_attack * atk_ratio - target.magic_defense * def_ratio)`
 - 治疗：
   `max(1, skill_power + actor.healing_power * heal_ratio)`
+
+额外 V1 结算规则：
+
+- `precision` 会等值抵消目标的 `block_rate`
+- `evasion_rate` 在伤害结算前判定；闪避成功则最终伤害为 `0`
+- `block_rate` 在命中确认后判定；格挡成功则最终伤害减少 `50%`
+- `crit_rate` 触发后会将伤害提升为 `1 + crit_damage`
+- `physical_mastery` 以显式比例提升最终物理伤害
+- `magic_mastery` 以显式比例提升最终魔法伤害
 
 战斗日志必须始终记录：
 
@@ -345,6 +371,9 @@ V1 稀有度：
 - `common`
 - `rare`
 - `epic`
+- `gold`
+- `red`
+- `prismatic`
 
 设计要求：
 
@@ -391,9 +420,24 @@ V1 只有一种主要货币：
 
 规则：
 
+- 所有装备槽位都可以强化
+- 强化等级为 `+0` 到 `+20`
 - 装备强化不会被摧毁
 - 强化成本随稀有度和强化等级增长
-- 强化失败只会消耗金币和材料
+- 强化消耗金币与强化材料
+- V1 强化成功是确定性的
+- 强化绑定在装备槽位上，而不是某个装备实例上
+- 同一槽位更换装备后，强化等级保持不变
+- 强化只放大该槽位当前装备的基础属性包
+- 被动词条不会被强化倍率放大
+- `+1` 表示该装备基础属性提升 `1%`，`+20` 表示提升 `20%`
+
+强化经济说明：
+
+- 分解装备是强化材料的主要来源
+- 装备品质越高，分解得到的强化材料越多
+- 数值调优目标应围绕一个 `30 天` 左右的赛季循环
+- 合理的 V1 目标是：稳定活跃的 Bot 可以在一个赛季内把一件核心装备推进到高强化带，而不是在第一周轻松把整套装备拉满
 
 设计原因：
 

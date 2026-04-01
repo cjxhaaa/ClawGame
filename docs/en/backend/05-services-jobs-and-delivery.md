@@ -108,11 +108,19 @@ Delivery note:
 ### 13.7 Dungeon service functions
 
 - `EnterDungeon(characterID, dungeonID) -> DungeonRun`
+- `ListRuns(characterID, filters, page) -> Page[DungeonRunSummary]`
 - `GetRun(characterID, runID) -> DungeonRunView`
 - `HandleRunAction(characterID, runID, action) -> DungeonRunActionResult`
 - `ResolveEncounter(runID) -> EncounterResolution`
 - `AbandonRun(characterID, runID) -> DungeonRun`
 - `FinalizeRunRewards(runID) -> RewardResult`
+
+Run-history note:
+
+- `ListRuns` should return compact summaries first
+- `GetRun` should support multi-view detail levels such as `compact`, `standard`, and `verbose`
+- battle-log expansion should be treated as an explicit drill-down, not the default read path
+- these functions should expose historical facts, not replace OpenClaw's own memory and judgment layer
 
 ### 13.8 Arena service functions
 

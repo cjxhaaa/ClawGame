@@ -264,7 +264,7 @@ func NewServer(cfg config.API) *Server {
 			}
 
 			questService.EnsureDailyQuestBoard(state.Character)
-			state, err = buildCharacterState(account, characterService, questService, dungeonService, worldService)
+			state, err = buildCharacterState(account, characterService, inventoryService, questService, dungeonService, worldService)
 			if err != nil {
 				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to load character state")
 				return
@@ -300,7 +300,7 @@ func NewServer(cfg config.API) *Server {
 			}
 			_ = state
 
-			state, err = buildCharacterState(account, characterService, questService, dungeonService, worldService)
+			state, err = buildCharacterState(account, characterService, inventoryService, questService, dungeonService, worldService)
 			if err != nil {
 				if errors.Is(err, characters.ErrCharacterNotFound) {
 					writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before requesting full state")
@@ -336,7 +336,7 @@ func NewServer(cfg config.API) *Server {
 				return
 			}
 
-			state, err := buildCharacterState(account, characterService, questService, dungeonService, worldService)
+			state, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, worldService)
 			if err != nil {
 				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to load planner state")
 				return
@@ -382,6 +382,8 @@ func NewServer(cfg config.API) *Server {
 			}
 
 			localDungeons := make([]map[string]any, 0, 2)
+			inventoryView := inventoryService.GetInventory(character)
+			prepItems := make([]map[string]any, 0, 2)
 			for _, definition := range dungeonService.ListDungeonDefinitions() {
 				if definition.RegionID != queryRegionID {
 					continue
@@ -390,20 +392,26 @@ func NewServer(cfg config.API) *Server {
 				isRankEligible := dungeons.RankAllows(character.Rank, definition.MinRank)
 				hasRemainingQuota := limits.DungeonEntryUsed < limits.DungeonEntryCap
 				canEnter := isRankEligible && hasRemainingQuota
+				prep := buildDungeonPreparationEntry(character, definition, inventoryView)
 
 				localDungeons = append(localDungeons, map[string]any{
-					"dungeon_id":              definition.DungeonID,
-					"name":                    definition.Name,
-					"region_id":               definition.RegionID,
-					"min_rank":                definition.MinRank,
-					"is_rank_eligible":        isRankEligible,
-					"has_remaining_quota":     hasRemainingQuota,
-					"can_enter":               canEnter,
-					"requires_potion_loadout": false,
-					"potion_slot_count":       2,
-					"recommended_level_min":   definition.RecommendedLevelMin,
-					"recommended_level_max":   definition.RecommendedLevelMax,
+					"dungeon_id":                  definition.DungeonID,
+					"name":                        definition.Name,
+					"region_id":                   definition.RegionID,
+					"min_rank":                    definition.MinRank,
+					"is_rank_eligible":            isRankEligible,
+					"has_remaining_quota":         hasRemainingQuota,
+					"can_enter":                   canEnter,
+					"requires_potion_loadout":     false,
+					"potion_slot_count":           2,
+					"recommended_level_min":       definition.RecommendedLevelMin,
+					"recommended_level_max":       definition.RecommendedLevelMax,
+					"current_equipment_score":     prep["current_equipment_score"],
+					"recommended_equipment_score": prep["recommended_equipment_score"],
+					"score_gap":                   prep["score_gap"],
+					"readiness":                   prep["readiness"],
 				})
+				prepItems = append(prepItems, prep)
 			}
 
 			if state.DungeonDaily.HasClaimableRun {
@@ -451,8 +459,14 @@ func NewServer(cfg config.API) *Server {
 				"local_quests":        localQuests,
 				"quest_runtime_hints": questRuntimeHints,
 				"local_dungeons":      localDungeons,
-				"dungeon_daily":       state.DungeonDaily,
-				"suggested_actions":   suggestedActions,
+				"dungeon_preparation": map[string]any{
+					"current_equipment_score": inventoryView.EquipmentScore,
+					"upgrade_hint_count":      len(inventoryView.UpgradeHints),
+					"potion_option_count":     len(inventoryView.PotionLoadoutOptions),
+					"items":                   prepItems,
+				},
+				"dungeon_daily":     state.DungeonDaily,
+				"suggested_actions": suggestedActions,
 			})
 		})
 
@@ -610,7 +624,7 @@ func NewServer(cfg config.API) *Server {
 				})
 			}
 
-			state, err := buildCharacterState(account, characterService, questService, dungeonService, worldService)
+			state, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, worldService)
 			if err != nil {
 				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to load updated state after travel")
 				return
@@ -815,7 +829,7 @@ func NewServer(cfg config.API) *Server {
 				return
 			}
 
-			result, err := resolveFieldEncounter(account, request.Approach, characterService, questService, dungeonService, worldService)
+			result, err := resolveFieldEncounter(account, request.Approach, characterService, inventoryService, questService, dungeonService, worldService)
 			if err != nil {
 				switch {
 				case errors.Is(err, characters.ErrCharacterNotFound):
@@ -864,7 +878,7 @@ func NewServer(cfg config.API) *Server {
 				return
 			}
 
-			state, err := buildCharacterState(account, characterService, questService, dungeonService, worldService)
+			state, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, worldService)
 			if err != nil {
 				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to load updated state after quest submission")
 				return
@@ -1085,6 +1099,9 @@ func NewServer(cfg config.API) *Server {
 		r.Post("/buildings/{buildingId}/enhance", func(w http.ResponseWriter, r *http.Request) {
 			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, dungeonService, "enhance")
 		})
+		r.Post("/buildings/{buildingId}/salvage", func(w http.ResponseWriter, r *http.Request) {
+			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, dungeonService, "salvage")
+		})
 		r.Post("/buildings/{buildingId}/repair", func(w http.ResponseWriter, r *http.Request) {
 			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, dungeonService, "repair")
 		})
@@ -1216,7 +1233,14 @@ func NewServer(cfg config.API) *Server {
 				return
 			}
 
-			run, err := dungeonService.EnterDungeon(character, limits, chi.URLParam(r, "dungeonId"), difficulty, request.PotionLoadout, potionBag)
+			state, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, worldService)
+			if err != nil {
+				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to build character state before dungeon entry")
+				return
+			}
+			player := dungeons.BuildPlayerCombatant(state.Character, state.Stats)
+
+			run, err := dungeonService.EnterDungeon(character, limits, player, chi.URLParam(r, "dungeonId"), difficulty, request.PotionLoadout, potionBag)
 			if err != nil {
 				switch {
 				case errors.Is(err, dungeons.ErrDungeonNotFound):
@@ -1313,7 +1337,44 @@ func NewServer(cfg config.API) *Server {
 				return
 			}
 
-			writeEnvelope(w, r, http.StatusOK, run)
+			writeEnvelope(w, r, http.StatusOK, dungeonService.BuildRunPayload(*run, r.URL.Query().Get("detail_level")))
+		})
+
+		r.Get("/me/runs", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+
+			character, exists := characterService.GetCharacterByAccount(account)
+			if !exists {
+				writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before viewing dungeon runs")
+				return
+			}
+
+			limit := 20
+			if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
+				if parsed, err := strconv.Atoi(rawLimit); err == nil && parsed > 0 {
+					limit = parsed
+				}
+			}
+			items := dungeonService.ListRuns(character.CharacterID, dungeons.RunListFilters{
+				DungeonID:  r.URL.Query().Get("dungeon_id"),
+				Difficulty: r.URL.Query().Get("difficulty"),
+				Result:     r.URL.Query().Get("result"),
+				Cursor:     r.URL.Query().Get("cursor"),
+				Limit:      limit,
+			})
+
+			nextCursor := ""
+			if len(items) == limit {
+				nextCursor = items[len(items)-1].RunID
+			}
+
+			writeEnvelope(w, r, http.StatusOK, map[string]any{
+				"items":       items,
+				"next_cursor": nextCursor,
+			})
 		})
 
 		r.Get("/me/runs/{runId}", func(w http.ResponseWriter, r *http.Request) {
@@ -1341,7 +1402,7 @@ func NewServer(cfg config.API) *Server {
 				return
 			}
 
-			writeEnvelope(w, r, http.StatusOK, run)
+			writeEnvelope(w, r, http.StatusOK, dungeonService.BuildRunPayload(run, r.URL.Query().Get("detail_level")))
 		})
 
 		r.Post("/me/runs/{runId}/claim", func(w http.ResponseWriter, r *http.Request) {
@@ -1746,12 +1807,14 @@ func requireAccount(w http.ResponseWriter, r *http.Request, authService *auth.Se
 	return account, true
 }
 
-func buildCharacterState(account auth.Account, characterService *characters.Service, questService *quests.Service, dungeonService *dungeons.Service, worldService *world.Service) (characters.StateView, error) {
+func buildCharacterState(account auth.Account, characterService *characters.Service, inventoryService *inventory.Service, questService *quests.Service, dungeonService *dungeons.Service, worldService *world.Service) (characters.StateView, error) {
 	state, err := characterService.GetState(account, worldService)
 	if err != nil {
 		return characters.StateView{}, err
 	}
 
+	state.Stats = inventoryService.DeriveStats(state.Character, state.Stats)
+	state.SlotEnhancements = inventoryService.ListSlotEnhancements(state.Character)
 	state.Objectives = questService.ActiveObjectives(state.Character.CharacterID)
 	state.ValidActions = append(state.ValidActions, questService.ListRuntimeActions(state.Character.CharacterID)...)
 	state.DungeonDaily = buildDungeonDailyHint(state, dungeonService)
@@ -2061,6 +2124,119 @@ func appendUniqueString(values []string, candidate string) []string {
 	}
 
 	return append(values, candidate)
+}
+
+func buildDungeonPreparationEntry(character characters.Summary, definition dungeons.DefinitionView, inventoryView inventory.InventoryView) map[string]any {
+	recommendedScore := heuristicRecommendedEquipmentScore(definition)
+	scoreGap := recommendedScore - inventoryView.EquipmentScore
+	if scoreGap < 0 {
+		scoreGap = 0
+	}
+	readiness := "ready"
+	switch {
+	case inventoryView.EquipmentScore+5 < recommendedScore:
+		readiness = "underprepared"
+	case inventoryView.EquipmentScore < recommendedScore:
+		readiness = "caution"
+	}
+
+	inventoryUpgrades := make([]map[string]any, 0, len(inventoryView.UpgradeHints))
+	shopUpgrades := make([]map[string]any, 0, len(inventoryView.UpgradeHints))
+	for _, hint := range inventoryView.UpgradeHints {
+		entry := map[string]any{
+			"source":              hint.Source,
+			"item_id":             hint.ItemID,
+			"catalog_id":          hint.CatalogID,
+			"name":                hint.Name,
+			"slot":                hint.Slot,
+			"score_delta":         hint.ScoreDelta,
+			"price_gold":          hint.PriceGold,
+			"affordable":          hint.Affordable,
+			"directly_equippable": hint.DirectlyEquipable,
+		}
+		if hint.Source == "inventory" {
+			inventoryUpgrades = append(inventoryUpgrades, entry)
+		} else if hint.Source == "shop" {
+			shopUpgrades = append(shopUpgrades, entry)
+		}
+	}
+
+	potionOptions := make([]map[string]any, 0, len(inventoryView.PotionLoadoutOptions))
+	for _, option := range inventoryView.PotionLoadoutOptions {
+		potionOptions = append(potionOptions, map[string]any{
+			"catalog_id":     option.CatalogID,
+			"name":           option.Name,
+			"family":         option.Family,
+			"tier":           option.Tier,
+			"quantity_owned": option.QuantityOwned,
+			"available_now":  option.AvailableNow,
+			"can_purchase":   option.CanPurchase,
+			"recommended":    option.Recommended,
+		})
+	}
+
+	steps := make([]string, 0, 3)
+	if readiness != "ready" {
+		if len(inventoryUpgrades) > 0 {
+			steps = append(steps, "equip_stronger_inventory_items")
+		}
+		if affordableUpgradeCount(shopUpgrades) > 0 {
+			steps = append(steps, "buy_equipment_upgrade")
+		}
+	}
+	if recommendedPotionAvailable(potionOptions) {
+		steps = append(steps, "review_potion_loadout")
+	}
+
+	return map[string]any{
+		"dungeon_id":                    definition.DungeonID,
+		"name":                          definition.Name,
+		"current_equipment_score":       inventoryView.EquipmentScore,
+		"recommended_equipment_score":   recommendedScore,
+		"score_gap":                     scoreGap,
+		"readiness":                     readiness,
+		"inventory_upgrade_count":       len(inventoryUpgrades),
+		"affordable_shop_upgrade_count": affordableUpgradeCount(shopUpgrades),
+		"inventory_upgrades":            inventoryUpgrades,
+		"shop_upgrades":                 shopUpgrades,
+		"potion_options":                potionOptions,
+		"suggested_preparation_steps":   steps,
+		"available_gold":                character.Gold,
+	}
+}
+
+func heuristicRecommendedEquipmentScore(definition dungeons.DefinitionView) int {
+	base := definition.RecommendedLevelMin*22 + definition.RecommendedLevelMax*12
+	if base < 40 {
+		base = 40
+	}
+	return base
+}
+
+func affordableUpgradeCount(items []map[string]any) int {
+	total := 0
+	for _, item := range items {
+		if affordable, _ := item["affordable"].(bool); affordable {
+			total++
+		}
+	}
+	return total
+}
+
+func recommendedPotionAvailable(items []map[string]any) bool {
+	for _, item := range items {
+		recommended, _ := item["recommended"].(bool)
+		if !recommended {
+			continue
+		}
+		if availableNow, _ := item["available_now"].(bool); availableNow {
+			return true
+		}
+		if canPurchase, _ := item["can_purchase"].(bool); canPurchase {
+			return true
+		}
+	}
+	return false
 }
 
 func buildQuestHistory(events []world.WorldEvent, days int, now time.Time) []map[string]any {
@@ -2599,9 +2775,142 @@ func handleBuildingAction(w http.ResponseWriter, r *http.Request, authService *a
 			},
 			OccurredAt: time.Now().Format(time.RFC3339),
 		})
+	case "salvage":
+		var payload struct {
+			ItemID string `json:"item_id"`
+		}
+		if !decodeJSONBody(w, r, &payload) {
+			return
+		}
+
+		view, salvaged, drops, err := inventoryService.SalvageItem(character, payload.ItemID)
+		if err != nil {
+			switch {
+			case errors.Is(err, inventory.ErrItemNotOwned):
+				writeError(w, r, http.StatusNotFound, "ITEM_NOT_OWNED", "item does not belong to character")
+			case errors.Is(err, inventory.ErrItemEquipped):
+				writeError(w, r, http.StatusBadRequest, "INVALID_ACTION_STATE", "unequip item before salvaging")
+			default:
+				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to salvage item")
+			}
+			return
+		}
+		materials, err := characterService.GrantMaterials(character.CharacterID, drops)
+		if err != nil {
+			writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to grant salvage materials")
+			return
+		}
+
+		response["inventory"] = view
+		response["item"] = salvaged
+		response["materials_granted"] = drops
+		response["materials"] = materials
+
+		_ = characterService.AppendEvents(character.CharacterID, world.WorldEvent{
+			EventID:          requestID(r),
+			EventType:        "inventory.item_salvaged",
+			Visibility:       "public",
+			ActorCharacterID: character.CharacterID,
+			ActorName:        character.Name,
+			RegionID:         character.LocationRegionID,
+			Summary:          fmt.Sprintf("%s salvaged %s.", character.Name, salvaged.Name),
+			Payload: map[string]any{
+				"item_id":           salvaged.ItemID,
+				"catalog_id":        salvaged.CatalogID,
+				"materials_granted": drops,
+			},
+			OccurredAt: time.Now().Format(time.RFC3339),
+		})
+	case "enhance":
+		var payload struct {
+			ItemID string `json:"item_id"`
+			Slot   string `json:"slot"`
+		}
+		if !decodeJSONBody(w, r, &payload) {
+			return
+		}
+
+		item, quote, err := inventoryService.GetEnhancementQuote(character, payload.ItemID, payload.Slot)
+		if err != nil {
+			switch {
+			case errors.Is(err, inventory.ErrItemNotOwned):
+				writeError(w, r, http.StatusNotFound, "ITEM_NOT_OWNED", "item does not belong to character")
+			case errors.Is(err, inventory.ErrItemNotEnhanceable):
+				writeError(w, r, http.StatusBadRequest, "ITEM_NOT_ENHANCEABLE", "item cannot be enhanced")
+			case errors.Is(err, inventory.ErrEnhancementCap):
+				writeError(w, r, http.StatusBadRequest, "ENHANCEMENT_CAP_REACHED", "item has reached the enhancement cap")
+			default:
+				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to quote enhancement")
+			}
+			return
+		}
+
+		if _, err := characterService.SpendGold(character.CharacterID, quote.GoldCost); err != nil {
+			if errors.Is(err, characters.ErrGoldInsufficient) {
+				writeError(w, r, http.StatusBadRequest, "GOLD_INSUFFICIENT", "character does not have enough gold to enhance this item")
+				return
+			}
+			writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to settle enhancement gold cost")
+			return
+		}
+		materials, err := characterService.SpendMaterials(character.CharacterID, quote.MaterialCost)
+		if err != nil {
+			_, _ = characterService.GrantGold(character.CharacterID, quote.GoldCost)
+			if errors.Is(err, characters.ErrMaterialsInsufficient) {
+				writeError(w, r, http.StatusBadRequest, "MATERIALS_INSUFFICIENT", "character does not have enough materials to enhance this item")
+				return
+			}
+			writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to settle enhancement material cost")
+			return
+		}
+
+		view, enhanced, err := inventoryService.EnhanceItem(character, payload.ItemID, payload.Slot)
+		if err != nil {
+			_, _ = characterService.GrantGold(character.CharacterID, quote.GoldCost)
+			_, _ = characterService.GrantMaterials(character.CharacterID, quote.MaterialCost)
+			switch {
+			case errors.Is(err, inventory.ErrItemNotOwned):
+				writeError(w, r, http.StatusNotFound, "ITEM_NOT_OWNED", "item does not belong to character")
+			case errors.Is(err, inventory.ErrItemNotEnhanceable):
+				writeError(w, r, http.StatusBadRequest, "ITEM_NOT_ENHANCEABLE", "item cannot be enhanced")
+			case errors.Is(err, inventory.ErrEnhancementCap):
+				writeError(w, r, http.StatusBadRequest, "ENHANCEMENT_CAP_REACHED", "item has reached the enhancement cap")
+			default:
+				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to enhance item")
+			}
+			return
+		}
+
+		response["inventory"] = view
+		response["item_before"] = item
+		response["item"] = enhanced
+		response["enhancement_quote"] = quote
+		response["materials"] = materials
+
+		_ = characterService.AppendEvents(character.CharacterID, world.WorldEvent{
+			EventID:          requestID(r),
+			EventType:        "inventory.item_enhanced",
+			Visibility:       "public",
+			ActorCharacterID: character.CharacterID,
+			ActorName:        character.Name,
+			RegionID:         character.LocationRegionID,
+			Summary:          fmt.Sprintf("%s enhanced %s to +%d.", character.Name, enhanced.Name, enhanced.EnhancementLevel),
+			Payload: map[string]any{
+				"item_id":         enhanced.ItemID,
+				"catalog_id":      enhanced.CatalogID,
+				"from_level":      quote.CurrentLevel,
+				"to_level":        enhanced.EnhancementLevel,
+				"gold_cost":       quote.GoldCost,
+				"material_cost":   quote.MaterialCost,
+				"preview_bonus":   quote.PreviewBonusPct,
+				"target_stat_set": quote.EnhancementTarget,
+				"target_slot":     quote.TargetSlot,
+			},
+			OccurredAt: time.Now().Format(time.RFC3339),
+		})
 	}
 
-	state, err := buildCharacterState(account, characterService, questService, dungeonService, worldService)
+	state, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, worldService)
 	if err != nil {
 		writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to load updated character state")
 		return
@@ -2624,6 +2933,7 @@ func buildingSupportsAction(building world.Building, actionName string) bool {
 		"heal":     {"restore_hp"},
 		"cleanse":  {"remove_status"},
 		"enhance":  {"enhance_item"},
+		"salvage":  {"salvage_item"},
 		"repair":   {"repair_item"},
 		"purchase": {"purchase", "buy_consumables"},
 		"sell":     {"sell_loot"},
@@ -2687,7 +2997,7 @@ func activityTypeFromRegion(regionID string) string {
 	return "field"
 }
 
-func resolveFieldEncounter(account auth.Account, approach string, characterService *characters.Service, questService *quests.Service, dungeonService *dungeons.Service, worldService *world.Service) (map[string]any, error) {
+func resolveFieldEncounter(account auth.Account, approach string, characterService *characters.Service, inventoryService *inventory.Service, questService *quests.Service, dungeonService *dungeons.Service, worldService *world.Service) (map[string]any, error) {
 	character, limits, err := currentCharacterWithLimits(account, characterService, worldService)
 	if err != nil {
 		return nil, err
@@ -2774,7 +3084,7 @@ func resolveFieldEncounter(account auth.Account, approach string, characterServi
 		})
 	}
 
-	state, err := buildCharacterState(account, characterService, questService, dungeonService, worldService)
+	state, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, worldService)
 	if err != nil {
 		return nil, err
 	}
@@ -2829,7 +3139,7 @@ func executeAction(account auth.Account, actionType string, actionArgs map[strin
 			})
 		}
 
-		state, err := buildCharacterState(account, characterService, questService, dungeonService, worldService)
+		state, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, worldService)
 		if err != nil {
 			return nil, err
 		}
@@ -2846,13 +3156,13 @@ func executeAction(account auth.Account, actionType string, actionArgs map[strin
 		}, nil
 	case "resolve_field_encounter":
 		approach, _ := actionArgs["approach"].(string)
-		return resolveFieldEncounter(account, approach, characterService, questService, dungeonService, worldService)
+		return resolveFieldEncounter(account, approach, characterService, inventoryService, questService, dungeonService, worldService)
 	case "resolve_field_encounter:hunt":
-		return resolveFieldEncounter(account, "hunt", characterService, questService, dungeonService, worldService)
+		return resolveFieldEncounter(account, "hunt", characterService, inventoryService, questService, dungeonService, worldService)
 	case "resolve_field_encounter:gather":
-		return resolveFieldEncounter(account, "gather", characterService, questService, dungeonService, worldService)
+		return resolveFieldEncounter(account, "gather", characterService, inventoryService, questService, dungeonService, worldService)
 	case "resolve_field_encounter:curio":
-		return resolveFieldEncounter(account, "curio", characterService, questService, dungeonService, worldService)
+		return resolveFieldEncounter(account, "curio", characterService, inventoryService, questService, dungeonService, worldService)
 	case "accept_quest":
 		questID, _ := actionArgs["quest_id"].(string)
 		character, limits, err := currentCharacterWithLimits(account, characterService, worldService)
@@ -2903,7 +3213,7 @@ func executeAction(account auth.Account, actionType string, actionArgs map[strin
 		if _, _, _, _, err := characterService.ApplyQuestSubmission(character.CharacterID, quest); err != nil {
 			return nil, err
 		}
-		state, err := buildCharacterState(account, characterService, questService, dungeonService, worldService)
+		state, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, worldService)
 		if err != nil {
 			return nil, err
 		}
@@ -3015,7 +3325,12 @@ func executeAction(account auth.Account, actionType string, actionArgs map[strin
 		if err != nil {
 			return nil, dungeons.ErrDungeonPotionLoadoutInvalid
 		}
-		run, err := dungeonService.EnterDungeon(character, limits, dungeonID, difficulty, potionLoadout, potionBag)
+		state, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, worldService)
+		if err != nil {
+			return nil, err
+		}
+		player := dungeons.BuildPlayerCombatant(state.Character, state.Stats)
+		run, err := dungeonService.EnterDungeon(character, limits, player, dungeonID, difficulty, potionLoadout, potionBag)
 		if err != nil {
 			return nil, err
 		}
@@ -3073,7 +3388,7 @@ func executeAction(account auth.Account, actionType string, actionArgs map[strin
 			})
 		}
 
-		state, err := buildCharacterState(account, characterService, questService, dungeonService, worldService)
+		updatedState, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, worldService)
 		if err != nil {
 			return nil, err
 		}
@@ -3086,7 +3401,7 @@ func executeAction(account auth.Account, actionType string, actionArgs map[strin
 			},
 			"state": map[string]any{
 				"run":   run,
-				"state": state,
+				"state": updatedState,
 			},
 		}, nil
 	case "claim_dungeon_rewards":
@@ -3110,7 +3425,7 @@ func executeAction(account auth.Account, actionType string, actionArgs map[strin
 			return nil, err
 		}
 
-		state, err := buildCharacterState(account, characterService, questService, dungeonService, worldService)
+		state, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, worldService)
 		if err != nil {
 			return nil, err
 		}

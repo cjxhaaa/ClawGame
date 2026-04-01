@@ -69,6 +69,28 @@ type RunView struct {
 	RecentBattleLog           []map[string]any         `json:"recent_battle_log"`
 }
 
+type RunListFilters struct {
+	DungeonID  string
+	Difficulty string
+	Result     string
+	Limit      int
+	Cursor     string
+}
+
+type RunSummaryView struct {
+	RunID              string   `json:"run_id"`
+	DungeonID          string   `json:"dungeon_id"`
+	Difficulty         string   `json:"difficulty"`
+	StartedAt          string   `json:"started_at"`
+	ResolvedAt         string   `json:"resolved_at"`
+	RunStatus          string   `json:"run_status"`
+	HighestRoomCleared int      `json:"highest_room_cleared"`
+	CurrentRating      *string  `json:"current_rating"`
+	PotionLoadout      []string `json:"potion_loadout"`
+	BossReached        bool     `json:"boss_reached"`
+	SummaryTag         string   `json:"summary_tag"`
+}
+
 type ClaimRewardPackage struct {
 	RewardGold    int              `json:"reward_gold"`
 	Rating        string           `json:"rating"`
@@ -125,7 +147,32 @@ func RankAllows(currentRank, requiredRank string) bool {
 	return rankAllows(currentRank, requiredRank)
 }
 
-func (s *Service) EnterDungeon(character characters.Summary, _ characters.DailyLimits, dungeonID, difficulty string, potionLoadout []string, potionBag []combat.PotionItem) (RunView, error) {
+func BuildPlayerCombatant(character characters.Summary, stats characters.StatsSnapshot) combat.Combatant {
+	return combat.Combatant{
+		EntityID:        character.CharacterID,
+		Name:            character.Name,
+		Team:            "a",
+		IsPlayerSide:    true,
+		Class:           character.Class,
+		MaxHP:           stats.MaxHP,
+		PhysAtk:         stats.PhysicalAttack,
+		MagAtk:          stats.MagicAttack,
+		PhysDef:         stats.PhysicalDefense,
+		MagDef:          stats.MagicDefense,
+		Speed:           stats.Speed,
+		HealPow:         stats.HealingPower,
+		CritRate:        stats.CritRate,
+		CritDamage:      stats.CritDamage,
+		BlockRate:       stats.BlockRate,
+		Precision:       stats.Precision,
+		EvasionRate:     stats.EvasionRate,
+		PhysicalMastery: stats.PhysicalMastery,
+		MagicMastery:    stats.MagicMastery,
+		CurrentHP:       maxInt(1, stats.MaxHP),
+	}
+}
+
+func (s *Service) EnterDungeon(character characters.Summary, _ characters.DailyLimits, player combat.Combatant, dungeonID, difficulty string, potionLoadout []string, potionBag []combat.PotionItem) (RunView, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -158,7 +205,7 @@ func (s *Service) EnterDungeon(character characters.Summary, _ characters.DailyL
 	now := s.clock().Format(time.RFC3339)
 	runID := nextID("run")
 
-	battleResult := simulateDungeonRun(character, def, difficulty, runID, potionBag)
+	battleResult := simulateDungeonRun(player, def, difficulty, runID, potionBag)
 	rating := ratingFromRoomClear(battleResult.HighestRoomCleared, def.RoomCount)
 	pendingRatingRewards := []map[string]any{}
 	if battleResult.Cleared {
@@ -301,6 +348,100 @@ func (s *Service) ListRunsByCharacter(characterID string) []RunView {
 	return runs
 }
 
+func (s *Service) ListRuns(characterID string, filters RunListFilters) []RunSummaryView {
+	runs := s.ListRunsByCharacter(characterID)
+	if filters.Limit <= 0 {
+		filters.Limit = 20
+	}
+	if filters.Limit > 100 {
+		filters.Limit = 100
+	}
+
+	startIndex := 0
+	if cursor := strings.TrimSpace(filters.Cursor); cursor != "" {
+		for index, run := range runs {
+			if run.RunID == cursor {
+				startIndex = index + 1
+				break
+			}
+		}
+	}
+
+	items := make([]RunSummaryView, 0, minInt(filters.Limit, len(runs)))
+	for _, run := range runs[startIndex:] {
+		if strings.TrimSpace(filters.DungeonID) != "" && run.DungeonID != strings.TrimSpace(filters.DungeonID) {
+			continue
+		}
+		if difficulty := normalizeDifficulty(filters.Difficulty); strings.TrimSpace(filters.Difficulty) != "" && run.Difficulty != difficulty {
+			continue
+		}
+		if result := normalizeRunResult(filters.Result); result != "" && run.RunStatus != result {
+			continue
+		}
+
+		items = append(items, buildRunSummary(run))
+		if len(items) >= filters.Limit {
+			break
+		}
+	}
+
+	return items
+}
+
+func (s *Service) BuildRunPayload(run RunView, detailLevel string) map[string]any {
+	detailLevel = normalizeRunDetailLevel(detailLevel)
+
+	payload := map[string]any{
+		"run_id":                       run.RunID,
+		"dungeon_id":                   run.DungeonID,
+		"difficulty":                   run.Difficulty,
+		"potion_loadout":               append([]string(nil), run.PotionLoadout...),
+		"started_at":                   run.StartedAt,
+		"resolved_at":                  run.ResolvedAt,
+		"run_status":                   run.RunStatus,
+		"runtime_phase":                run.RuntimePhase,
+		"reward_claimable":             run.RewardClaimable,
+		"reward_claimed_at":            run.RewardClaimedAt,
+		"claim_consumes_daily_counter": run.ClaimConsumesDailyCounter,
+		"current_room_index":           run.CurrentRoomIndex,
+		"highest_room_cleared":         run.HighestRoomCleared,
+		"projected_rating":             run.ProjectedRating,
+		"current_rating":               run.CurrentRating,
+		"summary_tag":                  runSummaryTag(run),
+		"boss_reached":                 bossReached(run),
+	}
+
+	switch detailLevel {
+	case "compact":
+		return payload
+	case "verbose":
+		payload["room_summary"] = copyMap(run.RoomSummary)
+		payload["battle_state"] = copyMap(run.BattleState)
+		payload["staged_material_drops"] = copyMapSlice(run.StagedMaterialDrops)
+		payload["pending_rating_rewards"] = copyMapSlice(run.PendingRatingRewards)
+		payload["available_actions"] = copyValidActions(run.AvailableActions)
+		payload["recent_battle_log"] = copyMapSlice(run.RecentBattleLog)
+		payload["battle_log"] = copyMapSlice(run.RecentBattleLog)
+		payload["key_findings"] = buildKeyFindings(run)
+		payload["danger_rooms"] = buildDangerRooms(run)
+		payload["resource_pressure"] = buildResourcePressure(run)
+		payload["reward_summary"] = buildRewardSummary(run)
+		return payload
+	default:
+		payload["room_summary"] = copyMap(run.RoomSummary)
+		payload["battle_state"] = copyMap(run.BattleState)
+		payload["staged_material_drops"] = copyMapSlice(run.StagedMaterialDrops)
+		payload["pending_rating_rewards"] = copyMapSlice(run.PendingRatingRewards)
+		payload["available_actions"] = copyValidActions(run.AvailableActions)
+		payload["recent_battle_log"] = copyRecentBattleLog(run.RecentBattleLog, 20)
+		payload["key_findings"] = buildKeyFindings(run)
+		payload["danger_rooms"] = buildDangerRooms(run)
+		payload["resource_pressure"] = buildResourcePressure(run)
+		payload["reward_summary"] = buildRewardSummary(run)
+		return payload
+	}
+}
+
 func (s *Service) ClaimRunRewards(characterID, runID string, limits characters.DailyLimits) (RunView, ClaimRewardPackage, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -371,10 +512,7 @@ type simulatedRunResult struct {
 	Log                []map[string]any
 }
 
-func simulateDungeonRun(character characters.Summary, def DefinitionView, difficulty, runID string, potionBag []combat.PotionItem) simulatedRunResult {
-	player := combat.BaselineCombatant(character.Class)
-	player.EntityID = character.CharacterID
-	player.Name = character.Name
+func simulateDungeonRun(player combat.Combatant, def DefinitionView, difficulty, runID string, potionBag []combat.PotionItem) simulatedRunResult {
 	player.Team = "a"
 	player.IsPlayerSide = true
 	player.CurrentHP = maxInt(1, player.MaxHP)
@@ -471,6 +609,244 @@ func copyPotionBag(items []combat.PotionItem) []combat.PotionItem {
 	copied := make([]combat.PotionItem, len(items))
 	copy(copied, items)
 	return copied
+}
+
+func buildRunSummary(run RunView) RunSummaryView {
+	return RunSummaryView{
+		RunID:              run.RunID,
+		DungeonID:          run.DungeonID,
+		Difficulty:         run.Difficulty,
+		StartedAt:          run.StartedAt,
+		ResolvedAt:         run.ResolvedAt,
+		RunStatus:          run.RunStatus,
+		HighestRoomCleared: run.HighestRoomCleared,
+		CurrentRating:      run.CurrentRating,
+		PotionLoadout:      append([]string(nil), run.PotionLoadout...),
+		BossReached:        bossReached(run),
+		SummaryTag:         runSummaryTag(run),
+	}
+}
+
+func normalizeRunResult(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "cleared":
+		return "cleared"
+	case "failed":
+		return "failed"
+	case "abandoned":
+		return "abandoned"
+	case "expired":
+		return "expired"
+	default:
+		return ""
+	}
+}
+
+func normalizeRunDetailLevel(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "compact":
+		return "compact"
+	case "verbose":
+		return "verbose"
+	default:
+		return "standard"
+	}
+}
+
+func bossReached(run RunView) bool {
+	bossRoomIndex := 0
+	switch value := run.RoomSummary["boss_room_index"].(type) {
+	case int:
+		bossRoomIndex = value
+	case int32:
+		bossRoomIndex = int(value)
+	case int64:
+		bossRoomIndex = int(value)
+	case float64:
+		bossRoomIndex = int(value)
+	}
+	if bossRoomIndex <= 0 {
+		return false
+	}
+	return run.HighestRoomCleared >= bossRoomIndex || run.CurrentRoomIndex >= bossRoomIndex
+}
+
+func runSummaryTag(run RunView) string {
+	startHP := intFromMap(run.BattleState, "start_hp")
+	remainingHP := intFromMap(run.BattleState, "remaining_hp")
+	if run.RunStatus == "cleared" {
+		if startHP > 0 && remainingHP*100 < startHP*55 {
+			return "boss_low_hp_clear"
+		}
+		return "cleared_stable"
+	}
+	if bossReached(run) {
+		return "failed_before_boss"
+	}
+	if run.CurrentRoomIndex > 0 {
+		return fmt.Sprintf("failed_room_%d", run.CurrentRoomIndex)
+	}
+	return "failed_before_boss"
+}
+
+func buildKeyFindings(run RunView) []string {
+	findings := make([]string, 0, 4)
+	findings = append(findings, runSummaryTag(run))
+	if usage := PotionUsageFromLog(run.RecentBattleLog); len(usage) > 0 {
+		findings = append(findings, fmt.Sprintf("potion_types_used_%d", len(usage)))
+	}
+	if hp := buildResourcePressure(run); hp["boss_entry_hp_percent"] != nil {
+		findings = append(findings, fmt.Sprintf("boss_entry_hp_%d_percent", hp["boss_entry_hp_percent"]))
+	}
+	if len(buildDangerRooms(run)) > 0 {
+		first := buildDangerRooms(run)[0]
+		if roomIndex, ok := first["room_index"].(int); ok {
+			findings = append(findings, fmt.Sprintf("room_%d_damage_spike", roomIndex))
+		}
+	}
+	return findings
+}
+
+func buildDangerRooms(run RunView) []map[string]any {
+	damageByRoom := map[int]int{}
+	for _, entry := range run.RecentBattleLog {
+		valueType, _ := entry["value_type"].(string)
+		target, _ := entry["target"].(string)
+		if valueType != "damage" || target != "player" {
+			continue
+		}
+		roomIndex := intFromAny(entry["room_index"])
+		if roomIndex <= 0 {
+			continue
+		}
+		damageByRoom[roomIndex] += intFromAny(entry["value"])
+	}
+	type roomDamage struct {
+		roomIndex int
+		damage    int
+	}
+	rooms := make([]roomDamage, 0, len(damageByRoom))
+	for roomIndex, damage := range damageByRoom {
+		rooms = append(rooms, roomDamage{roomIndex: roomIndex, damage: damage})
+	}
+	sort.Slice(rooms, func(i, j int) bool {
+		if rooms[i].damage == rooms[j].damage {
+			return rooms[i].roomIndex < rooms[j].roomIndex
+		}
+		return rooms[i].damage > rooms[j].damage
+	})
+	if len(rooms) > 3 {
+		rooms = rooms[:3]
+	}
+	items := make([]map[string]any, 0, len(rooms))
+	for _, room := range rooms {
+		items = append(items, map[string]any{
+			"room_index":   room.roomIndex,
+			"damage_taken": room.damage,
+			"is_boss_room": room.roomIndex == intFromMap(run.RoomSummary, "boss_room_index"),
+		})
+	}
+	return items
+}
+
+func buildResourcePressure(run RunView) map[string]any {
+	startHP := intFromMap(run.BattleState, "start_hp")
+	remainingHP := intFromMap(run.BattleState, "remaining_hp")
+	hpEndPercent := 0
+	if startHP > 0 {
+		hpEndPercent = int(math.Round(float64(remainingHP) * 100 / float64(startHP)))
+	}
+	usage := PotionUsageFromLog(run.RecentBattleLog)
+	totalPotionUsed := 0
+	for _, count := range usage {
+		totalPotionUsed += count
+	}
+	result := map[string]any{
+		"hp_end_percent":     hpEndPercent,
+		"potion_usage":       usage,
+		"total_potions_used": totalPotionUsed,
+	}
+	bossRoomIndex := intFromMap(run.RoomSummary, "boss_room_index")
+	if bossRoomIndex > 0 {
+		if bossEntryHP := bossEntryHPPercent(run.RecentBattleLog, startHP, bossRoomIndex); bossEntryHP >= 0 {
+			result["boss_entry_hp_percent"] = bossEntryHP
+		}
+	}
+	return result
+}
+
+func buildRewardSummary(run RunView) map[string]any {
+	return map[string]any{
+		"reward_claimable":       run.RewardClaimable,
+		"staged_material_drops":  copyMapSlice(run.StagedMaterialDrops),
+		"pending_rating_rewards": copyMapSlice(run.PendingRatingRewards),
+	}
+}
+
+func bossEntryHPPercent(log []map[string]any, startHP, bossRoomIndex int) int {
+	if startHP <= 0 || bossRoomIndex <= 0 {
+		return -1
+	}
+	for _, entry := range log {
+		if intFromAny(entry["room_index"]) != bossRoomIndex {
+			continue
+		}
+		if eventType, _ := entry["event_type"].(string); eventType == "room_composition" {
+			switch hp := entry["player_hp"].(type) {
+			case int:
+				return int(math.Round(float64(hp) * 100 / float64(startHP)))
+			case float64:
+				return int(math.Round(hp * 100 / float64(startHP)))
+			}
+		}
+	}
+	return -1
+}
+
+func copyRecentBattleLog(log []map[string]any, limit int) []map[string]any {
+	if limit <= 0 || len(log) <= limit {
+		return copyMapSlice(log)
+	}
+	return copyMapSlice(log[len(log)-limit:])
+}
+
+func copyMap(input map[string]any) map[string]any {
+	if input == nil {
+		return map[string]any{}
+	}
+	output := make(map[string]any, len(input))
+	for key, value := range input {
+		output[key] = value
+	}
+	return output
+}
+
+func copyValidActions(actions []characters.ValidAction) []characters.ValidAction {
+	copied := make([]characters.ValidAction, len(actions))
+	copy(copied, actions)
+	return copied
+}
+
+func intFromMap(payload map[string]any, key string) int {
+	if payload == nil {
+		return 0
+	}
+	return intFromAny(payload[key])
+}
+
+func intFromAny(value any) int {
+	switch typed := value.(type) {
+	case int:
+		return typed
+	case int32:
+		return int(typed)
+	case int64:
+		return int(typed)
+	case float64:
+		return int(typed)
+	default:
+		return 0
+	}
 }
 
 func PotionUsageFromLog(log []map[string]any) map[string]int {
@@ -591,6 +967,11 @@ func buildRoomEnemyCombatant(def DefinitionView, difficulty string, roomIndex in
 			PhysAtk:      7 + roomIndex*2,
 			PhysDef:      3 + roomIndex/2,
 			Speed:        7 + roomIndex/2,
+			CritRate:     0,
+			CritDamage:   0,
+			BlockRate:    0,
+			Precision:    0,
+			EvasionRate:  0,
 			CurrentHP:    fallback,
 		}
 	}
@@ -630,6 +1011,11 @@ func buildRoomEnemyCombatant(def DefinitionView, difficulty string, roomIndex in
 		MagDef:       magDef,
 		Speed:        speed,
 		HealPow:      heal,
+		CritRate:     0,
+		CritDamage:   0,
+		BlockRate:    0,
+		Precision:    0,
+		EvasionRate:  0,
 		CurrentHP:    maxHP,
 	}
 }
@@ -656,8 +1042,8 @@ func buildRoomComposition(dungeonID, difficulty string, roomIndex, bossRoomIndex
 
 var difficultyMultipliers = map[string]difficultyMultiplier{
 	"easy":      {hp: 1.00, damage: 1.00, defense: 1.00, speed: 1.00},
-	"hard":      {hp: 1.28, damage: 1.22, defense: 1.15, speed: 1.08},
-	"nightmare": {hp: 1.62, damage: 1.50, defense: 1.35, speed: 1.16},
+	"hard":      {hp: 1.12, damage: 1.08, defense: 1.05, speed: 1.04},
+	"nightmare": {hp: 1.38, damage: 1.28, defense: 1.18, speed: 1.10},
 }
 
 var monsterBlueprints = map[string]monsterBlueprint{

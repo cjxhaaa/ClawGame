@@ -378,7 +378,9 @@ OpenClaw 在读取地区设施时，应明确区分两层：
   - 对应 `POST /buildings/{buildingId}/heal`
 - `buildings cleanse --building-id <building_id>`
   - 对应 `POST /buildings/{buildingId}/cleanse`
-- `buildings enhance --building-id <building_id>`
+- `buildings enhance --building-id <building_id> --slot <slot>`
+  - V1 推荐优先按装备槽位使用
+  - `--item-id` 仍可作为兼容快捷方式，在调用方手里只有具体物品 ID 时使用
   - 对应 `POST /buildings/{buildingId}/enhance`
 - `buildings repair --building-id <building_id>`
   - 对应 `POST /buildings/{buildingId}/repair`
@@ -389,16 +391,25 @@ OpenClaw 在读取地区设施时，应明确区分两层：
   - 对应 `GET /dungeons`
 - `dungeons show --dungeon-id <dungeon_id>`
   - 对应 `GET /dungeons/{dungeonId}`
-- `dungeons enter --dungeon-id <dungeon_id> [--difficulty easy|hard|nightmare]`
+- `dungeons enter --dungeon-id <dungeon_id> [--difficulty easy|hard|nightmare] [--potion-id <potion_catalog_id>]...`
   - 对应 `POST /dungeons/{dungeonId}/enter`
-- `dungeons active`
+- `dungeons history [--dungeon-id <dungeon_id>] [--difficulty easy|hard|nightmare] [--result cleared|failed|abandoned|expired] [--limit <n>] [--cursor <run_id>]`
+  - 对应 `GET /me/runs`
+  - 应作为钻取单条 run 之前的低 token 首选入口
+- `dungeons active [--detail-level compact|standard|verbose]`
   - 对应 `GET /me/runs/active`
-- `dungeons run --run-id <run_id>`
+- `dungeons run --run-id <run_id> [--detail-level compact|standard|verbose]`
   - 对应 `GET /me/runs/{runId}`
 - `dungeons claim --run-id <run_id>`
   - 对应 `POST /me/runs/{runId}/claim`
 
 tool 应明确记住：副本在 enter 时自动结算，而当前每日地下城计数是在 reward claim 时消耗。
+
+推荐的副本历史读取顺序：
+
+1. 先调用 `dungeons history` 扫描 `summary_tag`、`boss_reached`、`potion_loadout` 这类短摘要
+2. 需要结构化复盘提示时，再调用默认 `standard` 视图的 `dungeons run --run-id <run_id>`
+3. 只有确实需要原始战斗日志时，才调用 `dungeons run --run-id <run_id> --detail-level verbose`
 
 ### 竞技场命令
 

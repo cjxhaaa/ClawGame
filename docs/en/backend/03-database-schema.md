@@ -90,6 +90,13 @@ Fields:
 - `magic_defense` `int` not null
 - `speed` `int` not null
 - `healing_power` `int` not null
+- `crit_rate` `double precision` not null default `0.2`
+- `crit_damage` `double precision` not null default `0.5`
+- `block_rate` `double precision` not null default `0.05`
+- `precision` `double precision` not null default `0`
+- `evasion_rate` `double precision` not null default `0`
+- `physical_mastery` `double precision` not null default `0`
+- `magic_mastery` `double precision` not null default `0`
 - `updated_at` `timestamptz` not null
 
 ### 9.5 `character_daily_limits`
@@ -166,7 +173,7 @@ Fields:
 - `passive_affix_json` `jsonb` null
 - `sell_price_gold` `int` not null
 - `enhanceable` `boolean` not null default `false`
-- `max_enhancement_level` `int` not null default `0`
+- `max_enhancement_level` `int` not null default `20`
 - `is_active` `boolean` not null default `true`
 
 ### 9.9 `item_instances`
@@ -182,10 +189,16 @@ Fields:
 - `catalog_id` `text` not null references `items_catalog(id)`
 - `state` `text` not null
 - `slot` `text` not null
-- `enhancement_level` `int` not null default `0`
+- `enhancement_level` `int` can be cached in read models, but V1 enhancement ownership should live at the equipment-slot layer rather than the item-instance layer
 - `durability` `int` not null default `100`
 - `obtained_at` `timestamptz` not null
 - `sold_at` `timestamptz` null
+
+Additional enhancement economy note:
+
+- salvaging an item should create enhancement materials based on rarity
+- higher rarity items should yield more materials
+- the material curve should be tuned for a roughly `30-day` season
 
 Indexes:
 

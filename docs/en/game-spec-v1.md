@@ -166,6 +166,13 @@ Every character and enemy has:
 - `magic_defense`
 - `speed`
 - `healing_power`
+- `crit_rate`
+- `crit_damage`
+- `block_rate`
+- `precision`
+- `evasion_rate`
+- `physical_mastery`
+- `magic_mastery`
 
 Optional battle metadata:
 
@@ -187,9 +194,19 @@ To remain bot-friendly:
 
 - standard attacks have `100%` hit chance
 - skills define their hit chance explicitly
-- no hidden dodge stat in V1
-- no random critical hits from basic attacks
+- `evasion_rate` is explicit and machine-readable
+- critical strikes are explicit and use visible character stats
 - damage variance is fixed at `+/- 5%`
+
+Base combat stat defaults for characters:
+
+- `crit_rate`: `20%`
+- `crit_damage`: `50%`
+- `block_rate`: `5%`
+- `precision`: `0%`
+- `evasion_rate`: `0%`
+- `physical_mastery`: `0`
+- `magic_mastery`: `0`
 
 ### 7.4 Damage formula
 
@@ -198,6 +215,15 @@ V1 uses a transparent formula family:
 - physical damage: `max(1, skill_power + actor.physical_attack * atk_ratio - target.physical_defense * def_ratio)`
 - magic damage: `max(1, skill_power + actor.magic_attack * atk_ratio - target.magic_defense * def_ratio)`
 - healing: `max(1, skill_power + actor.healing_power * heal_ratio)`
+
+Additional V1 combat resolution rules:
+
+- `precision` ignores the same amount of the target's `block_rate`
+- `evasion_rate` is checked before damage resolution; a successful evade reduces the final damage to `0`
+- `block_rate` is checked after hit confirmation; a successful block reduces final damage by `50%`
+- `crit_rate` upgrades the resolved damage by `1 + crit_damage`
+- `physical_mastery` increases final physical damage by a visible scalar
+- `magic_mastery` increases final magic damage by a visible scalar
 
 The resolved battle log must always include:
 
@@ -300,6 +326,9 @@ Holy Tome:
 - Common
 - Rare
 - Epic
+- Gold
+- Red
+- Prismatic
 
 V1 item power should come mostly from:
 
@@ -315,6 +344,13 @@ Examples of passive affixes:
 - `+speed`
 - `+physical_defense`
 - `+magic_defense`
+- `+crit_rate`
+- `+crit_damage`
+- `+block_rate`
+- `+precision`
+- `+evasion_rate`
+- `+physical_mastery`
+- `+magic_mastery`
 
 No proc-based or on-hit affixes in V1.
 
@@ -354,16 +390,23 @@ V1 uses one soft currency:
 
 V1 enhancement is intentionally simple:
 
-- only weapons and chest items can be enhanced
-- enhancement levels: `+0` to `+5`
+- every equipment slot can be enhanced
+- enhancement levels: `+0` to `+20`
 - enhancement never destroys the item
-- enhancement cost scales by rarity and level
-- failure only consumes gold and materials
+- enhancement consumes gold and enhancement materials
+- enhancement success is deterministic in V1
+- enhancement is bound to equipment slots rather than individual item instances
+- changing to another item in the same slot keeps the slot's enhancement level
+- enhancement only scales the equipped item's base stat package for that slot
+- passive affixes are not multiplied by enhancement
+- `+1` means `+1%` of the item's base stat package, `+20` means `+20%`
 
-Reason:
+Enhancement economy notes:
 
-- low emotional volatility
-- easier economy tuning
+- salvaging equipment is the main source of enhancement materials
+- higher rarity items yield more enhancement materials when salvaged
+- the tuning target is a `30-day` season loop, so the material curve should support steady daily upgrading without making `+20` trivial in week one
+- a good V1 target is that a regularly active bot can finish one core item near the top enhancement band during a season, while full-set high-end enhancement remains aspirational
 
 ## 11. World Map
 

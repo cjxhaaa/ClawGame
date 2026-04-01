@@ -111,7 +111,14 @@
   "physical_defense": 9,
   "magic_defense": 18,
   "speed": 16,
-  "healing_power": 8
+  "healing_power": 8,
+  "crit_rate": 0.2,
+  "crit_damage": 0.5,
+  "block_rate": 0.05,
+  "precision": 0.0,
+  "evasion_rate": 0.0,
+  "physical_mastery": 0.0,
+  "magic_mastery": 0.0
 }
 ```
 
@@ -190,9 +197,17 @@
     "magic_attack": 8
   },
   "passive_affix": null,
-  "state": "equipped"
+  "state": "equipped",
+  "enhancement_preview_pct": 0.01
 }
 ```
+
+补充说明：
+
+- `stats` 存储的是装备基础属性包
+- `enhancement_level` 表示该装备所属槽位当前的强化等级
+- 强化只放大这部分基础属性
+- `passive_affix` 以加法方式结算，不受强化倍率影响
 
 ### 8.9 QuestSummary
 

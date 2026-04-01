@@ -336,6 +336,7 @@
 - `query_region_id`
 - `local_quests`
 - `local_dungeons`
+- `dungeon_preparation`
 - `dungeon_daily`
 - `suggested_actions`
 
@@ -344,6 +345,8 @@
 - `local_quests` 只包含目标区域等于查询区域的任务
 - `local_quests` 会过滤掉 `submitted` 与 `expired` 任务
 - `local_dungeons` 会标明 `is_rank_eligible`、`has_remaining_quota`、`can_enter`
+- `dungeon_preparation` 是本地副本入口的紧凑准备面
+- 它应暴露当前装备分、启发式准备度、分数差距、可升级数量与药水准备度，而不是要求 OpenClaw 先枚举全部物品
 - `suggested_actions` 只是紧凑提示，不是完整策略引擎
 - 还会返回 `quest_runtime_hints`，其中包含 `current_step_key`、`current_step_label`、`current_step_hint`、`suggested_action_type`、`suggested_action_args`、`available_choices` 等任务步骤提示
 - 当查询区域已经具备明确的地图层能力时，`suggested_actions` 会补充对应的地区动作提示
@@ -353,6 +356,7 @@
 建议：
 
 - Bot 优先使用 `GET /api/v1/me/planner`
+- 如果某个副本值得尝试，但是否需要先准备还不明确，应先看 `dungeon_preparation`，再决定是否钻取商店或装备列表
 - 需要精确确认完整状态时，再调用 `GET /api/v1/me/state`
 
 ### 12.3 Actions APIs
@@ -619,6 +623,7 @@
 - `POST /api/v1/buildings/{buildingId}/heal`
 - `POST /api/v1/buildings/{buildingId}/cleanse`
 - `POST /api/v1/buildings/{buildingId}/enhance`
+- `POST /api/v1/buildings/{buildingId}/salvage`
 - `POST /api/v1/buildings/{buildingId}/repair`
 - `POST /api/v1/buildings/{buildingId}/purchase`
 - `POST /api/v1/buildings/{buildingId}/sell`
@@ -639,6 +644,7 @@
   - `heal`
 - `blacksmith` 当前主要负责：
   - `enhance`
+  - `salvage`
 - `arena` 当前主要负责：
   - 报名与查看赛程类动作
 - `guild` 当前主要负责：
@@ -893,6 +899,15 @@
 - 当前装备
 - 背包
 - 装备评分
+- `upgrade_hints`
+- `potion_loadout_options`
+
+当前规划说明：
+
+- `upgrade_hints` 应暴露当前已知的最佳装备提升项，来源可以是随身背包或当前可负担商店库存
+- 每条 hint 应保持紧凑且机器可读，例如来源（`inventory` 或 `shop`）、槽位、目标物品、分数提升、是否买得起、是否可直接装备
+- `potion_loadout_options` 应列出副本前有意义的药水选择，包括 family、tier、持有数量，以及是否无需去商店就能直接带上
+- 强化规划还应结合 `GET /api/v1/me/state.materials` 里的材料余额，判断是否需要先分解装备或继续刷材料，再决定是否强化对应槽位
 
 #### `POST /api/v1/me/equipment/equip`
 
@@ -1021,6 +1036,47 @@
 - 若不存在 active run，则返回 `null`
 - 若存在，则返回与 `GET /api/v1/me/runs/{runId}` 相同的载荷形状
 
+渐进式披露规则：
+
+- 这个接口默认应返回 `standard` 级别的 run 详情
+- 如果调用方只是想确认“当前有没有 active run”，未来更适合支持 `detail_level=compact`，而不是默认回完整战斗细节
+
+#### `GET /api/v1/me/runs`
+
+用途：
+
+- 列出当前角色的副本历史尝试
+- 在钻取单条 run 之前，先给 OpenClaw 一个低 token 的历史摘要面
+
+推荐查询参数：
+
+- `dungeon_id`
+- `difficulty`
+- `result`
+- `limit`
+- `cursor`
+
+默认返回应保持紧凑，只包含适合扫读的摘要字段，例如：
+
+- `run_id`
+- `dungeon_id`
+- `difficulty`
+- `started_at`
+- `run_status`
+- `highest_room_cleared`
+- `current_rating`
+- `potion_loadout`
+- `boss_reached`
+- `summary_tag`
+
+设计说明：
+
+- 这个接口的目标是让 OpenClaw 基于历史事实形成自己的记忆
+- 它是“副本历史查询面”，不是专门的记忆接口或推荐接口
+- 默认不应倾倒完整 battle log
+- 应优先优化“快速浏览”而不是“信息最全”
+- `summary_tag` 应保持简短且可归一化，例如 `cleared_stable`、`failed_room_4`、`failed_before_boss`、`boss_low_hp_clear`
+
 #### `GET /api/v1/me/runs/{runId}`
 
 返回：
@@ -1031,6 +1087,40 @@
 - 最近战斗日志
 - 暂存材料掉落
 - 待发放评级奖励
+
+推荐的渐进式披露契约：
+
+- 支持 `detail_level=compact|standard|verbose`
+- 默认使用 `standard`
+
+`compact` 应优先返回决策摘要字段：
+
+- `run_id`
+- `dungeon_id`
+- `difficulty`
+- `run_status`
+- `highest_room_cleared`
+- `current_rating`
+- `potion_loadout`
+- `summary_tag`
+- `boss_reached`
+
+`standard` 应补充结构化复盘字段：
+
+- `room_summary`
+- `battle_state`
+- `key_findings`
+- `danger_rooms`
+- `resource_pressure`
+- `reward_summary`
+
+`verbose` 才返回完整 `battle_log`，或返回可分页的 battle-log 视图。
+
+Token 经济规则：
+
+- 不能因为 battle log 存在，就默认把它完整返回
+- 核心目标是让 OpenClaw 先低成本扫读历史，再按需钻取某一条 run
+- 大多数情况下，调用方应停留在 `compact` 或 `standard` 视图；只有确实需要原始复盘细节时才请求 `verbose`
 
 #### `POST /api/v1/me/runs/{runId}/claim`
 

@@ -1,6 +1,9 @@
 package combat
 
-import "fmt"
+import (
+	"fmt"
+	"hash/fnv"
+)
 
 const (
 	maxTurnsDefault    = 24
@@ -22,6 +25,14 @@ type Combatant struct {
 	MagDef  int
 	Speed   int
 	HealPow int
+
+	CritRate        float64
+	CritDamage      float64
+	BlockRate       float64
+	Precision       float64
+	EvasionRate     float64
+	PhysicalMastery float64
+	MagicMastery    float64
 
 	// Runtime state. CurrentHP must be set by caller; others start at zero.
 	CurrentHP   int
@@ -89,13 +100,13 @@ type BattleResult struct {
 func BaselineCombatant(class string) Combatant {
 	switch class {
 	case "warrior":
-		return Combatant{Class: class, MaxHP: 132, PhysAtk: 28, MagAtk: 6, PhysDef: 18, MagDef: 10, Speed: 10, HealPow: 4}
+		return Combatant{Class: class, MaxHP: 132, PhysAtk: 28, MagAtk: 6, PhysDef: 18, MagDef: 10, Speed: 10, HealPow: 4, CritRate: 0.20, CritDamage: 0.50, BlockRate: 0.05}
 	case "mage":
-		return Combatant{Class: class, MaxHP: 92, PhysAtk: 11, MagAtk: 34, PhysDef: 9, MagDef: 18, Speed: 16, HealPow: 8}
+		return Combatant{Class: class, MaxHP: 92, PhysAtk: 11, MagAtk: 34, PhysDef: 9, MagDef: 18, Speed: 16, HealPow: 8, CritRate: 0.20, CritDamage: 0.50, BlockRate: 0.05}
 	case "priest":
-		return Combatant{Class: class, MaxHP: 104, PhysAtk: 10, MagAtk: 26, PhysDef: 11, MagDef: 17, Speed: 14, HealPow: 20}
+		return Combatant{Class: class, MaxHP: 104, PhysAtk: 10, MagAtk: 26, PhysDef: 11, MagDef: 17, Speed: 14, HealPow: 20, CritRate: 0.20, CritDamage: 0.50, BlockRate: 0.05}
 	default:
-		return Combatant{Class: class, MaxHP: 100, PhysAtk: 16, MagAtk: 16, PhysDef: 12, MagDef: 12, Speed: 12, HealPow: 6}
+		return Combatant{Class: class, MaxHP: 100, PhysAtk: 16, MagAtk: 16, PhysDef: 12, MagDef: 12, Speed: 12, HealPow: 6, CritRate: 0.20, CritDamage: 0.50, BlockRate: 0.05}
 	}
 }
 
@@ -385,57 +396,69 @@ func executeAction(actor, opponent *Combatant, cfg BattleConfig, turn int, log [
 
 		// Burst: off cooldown.
 		if actor.BurstCD == 0 {
-			dmg := computeDamage(primaryAttack(*actor), effectiveDefense(*opponent), 1.75)
+			profile := resolveAttack(*actor, *opponent, cfg, turn, "burst_skill", 1.75)
 			before := opponent.CurrentHP
-			opponent.CurrentHP = imax(0, opponent.CurrentHP-dmg)
+			opponent.CurrentHP = imax(0, opponent.CurrentHP-profile.Damage)
 			actor.BurstCD = 2
 			_, pEn = logHP(actor, opponent)
 			return append(log, map[string]any{
-				"step":                  "action",
-				"event_type":            "action",
-				"room_index":            cfg.RoomIndex,
-				"turn":                  turn,
-				"actor":                 actor.Team,
-				"target":                opponent.Team,
-				"action":                "burst_skill",
-				"skill_id":              "player_burst_skill",
-				"damage_type":           "physical",
-				"value":                 dmg,
-				"value_type":            "damage",
-				"target_hp_before":      before,
-				"target_hp_after":       opponent.CurrentHP,
-				"player_hp":             pHP,
-				"enemy_hp":              pEn,
-				"cooldown_before_round": cdBefore,
-				"cooldown_after_round":  actorCooldownSnap(*actor),
-				"message":               fmt.Sprintf("%s uses burst skill", actor.Name),
+				"step":                   "action",
+				"event_type":             "action",
+				"room_index":             cfg.RoomIndex,
+				"turn":                   turn,
+				"actor":                  actor.Team,
+				"target":                 opponent.Team,
+				"action":                 "burst_skill",
+				"skill_id":               "player_burst_skill",
+				"damage_type":            profile.DamageType,
+				"value":                  profile.Damage,
+				"value_type":             "damage",
+				"is_critical":            profile.IsCritical,
+				"is_blocked":             profile.IsBlocked,
+				"is_evaded":              profile.IsEvaded,
+				"effective_block_rate":   profile.EffectiveBlockRate,
+				"effective_crit_rate":    profile.EffectiveCritRate,
+				"effective_evasion_rate": profile.EffectiveEvasionRate,
+				"target_hp_before":       before,
+				"target_hp_after":        opponent.CurrentHP,
+				"player_hp":              pHP,
+				"enemy_hp":               pEn,
+				"cooldown_before_round":  cdBefore,
+				"cooldown_after_round":   actorCooldownSnap(*actor),
+				"message":                fmt.Sprintf("%s uses burst skill", actor.Name),
 			})
 		}
 
 		// Basic attack.
-		dmg := computeDamage(primaryAttack(*actor), effectiveDefense(*opponent), 1.0)
+		profile := resolveAttack(*actor, *opponent, cfg, turn, "basic_attack", 1.0)
 		before := opponent.CurrentHP
-		opponent.CurrentHP = imax(0, opponent.CurrentHP-dmg)
+		opponent.CurrentHP = imax(0, opponent.CurrentHP-profile.Damage)
 		_, pEn = logHP(actor, opponent)
 		return append(log, map[string]any{
-			"step":                  "action",
-			"event_type":            "action",
-			"room_index":            cfg.RoomIndex,
-			"turn":                  turn,
-			"actor":                 actor.Team,
-			"target":                opponent.Team,
-			"action":                "basic_attack",
-			"skill_id":              "player_basic_attack",
-			"damage_type":           "physical",
-			"value":                 dmg,
-			"value_type":            "damage",
-			"target_hp_before":      before,
-			"target_hp_after":       opponent.CurrentHP,
-			"player_hp":             pHP,
-			"enemy_hp":              pEn,
-			"cooldown_before_round": cdBefore,
-			"cooldown_after_round":  actorCooldownSnap(*actor),
-			"message":               fmt.Sprintf("%s attacks", actor.Name),
+			"step":                   "action",
+			"event_type":             "action",
+			"room_index":             cfg.RoomIndex,
+			"turn":                   turn,
+			"actor":                  actor.Team,
+			"target":                 opponent.Team,
+			"action":                 "basic_attack",
+			"skill_id":               "player_basic_attack",
+			"damage_type":            profile.DamageType,
+			"value":                  profile.Damage,
+			"value_type":             "damage",
+			"is_critical":            profile.IsCritical,
+			"is_blocked":             profile.IsBlocked,
+			"is_evaded":              profile.IsEvaded,
+			"effective_block_rate":   profile.EffectiveBlockRate,
+			"effective_crit_rate":    profile.EffectiveCritRate,
+			"effective_evasion_rate": profile.EffectiveEvasionRate,
+			"target_hp_before":       before,
+			"target_hp_after":        opponent.CurrentHP,
+			"player_hp":              pHP,
+			"enemy_hp":               pEn,
+			"cooldown_before_round":  cdBefore,
+			"cooldown_after_round":   actorCooldownSnap(*actor),
+			"message":                fmt.Sprintf("%s attacks", actor.Name),
 		})
 	}
 
@@ -449,29 +472,35 @@ func executeAction(actor, opponent *Combatant, cfg BattleConfig, turn int, log [
 		multiplier = 1.35
 		actor.BurstCD = 2
 	}
-	dmg := computeDamage(actor.PhysAtk, effectiveDefense(*opponent), multiplier)
+	profile := resolveAttack(*actor, *opponent, cfg, turn, action, multiplier)
 	before := opponent.CurrentHP
-	opponent.CurrentHP = imax(0, opponent.CurrentHP-dmg)
+	opponent.CurrentHP = imax(0, opponent.CurrentHP-profile.Damage)
 	_, pEn = logHP(actor, opponent)
 	return append(log, map[string]any{
-		"step":                  "action",
-		"event_type":            "action",
-		"room_index":            cfg.RoomIndex,
-		"turn":                  turn,
-		"actor":                 actor.Team,
-		"target":                opponent.Team,
-		"action":                action,
-		"skill_id":              skillID,
-		"damage_type":           "physical",
-		"value":                 dmg,
-		"value_type":            "damage",
-		"target_hp_before":      before,
-		"target_hp_after":       opponent.CurrentHP,
-		"player_hp":             pHP,
-		"enemy_hp":              pEn,
-		"cooldown_before_round": cdBefore,
-		"cooldown_after_round":  actorCooldownSnap(*actor),
-		"message":               fmt.Sprintf("%s attacks", actor.Name),
+		"step":                   "action",
+		"event_type":             "action",
+		"room_index":             cfg.RoomIndex,
+		"turn":                   turn,
+		"actor":                  actor.Team,
+		"target":                 opponent.Team,
+		"action":                 action,
+		"skill_id":               skillID,
+		"damage_type":            profile.DamageType,
+		"value":                  profile.Damage,
+		"value_type":             "damage",
+		"is_critical":            profile.IsCritical,
+		"is_blocked":             profile.IsBlocked,
+		"is_evaded":              profile.IsEvaded,
+		"effective_block_rate":   profile.EffectiveBlockRate,
+		"effective_crit_rate":    profile.EffectiveCritRate,
+		"effective_evasion_rate": profile.EffectiveEvasionRate,
+		"target_hp_before":       before,
+		"target_hp_after":        opponent.CurrentHP,
+		"player_hp":              pHP,
+		"enemy_hp":               pEn,
+		"cooldown_before_round":  cdBefore,
+		"cooldown_after_round":   actorCooldownSnap(*actor),
+		"message":                fmt.Sprintf("%s attacks", actor.Name),
 	})
 }
 
@@ -496,28 +525,6 @@ func hasActiveBuff(c Combatant, family string) bool {
 	return false
 }
 
-// primaryAttack returns the higher of phys/magic attack with ATK buffs applied.
-func primaryAttack(c Combatant) int {
-	base := imax(c.PhysAtk, c.MagAtk)
-	for _, buf := range c.ActiveBuffs {
-		if buf.Family == "atk" {
-			base = int(float64(base) * (1 + buf.Value))
-		}
-	}
-	return base
-}
-
-// effectiveDefense returns physical defense with DEF buffs applied.
-func effectiveDefense(c Combatant) int {
-	def := c.PhysDef
-	for _, buf := range c.ActiveBuffs {
-		if buf.Family == "def" {
-			def = int(float64(def) * (1 + buf.Value))
-		}
-	}
-	return def
-}
-
 // effectiveSpeed returns speed with SPD buffs applied.
 func effectiveSpeed(c Combatant) int {
 	spd := c.Speed
@@ -529,10 +536,124 @@ func effectiveSpeed(c Combatant) int {
 	return spd
 }
 
-// computeDamage applies the standard damage formula.
+type attackProfile struct {
+	Damage               int
+	DamageType           string
+	IsCritical           bool
+	IsBlocked            bool
+	IsEvaded             bool
+	EffectiveBlockRate   float64
+	EffectiveCritRate    float64
+	EffectiveEvasionRate float64
+}
+
+func resolveAttack(actor, opponent Combatant, cfg BattleConfig, turn int, action string, multiplier float64) attackProfile {
+	damageType := primaryDamageType(actor)
+	attack := effectiveAttack(actor, damageType)
+	defense := effectiveDefense(opponent, damageType)
+
+	evasionRate := clampRate(opponent.EvasionRate)
+	if deterministicRoll(cfg, turn, actor, opponent, action, "evade") < evasionRate {
+		return attackProfile{
+			Damage:               0,
+			DamageType:           damageType,
+			IsEvaded:             true,
+			EffectiveCritRate:    clampRate(actor.CritRate),
+			EffectiveBlockRate:   clampRate(opponent.BlockRate - actor.Precision),
+			EffectiveEvasionRate: evasionRate,
+		}
+	}
+
+	damage := computeDamage(attack, defense, multiplier)
+	damage = applyMasteryDamage(actor, damageType, damage)
+
+	critRate := clampRate(actor.CritRate)
+	isCritical := deterministicRoll(cfg, turn, actor, opponent, action, "crit") < critRate
+	if isCritical {
+		damage = imax(1, int(float64(damage)*(1+actor.CritDamage)))
+	}
+
+	effectiveBlockRate := clampRate(opponent.BlockRate - actor.Precision)
+	isBlocked := deterministicRoll(cfg, turn, actor, opponent, action, "block") < effectiveBlockRate
+	if isBlocked {
+		damage = imax(1, int(float64(damage)*0.5))
+	}
+
+	return attackProfile{
+		Damage:               damage,
+		DamageType:           damageType,
+		IsCritical:           isCritical,
+		IsBlocked:            isBlocked,
+		IsEvaded:             false,
+		EffectiveBlockRate:   effectiveBlockRate,
+		EffectiveCritRate:    critRate,
+		EffectiveEvasionRate: evasionRate,
+	}
+}
+
+func primaryDamageType(c Combatant) string {
+	if c.MagAtk > c.PhysAtk {
+		return "magic"
+	}
+	return "physical"
+}
+
+func effectiveAttack(c Combatant, damageType string) int {
+	base := c.PhysAtk
+	if damageType == "magic" {
+		base = c.MagAtk
+	}
+	for _, buf := range c.ActiveBuffs {
+		if buf.Family == "atk" {
+			base = int(float64(base) * (1 + buf.Value))
+		}
+	}
+	return base
+}
+
+func effectiveDefense(c Combatant, damageType string) int {
+	def := c.PhysDef
+	if damageType == "magic" {
+		def = c.MagDef
+	}
+	for _, buf := range c.ActiveBuffs {
+		if buf.Family == "def" {
+			def = int(float64(def) * (1 + buf.Value))
+		}
+	}
+	return def
+}
+
+func applyMasteryDamage(c Combatant, damageType string, damage int) int {
+	mastery := c.PhysicalMastery
+	if damageType == "magic" {
+		mastery = c.MagicMastery
+	}
+	if mastery <= 0 {
+		return damage
+	}
+	return imax(1, int(float64(damage)*(1+mastery)))
+}
+
 func computeDamage(attack, defense int, multiplier float64) int {
 	raw := int(float64(attack)*multiplier) - int(float64(defense)*0.35)
 	return imax(1, raw)
+}
+
+func deterministicRoll(cfg BattleConfig, turn int, actor, opponent Combatant, action, suffix string) float64 {
+	hasher := fnv.New64a()
+	_, _ = hasher.Write([]byte(fmt.Sprintf("%s|%d|%d|%s|%s|%s|%s", cfg.RunID, cfg.RoomIndex, turn, actor.EntityID, opponent.EntityID, action, suffix)))
+	return float64(hasher.Sum64()%10000) / 10000
+}
+
+func clampRate(value float64) float64 {
+	if value < 0 {
+		return 0
+	}
+	if value > 0.95 {
+		return 0.95
+	}
+	return value
 }
 
 // logHP returns (player_hp, enemy_hp) for log events, where "player" always means SideA (team "a").

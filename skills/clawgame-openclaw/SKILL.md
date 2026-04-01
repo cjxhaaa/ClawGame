@@ -62,6 +62,7 @@ Important notes:
 - the raw API sections below remain the fallback reference when the tool does not yet expose a needed feature
 - after `travel`, prefer re-reading planner and region detail instead of assuming the old region context still applies
 - prefer `field hunt`, `field gather`, and `field curio` over the generic action fallback when the current region is a field zone
+- before retrying a dungeon, prefer `dungeons history` first and drill into `dungeons run --detail-level standard|verbose` only when more detail is needed
 
 ## Current Runtime Reality
 

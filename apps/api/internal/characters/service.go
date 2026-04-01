@@ -23,6 +23,7 @@ var (
 	ErrCharacterNameTaken     = errors.New("character name already exists")
 	ErrCharacterInvalidName   = errors.New("invalid character name")
 	ErrGoldInsufficient       = errors.New("gold insufficient")
+	ErrMaterialsInsufficient  = errors.New("materials insufficient")
 	ErrTravelRankLocked       = errors.New("travel rank locked")
 	ErrTravelInsufficientGold = errors.New("travel insufficient gold")
 	ErrTravelRegionNotFound   = errors.New("travel region not found")
@@ -44,13 +45,20 @@ type Summary struct {
 }
 
 type StatsSnapshot struct {
-	MaxHP           int `json:"max_hp"`
-	PhysicalAttack  int `json:"physical_attack"`
-	MagicAttack     int `json:"magic_attack"`
-	PhysicalDefense int `json:"physical_defense"`
-	MagicDefense    int `json:"magic_defense"`
-	Speed           int `json:"speed"`
-	HealingPower    int `json:"healing_power"`
+	MaxHP           int     `json:"max_hp"`
+	PhysicalAttack  int     `json:"physical_attack"`
+	MagicAttack     int     `json:"magic_attack"`
+	PhysicalDefense int     `json:"physical_defense"`
+	MagicDefense    int     `json:"magic_defense"`
+	Speed           int     `json:"speed"`
+	HealingPower    int     `json:"healing_power"`
+	CritRate        float64 `json:"crit_rate"`
+	CritDamage      float64 `json:"crit_damage"`
+	BlockRate       float64 `json:"block_rate"`
+	Precision       float64 `json:"precision"`
+	EvasionRate     float64 `json:"evasion_rate"`
+	PhysicalMastery float64 `json:"physical_mastery"`
+	MagicMastery    float64 `json:"magic_mastery"`
 }
 
 type DailyLimits struct {
@@ -85,21 +93,29 @@ type ValidAction struct {
 }
 
 type StateView struct {
-	ServerTime   string             `json:"server_time"`
-	Account      auth.Account       `json:"account"`
-	Character    Summary            `json:"character"`
-	Stats        StatsSnapshot      `json:"stats"`
-	Limits       DailyLimits        `json:"limits"`
-	Materials    []MaterialBalance  `json:"materials"`
-	Objectives   []QuestSummary     `json:"objectives"`
-	DungeonDaily DungeonDailyHint   `json:"dungeon_daily"`
-	RecentEvents []world.WorldEvent `json:"recent_events"`
-	ValidActions []ValidAction      `json:"valid_actions"`
+	ServerTime       string                `json:"server_time"`
+	Account          auth.Account          `json:"account"`
+	Character        Summary               `json:"character"`
+	Stats            StatsSnapshot         `json:"stats"`
+	Limits           DailyLimits           `json:"limits"`
+	Materials        []MaterialBalance     `json:"materials"`
+	SlotEnhancements []SlotEnhancementView `json:"slot_enhancements"`
+	Objectives       []QuestSummary        `json:"objectives"`
+	DungeonDaily     DungeonDailyHint      `json:"dungeon_daily"`
+	RecentEvents     []world.WorldEvent    `json:"recent_events"`
+	ValidActions     []ValidAction         `json:"valid_actions"`
 }
 
 type MaterialBalance struct {
 	MaterialKey string `json:"material_key"`
 	Quantity    int    `json:"quantity"`
+}
+
+type SlotEnhancementView struct {
+	Slot                  string  `json:"slot"`
+	EnhancementLevel      int     `json:"enhancement_level"`
+	EnhancementPreviewPct float64 `json:"enhancement_preview_pct"`
+	MaxEnhancementLevel   int     `json:"max_enhancement_level"`
 }
 
 type DungeonDailyHint struct {
@@ -647,6 +663,69 @@ func (s *Service) GrantGold(characterID string, amount int) (Summary, error) {
 	return entry.summary, nil
 }
 
+func (s *Service) GrantMaterials(characterID string, materialDrops []map[string]any) ([]MaterialBalance, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	accountID, entry, ok := s.lookupByCharacterIDLocked(characterID)
+	if !ok {
+		return nil, ErrCharacterNotFound
+	}
+	entry, _, err := s.normalizeDailyLimitsLocked(accountID, entry)
+	if err != nil {
+		return nil, err
+	}
+	if entry.materials == nil {
+		entry.materials = map[string]int{}
+	}
+	applyMaterialDrops(entry.materials, materialDrops)
+	if err := s.saveRecordLocked(accountID, entry); err != nil {
+		return nil, err
+	}
+	s.characterByAccountID[accountID] = entry
+	return materialBalancesView(entry.materials), nil
+}
+
+func (s *Service) SpendMaterials(characterID string, materialCosts []map[string]any) ([]MaterialBalance, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	accountID, entry, ok := s.lookupByCharacterIDLocked(characterID)
+	if !ok {
+		return nil, ErrCharacterNotFound
+	}
+	entry, _, err := s.normalizeDailyLimitsLocked(accountID, entry)
+	if err != nil {
+		return nil, err
+	}
+	if entry.materials == nil {
+		entry.materials = map[string]int{}
+	}
+	for _, drop := range materialCosts {
+		key := stringPayload(drop, "material_key")
+		qty := intPayload(drop, "quantity")
+		if key == "" || qty <= 0 {
+			continue
+		}
+		if entry.materials[key] < qty {
+			return nil, ErrMaterialsInsufficient
+		}
+	}
+	for _, drop := range materialCosts {
+		key := stringPayload(drop, "material_key")
+		qty := intPayload(drop, "quantity")
+		if key == "" || qty <= 0 {
+			continue
+		}
+		entry.materials[key] -= qty
+	}
+	if err := s.saveRecordLocked(accountID, entry); err != nil {
+		return nil, err
+	}
+	s.characterByAccountID[accountID] = entry
+	return materialBalancesView(entry.materials), nil
+}
+
 func (s *Service) ApplyFieldEncounter(characterID string, rewardGold int, materialDrops []map[string]any, event world.WorldEvent) (Summary, []MaterialBalance, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -955,6 +1034,21 @@ func intFromAny(value any) int {
 	}
 }
 
+func stringPayload(payload map[string]any, key string) string {
+	if payload == nil {
+		return ""
+	}
+	value, _ := payload[key].(string)
+	return strings.TrimSpace(value)
+}
+
+func intPayload(payload map[string]any, key string) int {
+	if payload == nil {
+		return 0
+	}
+	return intFromAny(payload[key])
+}
+
 func rankAllows(currentRank, requiredRank string) bool {
 	return rankOrder[currentRank] >= rankOrder[requiredRank]
 }
@@ -1017,6 +1111,9 @@ var baseStatsByStyle = map[string]StatsSnapshot{
 		MagicDefense:    10,
 		Speed:           10,
 		HealingPower:    4,
+		CritRate:        0.20,
+		CritDamage:      0.50,
+		BlockRate:       0.05,
 	},
 	"great_axe": {
 		MaxHP:           120,
@@ -1026,6 +1123,9 @@ var baseStatsByStyle = map[string]StatsSnapshot{
 		MagicDefense:    8,
 		Speed:           11,
 		HealingPower:    3,
+		CritRate:        0.20,
+		CritDamage:      0.50,
+		BlockRate:       0.05,
 	},
 	"staff": {
 		MaxHP:           92,
@@ -1035,6 +1135,9 @@ var baseStatsByStyle = map[string]StatsSnapshot{
 		MagicDefense:    18,
 		Speed:           16,
 		HealingPower:    8,
+		CritRate:        0.20,
+		CritDamage:      0.50,
+		BlockRate:       0.05,
 	},
 	"spellbook": {
 		MaxHP:           88,
@@ -1044,6 +1147,9 @@ var baseStatsByStyle = map[string]StatsSnapshot{
 		MagicDefense:    16,
 		Speed:           15,
 		HealingPower:    10,
+		CritRate:        0.20,
+		CritDamage:      0.50,
+		BlockRate:       0.05,
 	},
 	"scepter": {
 		MaxHP:           104,
@@ -1053,6 +1159,9 @@ var baseStatsByStyle = map[string]StatsSnapshot{
 		MagicDefense:    17,
 		Speed:           14,
 		HealingPower:    20,
+		CritRate:        0.20,
+		CritDamage:      0.50,
+		BlockRate:       0.05,
 	},
 	"holy_tome": {
 		MaxHP:           98,
@@ -1062,5 +1171,8 @@ var baseStatsByStyle = map[string]StatsSnapshot{
 		MagicDefense:    20,
 		Speed:           13,
 		HealingPower:    24,
+		CritRate:        0.20,
+		CritDamage:      0.50,
+		BlockRate:       0.05,
 	},
 }

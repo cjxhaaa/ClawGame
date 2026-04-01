@@ -917,7 +917,12 @@ def cmd_buildings_cleanse(args: argparse.Namespace, ctx: RuntimeContext, client:
 
 
 def cmd_buildings_enhance(args: argparse.Namespace, ctx: RuntimeContext, client: APIClient) -> CommandResult:
-    envelope = authenticated_request(ctx, client, "buildings enhance", "POST", f"/buildings/{args.building_id}/enhance")
+    payload: dict[str, object] = {}
+    if args.item_id:
+        payload["item_id"] = args.item_id
+    if args.slot:
+        payload["slot"] = args.slot
+    envelope = authenticated_request(ctx, client, "buildings enhance", "POST", f"/buildings/{args.building_id}/enhance", payload)
     data = extract_data(envelope)
     sync_action_payload(ctx.state, data if isinstance(data, dict) else None)
     save_state(ctx.state_file, ctx.state)
@@ -945,16 +950,35 @@ def cmd_dungeons_show(args: argparse.Namespace, ctx: RuntimeContext, client: API
 
 
 def cmd_dungeons_enter(args: argparse.Namespace, ctx: RuntimeContext, client: APIClient) -> CommandResult:
-    query = {"difficulty": args.difficulty} if args.difficulty else None
-    envelope = authenticated_request(ctx, client, "dungeons enter", "POST", f"/dungeons/{args.dungeon_id}/enter", query=query)
+    body: dict[str, Any] = {}
+    if args.difficulty:
+        body["difficulty"] = args.difficulty
+    if args.potion_id:
+        body["potion_loadout"] = list(args.potion_id)
+    envelope = authenticated_request(ctx, client, "dungeons enter", "POST", f"/dungeons/{args.dungeon_id}/enter", body=body or None)
     data = extract_data(envelope)
     sync_run_view(ctx.state, data if isinstance(data, dict) else None)
     save_state(ctx.state_file, ctx.state)
     return CommandResult("dungeons enter", data, envelope.get("request_id"))
 
 
+def cmd_dungeons_history(args: argparse.Namespace, ctx: RuntimeContext, client: APIClient) -> CommandResult:
+    query = {
+        "dungeon_id": args.dungeon_id,
+        "difficulty": args.difficulty,
+        "result": args.result,
+        "limit": args.limit,
+        "cursor": args.cursor,
+    }
+    envelope = authenticated_request(ctx, client, "dungeons history", "GET", "/me/runs", query=query)
+    data = extract_data(envelope)
+    save_state(ctx.state_file, ctx.state)
+    return CommandResult("dungeons history", data, envelope.get("request_id"))
+
+
 def cmd_dungeons_active(args: argparse.Namespace, ctx: RuntimeContext, client: APIClient) -> CommandResult:
-    envelope = authenticated_request(ctx, client, "dungeons active", "GET", "/me/runs/active")
+    query = {"detail_level": args.detail_level} if args.detail_level else None
+    envelope = authenticated_request(ctx, client, "dungeons active", "GET", "/me/runs/active", query=query)
     data = extract_data(envelope)
     sync_run_view(ctx.state, data if isinstance(data, dict) else None)
     save_state(ctx.state_file, ctx.state)
@@ -962,7 +986,8 @@ def cmd_dungeons_active(args: argparse.Namespace, ctx: RuntimeContext, client: A
 
 
 def cmd_dungeons_run(args: argparse.Namespace, ctx: RuntimeContext, client: APIClient) -> CommandResult:
-    envelope = authenticated_request(ctx, client, "dungeons run", "GET", f"/me/runs/{args.run_id}")
+    query = {"detail_level": args.detail_level} if args.detail_level else None
+    envelope = authenticated_request(ctx, client, "dungeons run", "GET", f"/me/runs/{args.run_id}", query=query)
     data = extract_data(envelope)
     sync_run_view(ctx.state, data if isinstance(data, dict) else None)
     save_state(ctx.state_file, ctx.state)
@@ -1149,6 +1174,8 @@ def build_parser() -> argparse.ArgumentParser:
     buildings_cleanse.set_defaults(func=cmd_buildings_cleanse)
     buildings_enhance = buildings_sub.add_parser("enhance", help="enhance at a building")
     buildings_enhance.add_argument("--building-id", required=True)
+    buildings_enhance.add_argument("--slot")
+    buildings_enhance.add_argument("--item-id")
     buildings_enhance.set_defaults(func=cmd_buildings_enhance)
     buildings_repair = buildings_sub.add_parser("repair", help="repair at a building")
     buildings_repair.add_argument("--building-id", required=True)
@@ -1164,11 +1191,21 @@ def build_parser() -> argparse.ArgumentParser:
     dungeons_enter = dungeons_sub.add_parser("enter", help="enter a dungeon")
     dungeons_enter.add_argument("--dungeon-id", required=True)
     dungeons_enter.add_argument("--difficulty", choices=("easy", "hard", "nightmare"))
+    dungeons_enter.add_argument("--potion-id", action="append", default=[])
     dungeons_enter.set_defaults(func=cmd_dungeons_enter)
+    dungeons_history = dungeons_sub.add_parser("history", help="list historical dungeon runs")
+    dungeons_history.add_argument("--dungeon-id")
+    dungeons_history.add_argument("--difficulty", choices=("easy", "hard", "nightmare"))
+    dungeons_history.add_argument("--result", choices=("cleared", "failed", "abandoned", "expired"))
+    dungeons_history.add_argument("--limit", type=int)
+    dungeons_history.add_argument("--cursor")
+    dungeons_history.set_defaults(func=cmd_dungeons_history)
     dungeons_active = dungeons_sub.add_parser("active", help="show active run")
+    dungeons_active.add_argument("--detail-level", choices=("compact", "standard", "verbose"))
     dungeons_active.set_defaults(func=cmd_dungeons_active)
     dungeons_run = dungeons_sub.add_parser("run", help="show a run")
     dungeons_run.add_argument("--run-id", required=True)
+    dungeons_run.add_argument("--detail-level", choices=("compact", "standard", "verbose"))
     dungeons_run.set_defaults(func=cmd_dungeons_run)
     dungeons_claim = dungeons_sub.add_parser("claim", help="claim dungeon rewards")
     dungeons_claim.add_argument("--run-id", required=True)

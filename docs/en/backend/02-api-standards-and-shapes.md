@@ -111,7 +111,14 @@ These shapes should be shared across handlers and OpenAPI schemas.
   "physical_defense": 9,
   "magic_defense": 18,
   "speed": 16,
-  "healing_power": 8
+  "healing_power": 8,
+  "crit_rate": 0.2,
+  "crit_damage": 0.5,
+  "block_rate": 0.05,
+  "precision": 0.0,
+  "evasion_rate": 0.0,
+  "physical_mastery": 0.0,
+  "magic_mastery": 0.0
 }
 ```
 
@@ -190,9 +197,17 @@ Current repo note:
     "magic_attack": 8
   },
   "passive_affix": null,
-  "state": "equipped"
+  "state": "equipped",
+  "enhancement_preview_pct": 0.01
 }
 ```
+
+Additional note:
+
+- `stats` stores the item's base stat package
+- `enhancement_level` is the current enhancement level of the item's slot
+- enhancement multiplies only this base stat package
+- `passive_affix` is additive and is not scaled by enhancement
 
 ### 8.9 QuestSummary
 

@@ -374,7 +374,9 @@ Notes:
   - wraps `POST /buildings/{buildingId}/heal`
 - `buildings cleanse --building-id <building_id>`
   - wraps `POST /buildings/{buildingId}/cleanse`
-- `buildings enhance --building-id <building_id>`
+- `buildings enhance --building-id <building_id> --slot <slot>`
+  - preferred V1 usage is by equipment slot
+  - `--item-id` may still be accepted as a compatibility shortcut when the caller only has a concrete item reference
   - wraps `POST /buildings/{buildingId}/enhance`
 - `buildings repair --building-id <building_id>`
   - wraps `POST /buildings/{buildingId}/repair`
@@ -385,16 +387,25 @@ Notes:
   - wraps `GET /dungeons`
 - `dungeons show --dungeon-id <dungeon_id>`
   - wraps `GET /dungeons/{dungeonId}`
-- `dungeons enter --dungeon-id <dungeon_id> [--difficulty easy|hard|nightmare]`
+- `dungeons enter --dungeon-id <dungeon_id> [--difficulty easy|hard|nightmare] [--potion-id <potion_catalog_id>]...`
   - wraps `POST /dungeons/{dungeonId}/enter`
-- `dungeons active`
+- `dungeons history [--dungeon-id <dungeon_id>] [--difficulty easy|hard|nightmare] [--result cleared|failed|abandoned|expired] [--limit <n>] [--cursor <run_id>]`
+  - wraps `GET /me/runs`
+  - should be the preferred low-token entry point before reading a specific run in detail
+- `dungeons active [--detail-level compact|standard|verbose]`
   - wraps `GET /me/runs/active`
-- `dungeons run --run-id <run_id>`
+- `dungeons run --run-id <run_id> [--detail-level compact|standard|verbose]`
   - wraps `GET /me/runs/{runId}`
 - `dungeons claim --run-id <run_id>`
   - wraps `POST /me/runs/{runId}/claim`
 
 The tool should remember that dungeon runs are auto-resolved on enter, and that the daily dungeon counter is currently consumed on reward claim.
+
+Recommended dungeon-history read order:
+
+1. call `dungeons history` first to scan short summaries such as `summary_tag`, `boss_reached`, and `potion_loadout`
+2. call `dungeons run --run-id <run_id>` with the default `standard` view when structured replay hints are needed
+3. call `dungeons run --run-id <run_id> --detail-level verbose` only when raw battle-log detail is truly necessary
 
 ### Arena commands
 

@@ -3,6 +3,7 @@ package inventory
 import (
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"sync"
@@ -14,34 +15,79 @@ import (
 )
 
 var (
-	ErrItemNotOwned      = errors.New("item not owned")
-	ErrItemNotEquippable = errors.New("item not equippable")
-	ErrSlotNotOccupied   = errors.New("slot not occupied")
-	ErrCatalogNotFound   = errors.New("catalog item not found")
-	ErrItemEquipped      = errors.New("item is currently equipped")
-	ErrConsumableMissing = errors.New("consumable missing")
+	ErrItemNotOwned       = errors.New("item not owned")
+	ErrItemNotEquippable  = errors.New("item not equippable")
+	ErrSlotNotOccupied    = errors.New("slot not occupied")
+	ErrCatalogNotFound    = errors.New("catalog item not found")
+	ErrItemEquipped       = errors.New("item is currently equipped")
+	ErrConsumableMissing  = errors.New("consumable missing")
+	ErrItemNotEnhanceable = errors.New("item not enhanceable")
+	ErrEnhancementCap     = errors.New("enhancement cap reached")
 )
 
+const EnhancementMaterialKey = "enhancement_shard"
+
 type EquipmentItem struct {
-	ItemID              string         `json:"item_id"`
-	CatalogID           string         `json:"catalog_id"`
-	Name                string         `json:"name"`
-	Slot                string         `json:"slot"`
-	Rarity              string         `json:"rarity"`
-	RequiredClass       string         `json:"required_class,omitempty"`
-	RequiredWeaponStyle string         `json:"required_weapon_style,omitempty"`
-	EnhancementLevel    int            `json:"enhancement_level"`
-	Durability          int            `json:"durability"`
-	Stats               map[string]int `json:"stats"`
-	PassiveAffix        map[string]any `json:"passive_affix,omitempty"`
-	State               string         `json:"state"`
+	ItemID                string         `json:"item_id"`
+	CatalogID             string         `json:"catalog_id"`
+	Name                  string         `json:"name"`
+	Slot                  string         `json:"slot"`
+	Rarity                string         `json:"rarity"`
+	RequiredClass         string         `json:"required_class,omitempty"`
+	RequiredWeaponStyle   string         `json:"required_weapon_style,omitempty"`
+	EnhancementLevel      int            `json:"enhancement_level"`
+	Durability            int            `json:"durability"`
+	Stats                 map[string]int `json:"stats"`
+	PassiveAffix          map[string]any `json:"passive_affix,omitempty"`
+	State                 string         `json:"state"`
+	EnhancementPreviewPct float64        `json:"enhancement_preview_pct,omitempty"`
 }
 
 type InventoryView struct {
-	EquipmentScore int               `json:"equipment_score"`
-	Equipped       []EquipmentItem   `json:"equipped"`
-	Inventory      []EquipmentItem   `json:"inventory"`
-	Consumables    []ConsumableStack `json:"consumables"`
+	EquipmentScore       int                              `json:"equipment_score"`
+	Equipped             []EquipmentItem                  `json:"equipped"`
+	Inventory            []EquipmentItem                  `json:"inventory"`
+	Consumables          []ConsumableStack                `json:"consumables"`
+	SlotEnhancements     []characters.SlotEnhancementView `json:"slot_enhancements"`
+	UpgradeHints         []UpgradeHint                    `json:"upgrade_hints"`
+	PotionLoadoutOptions []PotionLoadoutOption            `json:"potion_loadout_options"`
+}
+
+type EnhancementQuote struct {
+	ItemID            string           `json:"item_id"`
+	TargetSlot        string           `json:"target_slot"`
+	CurrentLevel      int              `json:"current_level"`
+	NextLevel         int              `json:"next_level"`
+	GoldCost          int              `json:"gold_cost"`
+	MaterialCost      []map[string]any `json:"material_cost"`
+	PreviewBonusPct   float64          `json:"preview_bonus_pct"`
+	MaxEnhancement    int              `json:"max_enhancement"`
+	EnhancementTarget string           `json:"enhancement_target"`
+}
+
+type UpgradeHint struct {
+	Source            string `json:"source"`
+	ItemID            string `json:"item_id,omitempty"`
+	CatalogID         string `json:"catalog_id,omitempty"`
+	Name              string `json:"name"`
+	Slot              string `json:"slot"`
+	ScoreDelta        int    `json:"score_delta"`
+	PriceGold         int    `json:"price_gold,omitempty"`
+	Affordable        bool   `json:"affordable"`
+	DirectlyEquipable bool   `json:"directly_equippable"`
+}
+
+type PotionLoadoutOption struct {
+	CatalogID     string `json:"catalog_id"`
+	Name          string `json:"name"`
+	Family        string `json:"family"`
+	Tier          int    `json:"tier"`
+	QuantityOwned int    `json:"quantity_owned"`
+	PriceGold     int    `json:"price_gold"`
+	AvailableNow  bool   `json:"available_now"`
+	CanPurchase   bool   `json:"can_purchase"`
+	Recommended   bool   `json:"recommended"`
+	EffectSummary string `json:"effect_summary"`
 }
 
 type ShopItem struct {
@@ -100,6 +146,7 @@ type Service struct {
 	mu                     sync.Mutex
 	itemsByCharacter       map[string][]EquipmentItem
 	consumablesByCharacter map[string]map[string]int
+	slotEnhancementsByChar map[string]map[string]int
 }
 
 var itemCounter uint64
@@ -108,6 +155,7 @@ func NewService() *Service {
 	return &Service{
 		itemsByCharacter:       make(map[string][]EquipmentItem),
 		consumablesByCharacter: make(map[string]map[string]int),
+		slotEnhancementsByChar: make(map[string]map[string]int),
 	}
 }
 
@@ -117,7 +165,7 @@ func (s *Service) GetInventory(character characters.Summary) InventoryView {
 
 	items := s.ensureCharacterItemsLocked(character)
 	consumables := s.ensureConsumablesForCharacterLocked(character)
-	return buildView(items, consumables)
+	return buildView(character, items, consumables, s.ensureSlotEnhancementsLocked(character.CharacterID))
 }
 
 func (s *Service) EquipItem(character characters.Summary, itemID string) (InventoryView, error) {
@@ -146,7 +194,7 @@ func (s *Service) EquipItem(character characters.Summary, itemID string) (Invent
 
 	items[index].State = "equipped"
 	s.itemsByCharacter[character.CharacterID] = items
-	return buildView(items, s.ensureConsumablesForCharacterLocked(character)), nil
+	return buildView(character, items, s.ensureConsumablesForCharacterLocked(character), s.ensureSlotEnhancementsLocked(character.CharacterID)), nil
 }
 
 func (s *Service) UnequipItem(character characters.Summary, slot string) (InventoryView, error) {
@@ -158,7 +206,7 @@ func (s *Service) UnequipItem(character characters.Summary, slot string) (Invent
 		if items[i].State == "equipped" && items[i].Slot == slot {
 			items[i].State = "inventory"
 			s.itemsByCharacter[character.CharacterID] = items
-			return buildView(items, s.ensureConsumablesForCharacterLocked(character)), nil
+			return buildView(character, items, s.ensureConsumablesForCharacterLocked(character), s.ensureSlotEnhancementsLocked(character.CharacterID)), nil
 		}
 	}
 
@@ -171,12 +219,13 @@ func (s *Service) ComputeEquipmentScore(character characters.Summary) int {
 
 	items := s.ensureCharacterItemsLocked(character)
 	score := 0
+	slotEnhancements := s.ensureSlotEnhancementsLocked(character.CharacterID)
 	for _, item := range items {
 		if item.State != "equipped" {
 			continue
 		}
 		score += rarityScore(item.Rarity)
-		score += item.EnhancementLevel * 5
+		score += slotEnhancements[item.Slot] * 5
 		for _, value := range item.Stats {
 			score += value
 		}
@@ -262,7 +311,7 @@ func (s *Service) PurchaseShopItem(character characters.Summary, catalogID strin
 	consumables[entry.CatalogID]++
 	s.consumablesByCharacter[character.CharacterID] = consumables
 
-	view := buildView(items, consumables)
+	view := buildView(character, items, consumables, s.ensureSlotEnhancementsLocked(character.CharacterID))
 	stack := buildConsumableStack(entry, consumables[entry.CatalogID])
 	return view, nil, &stack, entry.PriceGold, nil
 }
@@ -299,7 +348,7 @@ func (s *Service) PurchaseItem(character characters.Summary, catalogID string) (
 	items = append(items, purchased)
 	s.itemsByCharacter[character.CharacterID] = items
 
-	return buildView(items, s.ensureConsumablesForCharacterLocked(character)), purchased, template.PriceGold, nil
+	return buildView(character, items, s.ensureConsumablesForCharacterLocked(character), s.ensureSlotEnhancementsLocked(character.CharacterID)), purchased, template.PriceGold, nil
 }
 
 func (s *Service) GrantItemFromCatalog(character characters.Summary, catalogID string) (InventoryView, EquipmentItem, error) {
@@ -332,7 +381,7 @@ func (s *Service) GrantItemFromCatalog(character characters.Summary, catalogID s
 	items = append(items, reward)
 	s.itemsByCharacter[character.CharacterID] = items
 
-	return buildView(items, s.ensureConsumablesForCharacterLocked(character)), reward, nil
+	return buildView(character, items, s.ensureConsumablesForCharacterLocked(character), s.ensureSlotEnhancementsLocked(character.CharacterID)), reward, nil
 }
 
 func (s *Service) SellItem(character characters.Summary, itemID string) (InventoryView, EquipmentItem, int, error) {
@@ -354,7 +403,100 @@ func (s *Service) SellItem(character characters.Summary, itemID string) (Invento
 	items = append(items[:index], items[index+1:]...)
 	s.itemsByCharacter[character.CharacterID] = items
 
-	return buildView(items, s.ensureConsumablesForCharacterLocked(character)), target, price, nil
+	return buildView(character, items, s.ensureConsumablesForCharacterLocked(character), s.ensureSlotEnhancementsLocked(character.CharacterID)), target, price, nil
+}
+
+func (s *Service) SalvageItem(character characters.Summary, itemID string) (InventoryView, EquipmentItem, []map[string]any, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	items := s.ensureCharacterItemsLocked(character)
+	index := indexByID(items, strings.TrimSpace(itemID))
+	if index < 0 {
+		return InventoryView{}, EquipmentItem{}, nil, ErrItemNotOwned
+	}
+	target := items[index]
+	if target.State == "equipped" {
+		return InventoryView{}, EquipmentItem{}, nil, ErrItemEquipped
+	}
+
+	items = append(items[:index], items[index+1:]...)
+	s.itemsByCharacter[character.CharacterID] = items
+	drops := []map[string]any{{
+		"material_key": EnhancementMaterialKey,
+		"quantity":     salvageYieldFor(target),
+	}}
+	return buildView(character, items, s.ensureConsumablesForCharacterLocked(character), s.ensureSlotEnhancementsLocked(character.CharacterID)), target, drops, nil
+}
+
+func (s *Service) GetEnhancementQuote(character characters.Summary, itemID, slot string) (EquipmentItem, EnhancementQuote, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	items := s.ensureCharacterItemsLocked(character)
+	targetSlot, item, err := s.resolveEnhancementTargetLocked(items, itemID, slot)
+	if err != nil {
+		return EquipmentItem{}, EnhancementQuote{}, err
+	}
+	slotEnhancements := s.ensureSlotEnhancementsLocked(character.CharacterID)
+	currentLevel := slotEnhancements[targetSlot]
+	if currentLevel >= maxEnhancementLevelFor(item) {
+		return EquipmentItem{}, EnhancementQuote{}, ErrEnhancementCap
+	}
+	if !isEnhanceable(item) {
+		return EquipmentItem{}, EnhancementQuote{}, ErrItemNotEnhanceable
+	}
+	annotated := applySlotEnhancement(item, currentLevel)
+	nextLevel := currentLevel + 1
+	return annotated, EnhancementQuote{
+		ItemID:            annotated.ItemID,
+		CurrentLevel:      currentLevel,
+		NextLevel:         nextLevel,
+		GoldCost:          enhancementGoldCost(item, currentLevel),
+		MaterialCost:      enhancementMaterialCost(item, currentLevel),
+		PreviewBonusPct:   enhancementPreviewPct(nextLevel),
+		MaxEnhancement:    maxEnhancementLevelFor(item),
+		EnhancementTarget: "base_stats_only",
+		TargetSlot:        targetSlot,
+	}, nil
+}
+
+func (s *Service) EnhanceItem(character characters.Summary, itemID, slot string) (InventoryView, EquipmentItem, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	items := s.ensureCharacterItemsLocked(character)
+	targetSlot, item, err := s.resolveEnhancementTargetLocked(items, itemID, slot)
+	if err != nil {
+		return InventoryView{}, EquipmentItem{}, err
+	}
+	if !isEnhanceable(item) {
+		return InventoryView{}, EquipmentItem{}, ErrItemNotEnhanceable
+	}
+	slotEnhancements := s.ensureSlotEnhancementsLocked(character.CharacterID)
+	if slotEnhancements[targetSlot] >= maxEnhancementLevelFor(item) {
+		return InventoryView{}, EquipmentItem{}, ErrEnhancementCap
+	}
+	slotEnhancements[targetSlot]++
+	s.slotEnhancementsByChar[character.CharacterID] = slotEnhancements
+
+	enhanced := applySlotEnhancement(item, slotEnhancements[targetSlot])
+	return buildView(character, items, s.ensureConsumablesForCharacterLocked(character), slotEnhancements), enhanced, nil
+}
+
+func (s *Service) DeriveStats(character characters.Summary, base characters.StatsSnapshot) characters.StatsSnapshot {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	items := s.ensureCharacterItemsLocked(character)
+	return deriveStats(base, items, s.ensureSlotEnhancementsLocked(character.CharacterID))
+}
+
+func (s *Service) ListSlotEnhancements(character characters.Summary) []characters.SlotEnhancementView {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return buildSlotEnhancementViews(s.ensureSlotEnhancementsLocked(character.CharacterID))
 }
 
 func (s *Service) ensureCharacterItemsLocked(character characters.Summary) []EquipmentItem {
@@ -403,6 +545,49 @@ func (s *Service) ensureConsumablesForCharacterLocked(character characters.Summa
 	return copied
 }
 
+func (s *Service) ensureSlotEnhancementsLocked(characterID string) map[string]int {
+	if levels, ok := s.slotEnhancementsByChar[characterID]; ok {
+		copied := make(map[string]int, len(levels))
+		for key, value := range levels {
+			copied[key] = value
+		}
+		return copied
+	}
+	s.slotEnhancementsByChar[characterID] = map[string]int{}
+	return map[string]int{}
+}
+
+func (s *Service) resolveEnhancementTargetLocked(items []EquipmentItem, itemID, slot string) (string, EquipmentItem, error) {
+	itemID = strings.TrimSpace(itemID)
+	slot = strings.TrimSpace(slot)
+
+	if itemID != "" {
+		index := indexByID(items, itemID)
+		if index < 0 {
+			return "", EquipmentItem{}, ErrItemNotOwned
+		}
+		return items[index].Slot, items[index], nil
+	}
+
+	if slot == "" {
+		return "", EquipmentItem{}, ErrItemNotOwned
+	}
+
+	for _, item := range items {
+		if item.Slot == slot {
+			return slot, item, nil
+		}
+	}
+
+	return slot, EquipmentItem{Slot: slot, Rarity: "common", Stats: map[string]int{}}, nil
+}
+
+func applySlotEnhancement(item EquipmentItem, level int) EquipmentItem {
+	item.EnhancementLevel = level
+	item.EnhancementPreviewPct = enhancementPreviewPct(level)
+	return item
+}
+
 func starterItemsFor(character characters.Summary) []EquipmentItem {
 	weaponCatalogID := map[string]string{
 		"sword_shield": "warrior_sword_starter",
@@ -446,14 +631,15 @@ func starterItemsFor(character characters.Summary) []EquipmentItem {
 	return items
 }
 
-func buildView(items []EquipmentItem, consumables map[string]int) InventoryView {
+func buildView(character characters.Summary, items []EquipmentItem, consumables map[string]int, slotEnhancements map[string]int) InventoryView {
 	equipped := make([]EquipmentItem, 0)
 	bag := make([]EquipmentItem, 0)
 	for _, item := range items {
+		annotated := applySlotEnhancement(item, slotEnhancements[item.Slot])
 		if item.State == "equipped" {
-			equipped = append(equipped, item)
+			equipped = append(equipped, annotated)
 		} else {
-			bag = append(bag, item)
+			bag = append(bag, annotated)
 		}
 	}
 
@@ -463,17 +649,144 @@ func buildView(items []EquipmentItem, consumables map[string]int) InventoryView 
 	score := 0
 	for _, item := range equipped {
 		score += rarityScore(item.Rarity)
+		score += item.EnhancementLevel * 5
 		for _, value := range item.Stats {
 			score += value
 		}
 	}
 
 	return InventoryView{
-		EquipmentScore: score,
-		Equipped:       equipped,
-		Inventory:      bag,
-		Consumables:    buildConsumableStacks(consumables),
+		EquipmentScore:       score,
+		Equipped:             equipped,
+		Inventory:            bag,
+		Consumables:          buildConsumableStacks(consumables),
+		SlotEnhancements:     buildSlotEnhancementViews(slotEnhancements),
+		UpgradeHints:         buildUpgradeHints(character, equipped, bag),
+		PotionLoadoutOptions: buildPotionLoadoutOptions(character, consumables),
 	}
+}
+
+func buildSlotEnhancementViews(slotEnhancements map[string]int) []characters.SlotEnhancementView {
+	slots := []string{"weapon", "head", "chest", "hands", "legs", "boots", "accessory"}
+	items := make([]characters.SlotEnhancementView, 0, len(slots))
+	for _, slot := range slots {
+		level := slotEnhancements[slot]
+		items = append(items, characters.SlotEnhancementView{
+			Slot:                  slot,
+			EnhancementLevel:      level,
+			EnhancementPreviewPct: enhancementPreviewPct(level),
+			MaxEnhancementLevel:   20,
+		})
+	}
+	return items
+}
+
+func buildUpgradeHints(character characters.Summary, equipped []EquipmentItem, bag []EquipmentItem) []UpgradeHint {
+	equippedBySlot := make(map[string]EquipmentItem, len(equipped))
+	for _, item := range equipped {
+		equippedBySlot[item.Slot] = item
+	}
+
+	hints := make([]UpgradeHint, 0, 6)
+	bestInventoryBySlot := make(map[string]EquipmentItem)
+	for _, item := range bag {
+		current, ok := bestInventoryBySlot[item.Slot]
+		if !ok || equipmentItemScore(item) > equipmentItemScore(current) {
+			bestInventoryBySlot[item.Slot] = item
+		}
+	}
+	for slot, candidate := range bestInventoryBySlot {
+		delta := equipmentItemScore(candidate) - equipmentItemScore(equippedBySlot[slot])
+		if delta <= 0 {
+			continue
+		}
+		hints = append(hints, UpgradeHint{
+			Source:            "inventory",
+			ItemID:            candidate.ItemID,
+			CatalogID:         candidate.CatalogID,
+			Name:              candidate.Name,
+			Slot:              slot,
+			ScoreDelta:        delta,
+			Affordable:        true,
+			DirectlyEquipable: itemCompatible(character, candidate),
+		})
+	}
+
+	bestShopBySlot := make(map[string]ShopItem)
+	for _, item := range buildEquipmentShopItems(character) {
+		current, ok := bestShopBySlot[item.Slot]
+		if !ok || shopItemScore(item) > shopItemScore(current) {
+			bestShopBySlot[item.Slot] = item
+		}
+	}
+	for slot, candidate := range bestShopBySlot {
+		delta := shopItemScore(candidate) - equipmentItemScore(equippedBySlot[slot])
+		if delta <= 0 {
+			continue
+		}
+		hints = append(hints, UpgradeHint{
+			Source:            "shop",
+			CatalogID:         candidate.CatalogID,
+			Name:              candidate.Name,
+			Slot:              slot,
+			ScoreDelta:        delta,
+			PriceGold:         candidate.PriceGold,
+			Affordable:        character.Gold >= candidate.PriceGold,
+			DirectlyEquipable: true,
+		})
+	}
+
+	sort.Slice(hints, func(i, j int) bool {
+		if hints[i].ScoreDelta != hints[j].ScoreDelta {
+			return hints[i].ScoreDelta > hints[j].ScoreDelta
+		}
+		if hints[i].Affordable != hints[j].Affordable {
+			return hints[i].Affordable
+		}
+		if hints[i].Source != hints[j].Source {
+			return hints[i].Source < hints[j].Source
+		}
+		return hints[i].Slot < hints[j].Slot
+	})
+	if len(hints) > 8 {
+		hints = hints[:8]
+	}
+	return hints
+}
+
+func buildPotionLoadoutOptions(character characters.Summary, consumables map[string]int) []PotionLoadoutOption {
+	options := make([]PotionLoadoutOption, 0, len(consumableShopCatalog))
+	for _, entry := range consumableShopCatalog {
+		if !rankAtLeast(character.Rank, entry.MinRank) {
+			continue
+		}
+		quantity := consumables[entry.CatalogID]
+		options = append(options, PotionLoadoutOption{
+			CatalogID:     entry.CatalogID,
+			Name:          entry.Name,
+			Family:        entry.Family,
+			Tier:          entry.Tier,
+			QuantityOwned: quantity,
+			PriceGold:     entry.PriceGold,
+			AvailableNow:  quantity > 0,
+			CanPurchase:   character.Gold >= entry.PriceGold,
+			Recommended:   potionRecommendedForClass(character.Class, entry.Family),
+			EffectSummary: entry.EffectSummary,
+		})
+	}
+	sort.Slice(options, func(i, j int) bool {
+		if options[i].Recommended != options[j].Recommended {
+			return options[i].Recommended
+		}
+		if options[i].AvailableNow != options[j].AvailableNow {
+			return options[i].AvailableNow
+		}
+		if options[i].Tier != options[j].Tier {
+			return options[i].Tier < options[j].Tier
+		}
+		return options[i].CatalogID < options[j].CatalogID
+	})
+	return options
 }
 
 func buildConsumableStacks(consumables map[string]int) []ConsumableStack {
@@ -545,12 +858,215 @@ func indexByID(items []EquipmentItem, itemID string) int {
 
 func rarityScore(rarity string) int {
 	switch strings.ToLower(strings.TrimSpace(rarity)) {
+	case "prismatic":
+		return 50
+	case "red":
+		return 40
+	case "gold":
+		return 35
 	case "epic":
 		return 30
 	case "rare":
 		return 20
 	default:
 		return 10
+	}
+}
+
+func equipmentItemScore(item EquipmentItem) int {
+	score := rarityScore(item.Rarity) + item.EnhancementLevel*5
+	for _, value := range item.Stats {
+		score += value
+	}
+	return score
+}
+
+func shopItemScore(item ShopItem) int {
+	score := rarityScore(item.Rarity)
+	for _, value := range item.Stats {
+		score += value
+	}
+	return score
+}
+
+func buildEquipmentShopItems(character characters.Summary) []ShopItem {
+	items := make([]ShopItem, 0, len(shopCatalog))
+	for _, entry := range shopCatalog {
+		if len(entry.BuildingTypes) > 0 && !containsString(entry.BuildingTypes, "equipment_shop") {
+			continue
+		}
+		if strings.TrimSpace(entry.Item.RequiredClass) != "" && entry.Item.RequiredClass != character.Class {
+			continue
+		}
+		if strings.TrimSpace(entry.Item.RequiredWeaponStyle) != "" && entry.Item.RequiredWeaponStyle != character.WeaponStyle {
+			continue
+		}
+		items = append(items, ShopItem{
+			CatalogID:      entry.Item.CatalogID,
+			Name:           entry.Item.Name,
+			ItemType:       "equipment",
+			Slot:           entry.Item.Slot,
+			Rarity:         entry.Item.Rarity,
+			PriceGold:      entry.Item.PriceGold,
+			RequiredClass:  entry.Item.RequiredClass,
+			RequiredWeapon: entry.Item.RequiredWeaponStyle,
+			Stats:          copyStats(entry.Item.Stats),
+		})
+	}
+	return items
+}
+
+func deriveStats(base characters.StatsSnapshot, items []EquipmentItem, slotEnhancements map[string]int) characters.StatsSnapshot {
+	derived := base
+	for _, item := range items {
+		if item.State != "equipped" {
+			continue
+		}
+		applyEquipmentStatMap(&derived, scaledBaseStats(item, slotEnhancements[item.Slot]))
+		applyPassiveAffix(&derived, item.PassiveAffix)
+	}
+	return derived
+}
+
+func scaledBaseStats(item EquipmentItem, enhancementLevel int) map[string]float64 {
+	multiplier := 1 + enhancementPreviewPct(enhancementLevel)
+	values := make(map[string]float64, len(item.Stats))
+	for key, value := range item.Stats {
+		values[key] = float64(value) * multiplier
+	}
+	return values
+}
+
+func applyPassiveAffix(stats *characters.StatsSnapshot, affix map[string]any) {
+	if affix == nil {
+		return
+	}
+	values := make(map[string]float64, len(affix))
+	for key, raw := range affix {
+		switch typed := raw.(type) {
+		case int:
+			values[key] = float64(typed)
+		case int32:
+			values[key] = float64(typed)
+		case int64:
+			values[key] = float64(typed)
+		case float64:
+			values[key] = typed
+		}
+	}
+	applyEquipmentStatMap(stats, values)
+}
+
+func applyEquipmentStatMap(stats *characters.StatsSnapshot, values map[string]float64) {
+	for key, value := range values {
+		switch key {
+		case "max_hp":
+			stats.MaxHP += int(math.Round(value))
+		case "physical_attack":
+			stats.PhysicalAttack += int(math.Round(value))
+		case "magic_attack":
+			stats.MagicAttack += int(math.Round(value))
+		case "physical_defense":
+			stats.PhysicalDefense += int(math.Round(value))
+		case "magic_defense":
+			stats.MagicDefense += int(math.Round(value))
+		case "speed":
+			stats.Speed += int(math.Round(value))
+		case "healing_power":
+			stats.HealingPower += int(math.Round(value))
+		case "crit_rate":
+			stats.CritRate += value / 100
+		case "crit_damage":
+			stats.CritDamage += value / 100
+		case "block_rate":
+			stats.BlockRate += value / 100
+		case "precision":
+			stats.Precision += value / 100
+		case "evasion_rate":
+			stats.EvasionRate += value / 100
+		case "physical_mastery":
+			stats.PhysicalMastery += value / 100
+		case "magic_mastery":
+			stats.MagicMastery += value / 100
+		}
+	}
+}
+
+func enhancementPreviewPct(level int) float64 {
+	if level <= 0 {
+		return 0
+	}
+	return float64(level) * 0.01
+}
+
+func isEnhanceable(item EquipmentItem) bool {
+	return maxEnhancementLevelFor(item) > 0
+}
+
+func maxEnhancementLevelFor(_ EquipmentItem) int {
+	return 20
+}
+
+func enhancementGoldCost(item EquipmentItem, level int) int {
+	multiplier := rarityEnhancementMultiplier(item.Rarity)
+	return int(math.Round((35 + float64(level*15)) * multiplier))
+}
+
+func enhancementMaterialCost(item EquipmentItem, level int) []map[string]any {
+	multiplier := rarityEnhancementMultiplier(item.Rarity)
+	qty := int(math.Ceil((2 + float64(level)) * multiplier))
+	return []map[string]any{{
+		"material_key": EnhancementMaterialKey,
+		"quantity":     qty,
+	}}
+}
+
+func salvageYieldFor(item EquipmentItem) int {
+	base := map[string]int{
+		"common":    1,
+		"rare":      3,
+		"epic":      7,
+		"gold":      14,
+		"red":       24,
+		"prismatic": 40,
+	}[strings.ToLower(strings.TrimSpace(item.Rarity))]
+	if base == 0 {
+		base = 1
+	}
+	return base
+}
+
+func rarityEnhancementMultiplier(rarity string) float64 {
+	switch strings.ToLower(strings.TrimSpace(rarity)) {
+	case "rare":
+		return 1.3
+	case "epic":
+		return 1.7
+	case "gold":
+		return 2.2
+	case "red":
+		return 2.8
+	case "prismatic":
+		return 3.5
+	default:
+		return 1.0
+	}
+}
+
+func potionRecommendedForClass(class, family string) bool {
+	family = strings.ToLower(strings.TrimSpace(family))
+	if family == "hp" {
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(class)) {
+	case "warrior":
+		return family == "def"
+	case "mage":
+		return family == "atk" || family == "spd"
+	case "priest":
+		return family == "def" || family == "atk"
+	default:
+		return false
 	}
 }
 

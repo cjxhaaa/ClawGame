@@ -2034,6 +2034,414 @@ func TestPublicRoutesReflectRuntimeData(t *testing.T) {
 	}
 }
 
+func TestDungeonRunHistoryListAndDetailLevels(t *testing.T) {
+	server := NewServer(config.API{Port: "8080"})
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "bot-run-history",
+		"password": "verysecure",
+	}), "", http.StatusOK, nil)
+
+	var loginResponse struct {
+		Data struct {
+			AccessToken string `json:"access_token"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "bot-run-history",
+		"password": "verysecure",
+	}), "", http.StatusOK, &loginResponse)
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
+		"name":         "RunHistory",
+		"class":        "warrior",
+		"weapon_style": "sword_shield",
+	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+
+	var enterResponse struct {
+		Data struct {
+			RunID string `json:"run_id"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/dungeons/ancient_catacomb_v1/enter", dungeonEnterPayload(""), loginResponse.Data.AccessToken, http.StatusOK, &enterResponse)
+
+	var listResponse struct {
+		Data struct {
+			Items []struct {
+				RunID              string   `json:"run_id"`
+				DungeonID          string   `json:"dungeon_id"`
+				RunStatus          string   `json:"run_status"`
+				HighestRoomCleared int      `json:"highest_room_cleared"`
+				PotionLoadout      []string `json:"potion_loadout"`
+				BossReached        bool     `json:"boss_reached"`
+				SummaryTag         string   `json:"summary_tag"`
+			} `json:"items"`
+			NextCursor string `json:"next_cursor"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/runs?dungeon_id=ancient_catacomb_v1&result=cleared&limit=1", nil, loginResponse.Data.AccessToken, http.StatusOK, &listResponse)
+
+	if len(listResponse.Data.Items) != 1 {
+		t.Fatalf("expected one run summary, got %#v", listResponse.Data.Items)
+	}
+	if listResponse.Data.Items[0].RunID != enterResponse.Data.RunID {
+		t.Fatalf("expected listed run_id %q, got %q", enterResponse.Data.RunID, listResponse.Data.Items[0].RunID)
+	}
+	if listResponse.Data.Items[0].SummaryTag == "" {
+		t.Fatal("expected run summary_tag to be present")
+	}
+	if !listResponse.Data.Items[0].BossReached {
+		t.Fatal("expected cleared run to mark boss_reached")
+	}
+	if len(listResponse.Data.Items[0].PotionLoadout) == 0 {
+		t.Fatal("expected compact run summary to include potion_loadout")
+	}
+
+	var compactDetail struct {
+		Data map[string]any `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/runs/"+enterResponse.Data.RunID+"?detail_level=compact", nil, loginResponse.Data.AccessToken, http.StatusOK, &compactDetail)
+
+	if compactDetail.Data["summary_tag"] == nil {
+		t.Fatal("expected compact detail to include summary_tag")
+	}
+	if _, exists := compactDetail.Data["recent_battle_log"]; exists {
+		t.Fatalf("expected compact detail to omit recent_battle_log, got %#v", compactDetail.Data["recent_battle_log"])
+	}
+	if _, exists := compactDetail.Data["battle_log"]; exists {
+		t.Fatalf("expected compact detail to omit battle_log, got %#v", compactDetail.Data["battle_log"])
+	}
+
+	var standardDetail struct {
+		Data map[string]any `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/runs/"+enterResponse.Data.RunID, nil, loginResponse.Data.AccessToken, http.StatusOK, &standardDetail)
+
+	if _, exists := standardDetail.Data["key_findings"]; !exists {
+		t.Fatal("expected standard detail to include key_findings")
+	}
+	if _, exists := standardDetail.Data["danger_rooms"]; !exists {
+		t.Fatal("expected standard detail to include danger_rooms")
+	}
+	if _, exists := standardDetail.Data["resource_pressure"]; !exists {
+		t.Fatal("expected standard detail to include resource_pressure")
+	}
+	if _, exists := standardDetail.Data["reward_summary"]; !exists {
+		t.Fatal("expected standard detail to include reward_summary")
+	}
+	if _, exists := standardDetail.Data["recent_battle_log"]; !exists {
+		t.Fatal("expected standard detail to include recent_battle_log")
+	}
+	if _, exists := standardDetail.Data["battle_log"]; exists {
+		t.Fatal("expected standard detail to omit battle_log")
+	}
+
+	var verboseDetail struct {
+		Data map[string]any `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/runs/"+enterResponse.Data.RunID+"?detail_level=verbose", nil, loginResponse.Data.AccessToken, http.StatusOK, &verboseDetail)
+
+	battleLog, ok := verboseDetail.Data["battle_log"].([]any)
+	if !ok || len(battleLog) == 0 {
+		t.Fatalf("expected verbose detail to include battle_log, got %#v", verboseDetail.Data["battle_log"])
+	}
+}
+
+func TestInventoryIncludesUpgradeHintsAndPotionOptions(t *testing.T) {
+	server := NewServer(config.API{Port: "8080"})
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "bot-prep-inventory",
+		"password": "verysecure",
+	}), "", http.StatusOK, nil)
+
+	var loginResponse struct {
+		Data struct {
+			AccessToken string `json:"access_token"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "bot-prep-inventory",
+		"password": "verysecure",
+	}), "", http.StatusOK, &loginResponse)
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
+		"name":         "PrepBag",
+		"class":        "warrior",
+		"weapon_style": "sword_shield",
+	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+
+	var inventoryResponse struct {
+		Data struct {
+			EquipmentScore int `json:"equipment_score"`
+			UpgradeHints   []struct {
+				Source     string `json:"source"`
+				Slot       string `json:"slot"`
+				ScoreDelta int    `json:"score_delta"`
+			} `json:"upgrade_hints"`
+			PotionLoadoutOptions []struct {
+				CatalogID     string `json:"catalog_id"`
+				AvailableNow  bool   `json:"available_now"`
+				Recommended   bool   `json:"recommended"`
+				QuantityOwned int    `json:"quantity_owned"`
+			} `json:"potion_loadout_options"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/inventory", nil, loginResponse.Data.AccessToken, http.StatusOK, &inventoryResponse)
+
+	if inventoryResponse.Data.EquipmentScore <= 0 {
+		t.Fatalf("expected positive equipment_score, got %d", inventoryResponse.Data.EquipmentScore)
+	}
+	if len(inventoryResponse.Data.UpgradeHints) == 0 {
+		t.Fatal("expected upgrade_hints to be present")
+	}
+	if len(inventoryResponse.Data.PotionLoadoutOptions) == 0 {
+		t.Fatal("expected potion_loadout_options to be present")
+	}
+	foundRecommendedPotion := false
+	for _, option := range inventoryResponse.Data.PotionLoadoutOptions {
+		if option.Recommended && option.AvailableNow && option.QuantityOwned > 0 {
+			foundRecommendedPotion = true
+			break
+		}
+	}
+	if !foundRecommendedPotion {
+		t.Fatal("expected at least one recommended potion option to be immediately available")
+	}
+}
+
+func TestBlacksmithSalvageAndEnhanceFlow(t *testing.T) {
+	server := NewServer(config.API{Port: "8080"})
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "bot-blacksmith",
+		"password": "verysecure",
+	}), "", http.StatusOK, nil)
+
+	var loginResponse struct {
+		Data struct {
+			AccessToken string `json:"access_token"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "bot-blacksmith",
+		"password": "verysecure",
+	}), "", http.StatusOK, &loginResponse)
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
+		"name":         "ForgeRunner",
+		"class":        "warrior",
+		"weapon_style": "sword_shield",
+	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+
+	var inventoryResponse struct {
+		Data struct {
+			Equipped []struct {
+				ItemID string `json:"item_id"`
+				Slot   string `json:"slot"`
+			} `json:"equipped"`
+			Inventory []struct {
+				ItemID string `json:"item_id"`
+			} `json:"inventory"`
+			SlotEnhancements []struct {
+				Slot             string `json:"slot"`
+				EnhancementLevel int    `json:"enhancement_level"`
+			} `json:"slot_enhancements"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/inventory", nil, loginResponse.Data.AccessToken, http.StatusOK, &inventoryResponse)
+
+	if len(inventoryResponse.Data.Equipped) == 0 {
+		t.Fatal("expected equipped starter items")
+	}
+	if len(inventoryResponse.Data.SlotEnhancements) == 0 {
+		t.Fatal("expected slot_enhancements in inventory response")
+	}
+	if len(inventoryResponse.Data.Inventory) < 2 {
+		t.Fatal("expected at least two starter inventory items to salvage")
+	}
+
+	weaponItemID := ""
+	for _, item := range inventoryResponse.Data.Equipped {
+		if item.Slot == "weapon" {
+			weaponItemID = item.ItemID
+			break
+		}
+	}
+	if weaponItemID == "" {
+		t.Fatal("expected equipped weapon item")
+	}
+
+	for i := 0; i < 2; i++ {
+		doJSONRequest(t, server, http.MethodPost, "/api/v1/buildings/blacksmith_main_city/salvage", map[string]any{
+			"item_id": inventoryResponse.Data.Inventory[i].ItemID,
+		}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+	}
+
+	var stateBeforeEnhance struct {
+		Data struct {
+			Materials []struct {
+				MaterialKey string `json:"material_key"`
+				Quantity    int    `json:"quantity"`
+			} `json:"materials"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/state", nil, loginResponse.Data.AccessToken, http.StatusOK, &stateBeforeEnhance)
+
+	shardsBefore := 0
+	for _, item := range stateBeforeEnhance.Data.Materials {
+		if item.MaterialKey == "enhancement_shard" {
+			shardsBefore = item.Quantity
+			break
+		}
+	}
+	if shardsBefore < 2 {
+		t.Fatalf("expected at least 2 enhancement_shard after salvage, got %d", shardsBefore)
+	}
+
+	var enhanceResponse struct {
+		Data struct {
+			Result struct {
+				Item struct {
+					ItemID           string `json:"item_id"`
+					EnhancementLevel int    `json:"enhancement_level"`
+				} `json:"item"`
+				EnhancementQuote struct {
+					GoldCost int `json:"gold_cost"`
+				} `json:"enhancement_quote"`
+			} `json:"result"`
+			State struct {
+				Character struct {
+					Gold int `json:"gold"`
+				} `json:"character"`
+				Materials []struct {
+					MaterialKey string `json:"material_key"`
+					Quantity    int    `json:"quantity"`
+				} `json:"materials"`
+			} `json:"state"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/buildings/blacksmith_main_city/enhance", map[string]any{
+		"slot": "weapon",
+	}, loginResponse.Data.AccessToken, http.StatusOK, &enhanceResponse)
+
+	if enhanceResponse.Data.Result.Item.ItemID != weaponItemID {
+		t.Fatalf("expected enhanced weapon item %q, got %q", weaponItemID, enhanceResponse.Data.Result.Item.ItemID)
+	}
+	if enhanceResponse.Data.Result.Item.EnhancementLevel != 1 {
+		t.Fatalf("expected enhancement level 1, got %d", enhanceResponse.Data.Result.Item.EnhancementLevel)
+	}
+	if enhanceResponse.Data.Result.EnhancementQuote.GoldCost <= 0 {
+		t.Fatal("expected positive enhancement gold cost")
+	}
+
+	shardsAfter := 0
+	for _, item := range enhanceResponse.Data.State.Materials {
+		if item.MaterialKey == "enhancement_shard" {
+			shardsAfter = item.Quantity
+			break
+		}
+	}
+	if shardsAfter >= shardsBefore {
+		t.Fatalf("expected enhancement materials to decrease after enhance, before=%d after=%d", shardsBefore, shardsAfter)
+	}
+
+	var stateAfterEnhance struct {
+		Data struct {
+			SlotEnhancements []struct {
+				Slot             string `json:"slot"`
+				EnhancementLevel int    `json:"enhancement_level"`
+			} `json:"slot_enhancements"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/state", nil, loginResponse.Data.AccessToken, http.StatusOK, &stateAfterEnhance)
+	weaponLevel := -1
+	for _, item := range stateAfterEnhance.Data.SlotEnhancements {
+		if item.Slot == "weapon" {
+			weaponLevel = item.EnhancementLevel
+			break
+		}
+	}
+	if weaponLevel != 1 {
+		t.Fatalf("expected weapon slot enhancement level 1 in state, got %d", weaponLevel)
+	}
+}
+
+func TestPlannerIncludesDungeonPreparationHints(t *testing.T) {
+	server := NewServer(config.API{Port: "8080"})
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "bot-prep-planner",
+		"password": "verysecure",
+	}), "", http.StatusOK, nil)
+
+	var loginResponse struct {
+		Data struct {
+			AccessToken string `json:"access_token"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "bot-prep-planner",
+		"password": "verysecure",
+	}), "", http.StatusOK, &loginResponse)
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
+		"name":         "PrepPlanner",
+		"class":        "warrior",
+		"weapon_style": "sword_shield",
+	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+
+	var plannerResponse struct {
+		Data struct {
+			LocalDungeons []struct {
+				DungeonID                 string `json:"dungeon_id"`
+				CurrentEquipmentScore     int    `json:"current_equipment_score"`
+				RecommendedEquipmentScore int    `json:"recommended_equipment_score"`
+				ScoreGap                  int    `json:"score_gap"`
+				Readiness                 string `json:"readiness"`
+			} `json:"local_dungeons"`
+			DungeonPreparation struct {
+				CurrentEquipmentScore int `json:"current_equipment_score"`
+				UpgradeHintCount      int `json:"upgrade_hint_count"`
+				PotionOptionCount     int `json:"potion_option_count"`
+				Items                 []struct {
+					DungeonID                  string           `json:"dungeon_id"`
+					Readiness                  string           `json:"readiness"`
+					ScoreGap                   int              `json:"score_gap"`
+					InventoryUpgradeCount      int              `json:"inventory_upgrade_count"`
+					AffordableShopUpgradeCount int              `json:"affordable_shop_upgrade_count"`
+					SuggestedPreparationSteps  []string         `json:"suggested_preparation_steps"`
+					PotionOptions              []map[string]any `json:"potion_options"`
+				} `json:"items"`
+			} `json:"dungeon_preparation"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/planner?region_id=ancient_catacomb", nil, loginResponse.Data.AccessToken, http.StatusOK, &plannerResponse)
+
+	if len(plannerResponse.Data.LocalDungeons) == 0 {
+		t.Fatal("expected local_dungeons in planner response")
+	}
+	if plannerResponse.Data.DungeonPreparation.CurrentEquipmentScore <= 0 {
+		t.Fatal("expected dungeon_preparation current_equipment_score")
+	}
+	if len(plannerResponse.Data.DungeonPreparation.Items) == 0 {
+		t.Fatal("expected dungeon_preparation items")
+	}
+	item := plannerResponse.Data.DungeonPreparation.Items[0]
+	if item.DungeonID == "" {
+		t.Fatal("expected dungeon_preparation item dungeon_id")
+	}
+	if item.Readiness == "" {
+		t.Fatal("expected dungeon_preparation readiness")
+	}
+	if len(item.PotionOptions) == 0 {
+		t.Fatal("expected dungeon_preparation potion_options")
+	}
+	if len(item.SuggestedPreparationSteps) == 0 && item.ScoreGap > 0 {
+		t.Fatal("expected preparation steps when score gap exists")
+	}
+}
+
 func TestDungeonAutoResolveAndClaimFlow(t *testing.T) {
 	server := NewServer(config.API{Port: "8080"})
 

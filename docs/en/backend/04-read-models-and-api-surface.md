@@ -344,6 +344,7 @@ Returns:
 - `query_region_id`
 - `local_quests`
 - `local_dungeons`
+- `dungeon_preparation`
 - `dungeon_daily`
 - `suggested_actions`
 
@@ -352,6 +353,8 @@ Current repo behavior:
 - `local_quests` only contains quests targeting the query region
 - `local_quests` excludes `submitted` and `expired` quests
 - `local_dungeons` marks `is_rank_eligible`, `has_remaining_quota`, and `can_enter`
+- `dungeon_preparation` is the compact prep surface for local dungeon entry
+- it should expose current equipment score, heuristic readiness, score gap, upgrade counts, and potion readiness without forcing OpenClaw to scan every item first
 - `suggested_actions` is a compact hint list, not a full policy engine
 - `quest_runtime_hints` is also returned and now carries per-quest step metadata such as `current_step_key`, `current_step_label`, `current_step_hint`, `suggested_action_type`, `suggested_action_args`, and `available_choices`
 - when the queried region already exposes map-layer capability, `suggested_actions` also includes regional action hints
@@ -361,6 +364,7 @@ Current repo behavior:
 Recommendation:
 
 - bots should use `GET /api/v1/me/planner` first
+- if a dungeon looks interesting but readiness is unclear, read `dungeon_preparation` before drilling into shops or item lists
 - use `GET /api/v1/me/state` when full state verification is needed
 
 ### 12.3 Actions APIs
@@ -625,6 +629,7 @@ Building action endpoints:
 - `POST /api/v1/buildings/{buildingId}/heal`
 - `POST /api/v1/buildings/{buildingId}/cleanse`
 - `POST /api/v1/buildings/{buildingId}/enhance`
+- `POST /api/v1/buildings/{buildingId}/salvage`
 - `POST /api/v1/buildings/{buildingId}/repair`
 - `POST /api/v1/buildings/{buildingId}/purchase`
 - `POST /api/v1/buildings/{buildingId}/sell`
@@ -645,6 +650,7 @@ Current V1 action boundary:
   - `heal`
 - `blacksmith` should currently focus on:
   - `enhance`
+  - `salvage`
 - `arena` should currently focus on:
   - signup and bracket-viewing style actions
 - `guild` should currently focus on:
@@ -899,6 +905,15 @@ Returns:
 - equipped items by slot
 - unequipped items
 - derived equipment score
+- `upgrade_hints`
+- `potion_loadout_options`
+
+Current repo planning note:
+
+- `upgrade_hints` should surface the best currently known equipment improvements from carried inventory and affordable shop stock
+- each hint should stay compact and machine-readable, for example source (`inventory` or `shop`), slot, target item, score delta, affordability, and whether it is directly equippable
+- `potion_loadout_options` should list the owned or purchasable potion choices that make sense before dungeon entry, including family, tier, quantity owned, and whether the option is currently available without visiting a shop
+- enhancement planning should also consider `GET /api/v1/me/state.materials` so the bot can see whether salvage or field farming is needed before upgrading a slot
 
 #### `POST /api/v1/me/equipment/equip`
 
@@ -1027,6 +1042,47 @@ Returns:
 - `null` if no active run exists
 - otherwise the same payload shape as `GET /api/v1/me/runs/{runId}`
 
+Progressive-disclosure rule:
+
+- this endpoint should default to the `standard` run-detail view
+- if the caller only needs a heartbeat check, a future `detail_level=compact` mode is preferred over returning full battle detail
+
+#### `GET /api/v1/me/runs`
+
+Purpose:
+
+- list historical dungeon attempts for the caller
+- give OpenClaw a low-token summary surface before drilling into a specific run
+
+Recommended query params:
+
+- `dungeon_id`
+- `difficulty`
+- `result`
+- `limit`
+- `cursor`
+
+Default response should stay compact and return only summary fields such as:
+
+- `run_id`
+- `dungeon_id`
+- `difficulty`
+- `started_at`
+- `run_status`
+- `highest_room_cleared`
+- `current_rating`
+- `potion_loadout`
+- `boss_reached`
+- `summary_tag`
+
+Design note:
+
+- this endpoint exists so OpenClaw can form its own memory from prior attempts
+- it is a run-history surface, not a dedicated memory or recommendation API
+- it should not dump full battle logs by default
+- it should be optimized for scanability rather than completeness
+- `summary_tag` should stay short and normalized, for example `cleared_stable`, `failed_room_4`, `failed_before_boss`, or `boss_low_hp_clear`
+
 #### `GET /api/v1/me/runs/{runId}`
 
 Returns:
@@ -1037,6 +1093,40 @@ Returns:
 - recent battle log
 - staged material drops
 - pending rating rewards
+
+Recommended progressive-disclosure contract:
+
+- support `detail_level=compact|standard|verbose`
+- default to `standard`
+
+`compact` should favor decision summary fields:
+
+- `run_id`
+- `dungeon_id`
+- `difficulty`
+- `run_status`
+- `highest_room_cleared`
+- `current_rating`
+- `potion_loadout`
+- `summary_tag`
+- `boss_reached`
+
+`standard` should add structured replay aids:
+
+- `room_summary`
+- `battle_state`
+- `key_findings`
+- `danger_rooms`
+- `resource_pressure`
+- `reward_summary`
+
+`verbose` may include the full `battle_log` or a paged battle-log view.
+
+Token-economy rule:
+
+- `battle_log` should not be returned by default just because it exists
+- the main goal is to let OpenClaw scan prior attempts cheaply, then drill into one run only when needed
+- callers should be able to stop at `compact` or `standard` most of the time, and only request `verbose` when they truly need raw replay detail
 
 #### `POST /api/v1/me/runs/{runId}/claim`
 
