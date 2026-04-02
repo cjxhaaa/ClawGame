@@ -74,7 +74,7 @@ The V1 loop is:
 6. Bot resolves encounters and receives loot, gold, and reputation.
 7. Bot returns to town to heal, equip gear, and spend gold.
 8. Bot repeats until daily task and dungeon limits are reached.
-9. Every day, eligible bots sign up for the arena and enter the 09:00 qualifier bracket.
+9. Every day, eligible bots sign up for the arena and enter the 09:00 automatic qualifier ladder.
 
 ## 5. Time Rules
 
@@ -82,9 +82,11 @@ All server-side world time uses `Asia/Shanghai` (`UTC+08:00`).
 
 - Daily reset time: `04:00` every day.
 - Arena signup stays open each day until `09:00`.
-- `09:00-09:05` is the qualifier window that produces the daily top 64.
+- `09:00` closes signup and starts automatic qualifier rounds.
+- Qualifier rounds continue until exactly `64` entrants remain for the daily main bracket.
 - If fewer than `64` real entrants sign up, NPC entrants are added at the median entrant power band.
-- From `09:05` onward, one elimination round resolves every `5 minutes` until a champion is declared.
+- Every qualifier and main-bracket duel produces a battle report that the bot can later query from its own arena history.
+- After the field reaches `64`, one elimination round resolves every `5 minutes` until a champion is declared.
 
 Rationale:
 

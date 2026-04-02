@@ -70,24 +70,32 @@ export type ArenaEntry = {
   class: string;
   weapon_style: string;
   rank: string;
+  panel_power_score: number;
   equipment_score: number;
   signed_up_at: string;
   is_npc?: boolean;
 };
 
 export type ArenaMatchup = {
+  match_id: string;
+  stage: string;
+  round_number: number;
   match_number: number;
   status: string;
   scheduled_at: string;
   resolved_at?: string;
+  battle_report_id?: string;
   left_entry?: ArenaEntry;
   right_entry?: ArenaEntry;
+  bye_entry?: ArenaEntry;
   winner_entry?: ArenaEntry;
 };
 
 export type ArenaRound = {
   name: string;
   stage: string;
+  round_number: number;
+  entrant_count: number;
   status: string;
   scheduled_at: string;
   resolved_at?: string;
@@ -102,12 +110,68 @@ export type ArenaCurrent = {
   signup_count: number;
   qualified_count: number;
   npc_count: number;
-  entries: ArenaEntry[];
+  highest_panel_power: number;
+  lowest_panel_power: number;
+  median_panel_power: number;
+  featured_entries: ArenaEntry[];
   qualifier_matchups: ArenaMatchup[];
+  qualifier_rounds?: ArenaRound[];
   matchups: ArenaMatchup[];
   rounds: ArenaRound[];
   champion?: ArenaEntry;
   next_round_time: string;
+};
+
+export type ArenaMatchDetail = {
+  match_id: string;
+  battle_report_id?: string;
+  tournament_id: string;
+  day_key: string;
+  stage: string;
+  round_number: number;
+  round_name: string;
+  status: string;
+  summary_tag: string;
+  started_at: string;
+  resolved_at?: string;
+  left_entry?: {
+    character_id: string;
+    character_name: string;
+    class: string;
+    weapon_style: string;
+    rank: string;
+    panel_power_score: number;
+    is_npc?: boolean;
+  };
+  right_entry?: {
+    character_id: string;
+    character_name: string;
+    class: string;
+    weapon_style: string;
+    rank: string;
+    panel_power_score: number;
+    is_npc?: boolean;
+  };
+  bye_entry?: {
+    character_id: string;
+    character_name: string;
+    class: string;
+    weapon_style: string;
+    rank: string;
+    panel_power_score: number;
+    is_npc?: boolean;
+  };
+  winner_entry?: {
+    character_id: string;
+    character_name: string;
+    class: string;
+    weapon_style: string;
+    rank: string;
+    panel_power_score: number;
+    is_npc?: boolean;
+  };
+  battle_report?: Record<string, unknown>;
+  battle_log?: Array<Record<string, unknown>>;
 };
 
 export type PublicWorldState = {
@@ -359,8 +423,12 @@ export const fallbackArenaCurrent: ArenaCurrent = {
   signup_count: 0,
   qualified_count: 0,
   npc_count: 0,
-  entries: [],
+  highest_panel_power: 0,
+  lowest_panel_power: 0,
+  median_panel_power: 0,
+  featured_entries: [],
   qualifier_matchups: [],
+  qualifier_rounds: [],
   matchups: [],
   rounds: [],
   next_round_time: new Date().toISOString(),
@@ -575,6 +643,23 @@ export async function getArenaCurrent() {
   return fetchData<ArenaCurrent>("/api/v1/arena/current", fallbackArenaCurrent);
 }
 
+export async function getArenaMatchDetail(matchID: string, detailLevel: "compact" | "standard" | "verbose" = "standard") {
+  return fetchData<ArenaMatchDetail>(
+    `/api/v1/arena/matches/${encodeURIComponent(matchID)}?detail_level=${encodeURIComponent(detailLevel)}`,
+    {
+      match_id: matchID,
+      tournament_id: "",
+      day_key: "",
+      stage: "",
+      round_number: 0,
+      round_name: "",
+      status: "scheduled",
+      summary_tag: "",
+      started_at: new Date().toISOString(),
+    },
+  );
+}
+
 export async function getPublicBots(params?: {
   q?: string;
   character_id?: string;
@@ -682,7 +767,7 @@ async function fetchData<T>(path: string, fallback: T): Promise<T> {
   }
 }
 
-function apiBaseUrl() {
+export function apiBaseUrl() {
   const baseUrl =
     process.env.API_BASE_URL ??
     process.env.NEXT_PUBLIC_API_BASE_URL ??

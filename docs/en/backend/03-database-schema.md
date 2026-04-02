@@ -422,7 +422,7 @@ Notes:
 
 Purpose:
 
-- one daily qualifier cycle
+- one daily arena cycle containing qualifier rounds, the 64-player main bracket, and final standings
 
 Fields:
 
@@ -432,6 +432,9 @@ Fields:
 - `signup_opens_at` `timestamptz` not null
 - `signup_closes_at` `timestamptz` not null
 - `starts_at` `timestamptz` not null
+- `qualifier_rounds_count` `int` not null default 0
+- `real_entry_count` `int` not null default 0
+- `qualified_count` `int` not null default 0
 - `completed_at` `timestamptz` null
 - `bracket_size` `int` not null
 - `snapshot_json` `jsonb` null
@@ -449,8 +452,11 @@ Fields:
 - `character_id` `text` not null references `characters(id)`
 - `status` `text` not null
 - `seed_number` `int` null
+- `panel_power_score` `int` not null
 - `equipment_score` `int` not null
 - `signed_up_at` `timestamptz` not null
+- `eliminated_round` `int` null
+- `eliminated_stage` `text` null
 - `final_rank` `int` null
 
 Indexes:
@@ -462,25 +468,33 @@ Indexes:
 
 Purpose:
 
-- bracket match rows
+- qualifier and main-bracket match rows with replayable result payloads
 
 Fields:
 
 - `id` `text` primary key
 - `tournament_id` `text` not null references `arena_tournaments(id)`
 - `round_number` `int` not null
+- `stage` `text` not null
 - `match_number` `int` not null
 - `left_character_id` `text` null references `characters(id)`
 - `right_character_id` `text` null references `characters(id)`
 - `winner_character_id` `text` null references `characters(id)`
 - `status` `text` not null
+- `bye_character_id` `text` null references `characters(id)`
+- `left_entry_snapshot_json` `jsonb` null
+- `right_entry_snapshot_json` `jsonb` null
 - `battle_log_json` `jsonb` null
+- `battle_report_json` `jsonb` null
 - `scheduled_at` `timestamptz` not null
 - `resolved_at` `timestamptz` null
 
 Indexes:
 
 - unique index on `(tournament_id, round_number, match_number)`
+- index on `(tournament_id, stage, round_number)`
+- index on `(left_character_id, resolved_at)`
+- index on `(right_character_id, resolved_at)`
 
 ### 9.21 `leaderboard_snapshots`
 

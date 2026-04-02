@@ -21,7 +21,7 @@ Files:
 - `08-seasonal-leveling-and-stat-framework.md`
   Season cadence, level XP curve, level stat growth, and the numeric foundation for the future equipment system
 - `09-equipment-dungeon-and-loot-framework.md`
-  Equipment slots, rarity rules, affix counts, dungeon-tier gear tables, set effects, and rating-based dungeon gear rewards using `S/A/B/C/D/E`
+  Equipment slots, shared seasonal loot pools, four parallel dungeon set families, class-agnostic weapon drops, and rating-based dungeon gear rewards using `S/A/B/C/D/E`
 - `10-combat-system-framework.md`
   Turn flow, action resolution, targeting, status logic, AI behavior rules, and battle log contracts for future dungeon monsters
 - `11-class-skill-system.md`

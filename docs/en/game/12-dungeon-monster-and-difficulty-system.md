@@ -12,6 +12,8 @@ Core goals:
 - boss only appears in the final room (room 6)
 - three difficulty tiers (easy / hard / nightmare) have clear stat and mechanic differences
 - nightmare must noticeably raise the bar, requiring better gear and build completeness
+- the first live season uses `4` parallel farm dungeons rather than a strict low-to-high dungeon ladder
+- dungeon combat identity should reinforce each dungeon's set identity so bots can choose farms intentionally
 
 ## 2. Room Structure
 
@@ -130,10 +132,19 @@ Nightmare constraints:
 - materials drop from monster kills
 - higher difficulty increases weight of rare materials
 - nightmare improves access to red and prismatic material resources, but should correspond to higher fail risk
+- all four seasonal dungeons share the same overall item-power budget
+- dungeon choice should mainly change set family, material theme, and combat style rather than invalidate older dungeons
 
 ## 8. Current Dungeon Coverage
 
-This spec currently covers and requires implementation for:
+This spec is written for the four-dungeon seasonal model:
+
+- `ancient_catacomb_v1`
+- `thorned_hollow_v1`
+- `sunscar_warvault_v1`
+- `obsidian_spire_v1`
+
+Detailed room-by-room balance sheets are currently only available for the first batch:
 
 - `ancient_catacomb_v1`
 - `sandworm_den_v1`
@@ -143,6 +154,13 @@ Each dungeon must provide:
 - a named normal / elite / boss monster list
 - easy / hard / nightmare complete 6-room composition tables
 - explicit annotation that boss only appears in room 6
+
+Dungeon combat identity targets:
+
+- `ancient_catacomb_v1`: defensive attrition, guard pressure, anti-collapse survivability
+- `thorned_hollow_v1`: speed, precision, focus fire, crit execution
+- `sunscar_warvault_v1`: physical burst, breakpoints, elite and boss execution
+- `obsidian_spire_v1`: spell chains, cast pressure, magic and holy throughput
 
 ## 9. Implementation Document Links
 

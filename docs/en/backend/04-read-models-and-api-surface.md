@@ -29,9 +29,15 @@ Fields:
 
 - `character_summary`
 - `equipment_score`
+- `combat_power`
 - `current_activity_type`
 - `current_activity_summary`
 - `last_seen_at`
+
+Rules:
+
+- `combat_power.panel_power_score` is the primary strength number for bot-facing and observer-facing surfaces.
+- `equipment_score` remains a breakdown field and should not replace total combat power in arena or dungeon-preparation surfaces.
 
 ### 10.3 BotDetail
 
@@ -40,6 +46,7 @@ Fields:
 - `character_summary`
 - `stats_snapshot`
 - `equipment`
+- `combat_power`
 - `daily_limits`
 - `active_quests`
 - `recent_runs`
@@ -157,9 +164,9 @@ Allowed transitions:
 Current scheduling note:
 
 - `signup_open` is the default daily state before `09:00`
-- `signup_closed` represents the short seeding window where entrants are randomly paired into 1v1 qualifiers
-- `in_progress` covers automatic duel resolution immediately after pairing
-- `completed` means the daily qualifier results are now public
+- `signup_closed` represents the point where signup is locked and the full entrant pool is frozen
+- `in_progress` covers automatic qualifier rounds followed by the main 64-player bracket
+- `completed` means the daily bracket is fully resolved and the champion plus battle reports are public
 
 ### 11.4 Character rank upgrade rules
 
@@ -319,6 +326,7 @@ Returns:
 - `account`
 - `character`
 - `stats`
+- `combat_power`
 - `limits`
 - `materials`
 - `dungeon_daily`
@@ -354,7 +362,7 @@ Current repo behavior:
 - `local_quests` excludes `submitted` and `expired` quests
 - `local_dungeons` marks `is_rank_eligible`, `has_remaining_quota`, and `can_enter`
 - `dungeon_preparation` is the compact prep surface for local dungeon entry
-- it should expose current equipment score, heuristic readiness, score gap, upgrade counts, and potion readiness without forcing OpenClaw to scan every item first
+- it should expose current panel combat power, recommended power, power gap, heuristic readiness, upgrade counts, and potion readiness without forcing OpenClaw to scan every item first
 - `suggested_actions` is a compact hint list, not a full policy engine
 - `quest_runtime_hints` is also returned and now carries per-quest step metadata such as `current_step_key`, `current_step_label`, `current_step_hint`, `suggested_action_type`, `suggested_action_args`, and `available_choices`
 - when the queried region already exposes map-layer capability, `suggested_actions` also includes regional action hints
@@ -1162,6 +1170,8 @@ Side effects:
 
 - inserts `arena_entry`
 - emits `arena.entry_accepted`
+- stores `panel_power_score` as the primary arena strength field
+- may keep `equipment_score` as a secondary breakdown field
 
 #### `GET /api/v1/arena/current`
 
@@ -1169,16 +1179,72 @@ Returns:
 
 - current tournament metadata
 - current daily signup window
-- random qualifier pairings once the `09:00` seeding window begins
-- the resolved or in-progress 64-player elimination rounds after `09:05`
+- a small `featured_entries` slice for lightweight spectator UI
+- qualifier rounds from the full signed entrant pool until only `64` entrants remain
+- the resolved or in-progress 64-player elimination rounds after qualification completes
 - champion information once the final window is complete
 - next round time
+- entrant cards and champion cards should use `panel_power_score` as the primary visible strength value
+- each matchup summary should expose whether it belongs to the qualifier ladder or the main bracket
+- each resolved matchup should expose a linked battle report identifier
+
+Contract:
+
+- this endpoint is a current-tournament summary surface and should not return the full entrant list by default
+
+#### `GET /api/v1/arena/entries`
+
+Purpose:
+
+- page through the full signed entrant list for the current tournament
+
+Returns:
+
+- `items`
+- `next_cursor`
+
+Rules:
+
+- default page size should stay compact
+- sorting should follow primary arena strength order, then stable signup tie-breakers
 
 #### `GET /api/v1/arena/leaderboard`
 
 Returns:
 
 - latest arena leaderboard entries
+- leaderboard score should use total panel combat power for current entrant strength display
+
+#### `GET /api/v1/me/arena-history`
+
+Purpose:
+
+- list the caller's own arena battles across qualifier rounds and the main bracket
+- give OpenClaw a compact review surface before opening a specific arena battle report
+
+Returns:
+
+- reverse-chronological arena battle summaries
+- each row should include `match_id`, `tournament_id`, `stage`, `round_number`, `opponent_summary`, `result`, `started_at`, `resolved_at`, and `battle_report_id`
+- support `result`, `tournament_id`, `stage`, `limit`, and `cursor`
+
+Progressive-disclosure rule:
+
+- this endpoint should default to a compact summary payload
+- it should not include full battle logs by default
+
+#### `GET /api/v1/me/arena-history/{matchId}`
+
+Returns:
+
+- the caller's own arena match detail
+- `detail_level=compact|standard|verbose`
+
+Contract:
+
+- `compact` should return result summary, opponent summary, stage, round number, and battle outcome tags
+- `standard` should additionally return structured battle report sections such as opening state, damage summary, decisive turns, and final HP snapshot
+- `verbose` may additionally include the full serialized `battle_log`
 
 ### 12.10 Public observer APIs
 

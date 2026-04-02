@@ -24,37 +24,7 @@ type powerItemScore struct {
 	DeltaVsEquipped  int    `json:"delta_vs_equipped"`
 }
 
-type dungeonPowerPreview struct {
-	DungeonID           string `json:"dungeon_id"`
-	DungeonName         string `json:"dungeon_name"`
-	RecommendedPowerMin int    `json:"recommended_power_min"`
-	RecommendedPowerMax int    `json:"recommended_power_max"`
-	CurrentPower        int    `json:"current_power"`
-	EstimatedConfidence string `json:"estimated_confidence"`
-	EstimatedClearBand  string `json:"estimated_clear_band"`
-}
-
-type arenaPowerPreview struct {
-	ReferencePower        int    `json:"reference_power"`
-	PowerDelta            int    `json:"power_delta"`
-	EstimatedWinRateBand  string `json:"estimated_win_rate_band"`
-	EstimatedStrengthTier string `json:"estimated_strength_tier"`
-}
-
-type combatPowerView struct {
-	FormulaVersion     string                `json:"formula_version"`
-	EffectiveLevel     int                   `json:"effective_level"`
-	RankCoeff          float64               `json:"rank_coeff"`
-	BaseGrowthScore    int                   `json:"base_growth_score"`
-	EquipmentScore     int                   `json:"equipment_score"`
-	BuildModifierScore int                   `json:"build_modifier_score"`
-	PanelPowerScore    int                   `json:"panel_power_score"`
-	PowerTier          string                `json:"power_tier"`
-	ArenaPreview       arenaPowerPreview     `json:"arena_preview"`
-	DungeonPreviews    []dungeonPowerPreview `json:"dungeon_previews"`
-}
-
-func buildCombatPower(summary characters.Summary, stats characters.StatsSnapshot, inv inventory.InventoryView, dungeonService *dungeons.Service) (combatPowerView, []powerItemScore) {
+func buildCombatPower(summary characters.Summary, stats characters.StatsSnapshot, inv inventory.InventoryView, dungeonService *dungeons.Service) (characters.CombatPowerSummary, []powerItemScore) {
 	effectiveLevel := estimateLevel(summary)
 	rankCoeff := rankCoeff(summary.Rank)
 	baseGrowth := computeBaseGrowthScore(summary, stats, effectiveLevel, rankCoeff)
@@ -72,7 +42,7 @@ func buildCombatPower(summary characters.Summary, stats characters.StatsSnapshot
 	if panel < 1 {
 		panel = 1
 	}
-	view := combatPowerView{
+	view := characters.CombatPowerSummary{
 		FormulaVersion:     powerFormulaVersion,
 		EffectiveLevel:     effectiveLevel,
 		RankCoeff:          rankCoeff,
@@ -317,7 +287,7 @@ func powerTier(panel int) string {
 	}
 }
 
-func buildArenaPreview(panel int, rank string) arenaPowerPreview {
+func buildArenaPreview(panel int, rank string) characters.ArenaPowerPreview {
 	reference := arenaReferencePower(rank)
 	delta := panel - reference
 	band := "close"
@@ -339,7 +309,7 @@ func buildArenaPreview(panel int, rank string) arenaPowerPreview {
 		band = ">70%"
 		tier = "strong_advantage"
 	}
-	return arenaPowerPreview{
+	return characters.ArenaPowerPreview{
 		ReferencePower:        reference,
 		PowerDelta:            delta,
 		EstimatedWinRateBand:  band,
@@ -358,9 +328,9 @@ func arenaReferencePower(rank string) int {
 	}
 }
 
-func buildDungeonPreviews(panel int, dungeonService *dungeons.Service) []dungeonPowerPreview {
+func buildDungeonPreviews(panel int, dungeonService *dungeons.Service) []characters.DungeonPowerPreview {
 	definitions := dungeonService.ListDungeonDefinitions()
-	items := make([]dungeonPowerPreview, 0, len(definitions))
+	items := make([]characters.DungeonPowerPreview, 0, len(definitions))
 	for _, def := range definitions {
 		minPower := recommendedPowerForLevel(def.RecommendedLevelMin, def.MinRank)
 		maxPower := recommendedPowerForLevel(def.RecommendedLevelMax, def.MinRank)
@@ -368,7 +338,7 @@ func buildDungeonPreviews(panel int, dungeonService *dungeons.Service) []dungeon
 			maxPower = minPower
 		}
 		conf, band := dungeonConfidence(panel, minPower, maxPower)
-		items = append(items, dungeonPowerPreview{
+		items = append(items, characters.DungeonPowerPreview{
 			DungeonID:           def.DungeonID,
 			DungeonName:         def.Name,
 			RecommendedPowerMin: minPower,

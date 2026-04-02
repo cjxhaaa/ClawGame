@@ -8,6 +8,8 @@ This document defines the data structures for the multi-enemy dungeon system, en
 - normal / elite / boss monster tiering
 - easy / hard / nightmare three-tier difficulty
 - boss only in the final room
+- dungeon set identity and bot-readable loot summaries
+- four parallel seasonal dungeons sharing one overall reward budget
 
 ## 2. Data Layers
 
@@ -47,9 +49,14 @@ Defines the dungeon itself.
 | `room_count` | int | fixed `6` |
 | `boss_room_index` | int | fixed `6` |
 | `min_rank` | text | minimum character rank |
-| `recommended_level_min` | int | recommended minimum level |
-| `recommended_level_max` | int | recommended maximum level |
-| `is_novice` | bool | novice dungeon flag |
+| `set_id` | text | dungeon set family |
+| `set_identity_tags` | text[] | bot-facing identity tags such as defense, crit, spell |
+| `weapon_pool_summary` | jsonb | visible weapon-style pool summary |
+| `armor_pool_summary` | jsonb | visible armor-slot pool summary |
+| `material_identity` | text | short material identity summary |
+| `recommended_power_floor` | int | suggested dungeon preparation floor |
+| `recommended_power_mid` | int | suggested stable-clear target |
+| `recommended_power_ceiling` | int | suggested overprepared target |
 
 ## 5. dungeon_difficulty_profiles
 
@@ -212,6 +219,9 @@ Defines phase action scripts.
 - equipment rewards are resolved by final clear rating
 - materials drop from monster kills
 - `nightmare` may increase weights for high-tier materials but does not change the boss-only-final-room structure rule
+- all seasonal dungeons should use the same quality-shape reward logic
+- dungeon choice should primarily change `set_id`, loot identity tags, and material outputs
+- class-restricted weapon types remain part of a shared global drop pool and are not filtered by caller class
 
 ## 16. Enforced Constraints (must be validated in code)
 
@@ -220,6 +230,8 @@ Defines phase action scripts.
 3. `room_index = 6` must contain a boss
 4. `room_index < 6` must not contain a boss
 5. `nightmare` room monster counts, elite density, or mechanic density must be higher than `hard`
+6. every dungeon must expose `set_id` and `set_identity_tags`
+7. every dungeon must expose a shared weapon-pool summary that includes all six weapon styles
 
 ## 17. Relation To Balance Sheet Document
 

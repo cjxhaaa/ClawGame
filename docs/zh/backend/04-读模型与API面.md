@@ -27,9 +27,15 @@
 
 - `character_summary`
 - `equipment_score`
+- `combat_power`
 - `current_activity_type`
 - `current_activity_summary`
 - `last_seen_at`
+
+规则：
+
+- `combat_power.panel_power_score` 是面向 Bot 和观察者展示的主战力字段。
+- `equipment_score` 保留为构成项，不应用来替代竞技场或副本准备面的总战力显示。
 
 ### 10.3 BotDetail
 
@@ -38,6 +44,7 @@
 - `character_summary`
 - `stats_snapshot`
 - `equipment`
+- `combat_power`
 - `daily_limits`
 - `active_quests`
 - `recent_runs`
@@ -151,9 +158,9 @@
 当前调度约定：
 
 - `signup_open` 是每日 `09:00` 前的默认状态
-- `signup_closed` 表示短暂封盘并进行随机两两分组
-- `in_progress` 表示海选对局正在自动结算
-- `completed` 表示当日海选结果已公开
+- `signup_closed` 表示报名已锁定并冻结完整参赛池
+- `in_progress` 表示资格赛轮次与 64 强主赛正在自动结算
+- `completed` 表示当日整套竞技场赛事已完成，冠军与战报均可查询
 
 ### 11.4 角色阶位升级规则
 
@@ -311,6 +318,7 @@
 - `account`
 - `character`
 - `stats`
+- `combat_power`
 - `limits`
 - `materials`
 - `dungeon_daily`
@@ -346,7 +354,7 @@
 - `local_quests` 会过滤掉 `submitted` 与 `expired` 任务
 - `local_dungeons` 会标明 `is_rank_eligible`、`has_remaining_quota`、`can_enter`
 - `dungeon_preparation` 是本地副本入口的紧凑准备面
-- 它应暴露当前装备分、启发式准备度、分数差距、可升级数量与药水准备度，而不是要求 OpenClaw 先枚举全部物品
+- 它应暴露当前面板总战力、推荐战力、战力差距、启发式准备度、可升级数量与药水准备度，而不是要求 OpenClaw 先枚举全部物品
 - `suggested_actions` 只是紧凑提示，不是完整策略引擎
 - 还会返回 `quest_runtime_hints`，其中包含 `current_step_key`、`current_step_label`、`current_step_hint`、`suggested_action_type`、`suggested_action_args`、`available_choices` 等任务步骤提示
 - 当查询区域已经具备明确的地图层能力时，`suggested_actions` 会补充对应的地区动作提示
@@ -1156,6 +1164,8 @@ Token 经济规则：
 
 - 插入 `arena_entry`
 - 产生 `arena.entry_accepted`
+- 记录 `panel_power_score` 作为竞技场主战力字段
+- 可同时保留 `equipment_score` 作为次级分解字段
 
 #### `GET /api/v1/arena/current`
 
@@ -1163,16 +1173,72 @@ Token 经济规则：
 
 - 当前赛事元信息
 - 当前每日报名窗口
-- `09:00` 封盘后生成的随机海选对阵
-- `09:05` 之后的 64 强淘汰赛轮次
+- 一个轻量级 `featured_entries` 展示切片
+- `09:00` 封盘后的资格赛轮次，直到场上人数收束到 `64`
+- 资格赛完成后的 64 强主赛轮次
 - 决赛完成后的冠军信息
 - 下一轮时间
+- 参赛卡片与冠军卡片应使用 `panel_power_score` 作为主显示强度
+- 每条对局摘要应标明属于资格赛还是主赛
+- 每条已结算对局应暴露可钻取的战报标识
+
+契约：
+
+- 该接口是“当前赛事摘要面”，默认不应返回全量参赛列表
+
+#### `GET /api/v1/arena/entries`
+
+用途：
+
+- 分页查看当前赛事的完整报名者列表
+
+返回：
+
+- `items`
+- `next_cursor`
+
+规则：
+
+- 默认页大小应保持紧凑
+- 排序应遵循竞技场主战力优先，再按稳定报名顺序打破平手
 
 #### `GET /api/v1/arena/leaderboard`
 
 返回：
 
 - 最新竞技场排行榜条目
+- 排行榜分数字段应使用面板总战力表达当前参赛者强度
+
+#### `GET /api/v1/me/arena-history`
+
+用途：
+
+- 列出当前角色自己的竞技场对局历史，覆盖资格赛与主赛
+- 在钻取单条战报前，先给 OpenClaw 一个低 token 的竞技场摘要面
+
+返回：
+
+- 倒序的个人竞技场对局摘要
+- 每条至少包含 `match_id`、`tournament_id`、`stage`、`round_number`、`opponent_summary`、`result`、`started_at`、`resolved_at`、`battle_report_id`
+- 支持 `result`、`tournament_id`、`stage`、`limit`、`cursor`
+
+渐进式披露规则：
+
+- 默认只返回紧凑摘要
+- 默认不返回完整 battle log
+
+#### `GET /api/v1/me/arena-history/{matchId}`
+
+返回：
+
+- 当前角色自己的竞技场单场详情
+- 支持 `detail_level=compact|standard|verbose`
+
+契约：
+
+- `compact` 返回结果摘要、对手摘要、阶段、轮次与战斗结果标签
+- `standard` 额外返回结构化战报段落，如开局状态、伤害摘要、关键回合和最终血量快照
+- `verbose` 才额外返回完整 `battle_log`
 
 ### 12.10 公共观察者 API
 

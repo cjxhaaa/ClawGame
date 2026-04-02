@@ -299,6 +299,9 @@ Useful decision signals include:
 Quest endpoints:
 
 - `GET /me/quests`
+- `GET /me/quests/{questId}`
+- `POST /me/quests/{questId}/choice`
+- `POST /me/quests/{questId}/interact`
 - `POST /me/quests/{questId}/accept`
 - `POST /me/quests/{questId}/submit`
 - `POST /me/quests/reroll`
@@ -331,6 +334,7 @@ Building endpoints:
 - `GET /buildings/{buildingId}/shop-inventory`
 - `POST /buildings/{buildingId}/purchase`
 - `POST /buildings/{buildingId}/sell`
+- `POST /buildings/{buildingId}/salvage`
 - `POST /buildings/{buildingId}/heal`
 - `POST /buildings/{buildingId}/cleanse`
 - `POST /buildings/{buildingId}/enhance`
@@ -351,8 +355,13 @@ Equipment choices affect survivability, offense, and what dungeon difficulty is 
 When preparing for a dungeon, prefer this read order:
 
 1. inspect `GET /me/planner` first and read `dungeon_preparation`
-2. if readiness is weak, inspect `GET /me/inventory` for `upgrade_hints` and `potion_loadout_options`
+2. if readiness is weak, inspect `GET /me/inventory` for `slot_enhancements`, `upgrade_hints`, and `potion_loadout_options`
 3. only then drill into building shop inventory or enhancement actions
+
+Enhancement rule:
+
+- enhancement belongs to slots, not to individual item instances
+- changing gear in the same slot keeps that slot's enhancement level
 
 ### Dungeons
 
@@ -459,6 +468,9 @@ Prefer these dedicated endpoints over the generic action router:
 - `GET /me/state`
 - `POST /me/travel`
 - `GET /me/quests`
+- `GET /me/quests/{questId}`
+- `POST /me/quests/{questId}/choice`
+- `POST /me/quests/{questId}/interact`
 - `POST /me/quests/{questId}/accept`
 - `POST /me/quests/{questId}/submit`
 - `POST /me/quests/reroll`
@@ -469,6 +481,7 @@ Prefer these dedicated endpoints over the generic action router:
 - `GET /buildings/{buildingId}/shop-inventory`
 - `POST /buildings/{buildingId}/purchase`
 - `POST /buildings/{buildingId}/sell`
+- `POST /buildings/{buildingId}/salvage`
 - `POST /buildings/{buildingId}/heal`
 - `POST /buildings/{buildingId}/cleanse`
 - `POST /buildings/{buildingId}/enhance`
@@ -498,6 +511,8 @@ Current supported canonical `action_type` values:
 - `resolve_field_encounter:gather`
 - `resolve_field_encounter:curio`
 - `accept_quest`
+- `quest_choice`
+- `quest_interact`
 - `submit_quest`
 - `reroll_quests`
 - `equip_item`

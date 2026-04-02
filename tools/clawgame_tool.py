@@ -811,12 +811,48 @@ def cmd_quests_list(args: argparse.Namespace, ctx: RuntimeContext, client: APICl
     return CommandResult("quests list", extract_data(envelope), envelope.get("request_id"))
 
 
+def cmd_quests_show(args: argparse.Namespace, ctx: RuntimeContext, client: APIClient) -> CommandResult:
+    envelope = authenticated_request(ctx, client, "quests show", "GET", f"/me/quests/{args.quest_id}")
+    save_state(ctx.state_file, ctx.state)
+    return CommandResult("quests show", extract_data(envelope), envelope.get("request_id"))
+
+
 def cmd_quests_accept(args: argparse.Namespace, ctx: RuntimeContext, client: APIClient) -> CommandResult:
     envelope = authenticated_request(ctx, client, "quests accept", "POST", f"/me/quests/{args.quest_id}/accept")
     data = extract_data(envelope)
     sync_action_payload(ctx.state, data if isinstance(data, dict) else None)
     save_state(ctx.state_file, ctx.state)
     return CommandResult("quests accept", data, envelope.get("request_id"))
+
+
+def cmd_quests_choice(args: argparse.Namespace, ctx: RuntimeContext, client: APIClient) -> CommandResult:
+    envelope = authenticated_request(
+        ctx,
+        client,
+        "quests choice",
+        "POST",
+        f"/me/quests/{args.quest_id}/choice",
+        body={"choice_key": args.choice_key},
+    )
+    data = extract_data(envelope)
+    sync_action_payload(ctx.state, data if isinstance(data, dict) else None)
+    save_state(ctx.state_file, ctx.state)
+    return CommandResult("quests choice", data, envelope.get("request_id"))
+
+
+def cmd_quests_interact(args: argparse.Namespace, ctx: RuntimeContext, client: APIClient) -> CommandResult:
+    envelope = authenticated_request(
+        ctx,
+        client,
+        "quests interact",
+        "POST",
+        f"/me/quests/{args.quest_id}/interact",
+        body={"interaction": args.interaction},
+    )
+    data = extract_data(envelope)
+    sync_action_payload(ctx.state, data if isinstance(data, dict) else None)
+    save_state(ctx.state_file, ctx.state)
+    return CommandResult("quests interact", data, envelope.get("request_id"))
 
 
 def cmd_quests_submit(args: argparse.Namespace, ctx: RuntimeContext, client: APIClient) -> CommandResult:
@@ -898,6 +934,21 @@ def cmd_buildings_sell(args: argparse.Namespace, ctx: RuntimeContext, client: AP
     sync_action_payload(ctx.state, data if isinstance(data, dict) else None)
     save_state(ctx.state_file, ctx.state)
     return CommandResult("buildings sell", data, envelope.get("request_id"))
+
+
+def cmd_buildings_salvage(args: argparse.Namespace, ctx: RuntimeContext, client: APIClient) -> CommandResult:
+    envelope = authenticated_request(
+        ctx,
+        client,
+        "buildings salvage",
+        "POST",
+        f"/buildings/{args.building_id}/salvage",
+        body={"item_id": args.item_id},
+    )
+    data = extract_data(envelope)
+    sync_action_payload(ctx.state, data if isinstance(data, dict) else None)
+    save_state(ctx.state_file, ctx.state)
+    return CommandResult("buildings salvage", data, envelope.get("request_id"))
 
 
 def cmd_buildings_heal(args: argparse.Namespace, ctx: RuntimeContext, client: APIClient) -> CommandResult:
@@ -1018,6 +1069,17 @@ def cmd_arena_current(args: argparse.Namespace, ctx: RuntimeContext, client: API
     return CommandResult("arena current", extract_data(envelope), envelope.get("request_id"))
 
 
+def cmd_arena_entries(args: argparse.Namespace, ctx: RuntimeContext, client: APIClient) -> CommandResult:
+    query: dict[str, Any] = {}
+    if args.limit is not None:
+        query["limit"] = args.limit
+    if args.cursor:
+        query["cursor"] = args.cursor
+    envelope = authenticated_request(ctx, client, "arena entries", "GET", "/arena/entries", query=query or None)
+    save_state(ctx.state_file, ctx.state)
+    return CommandResult("arena entries", extract_data(envelope), envelope.get("request_id"))
+
+
 def cmd_arena_leaderboard(args: argparse.Namespace, ctx: RuntimeContext, client: APIClient) -> CommandResult:
     envelope = authenticated_request(ctx, client, "arena leaderboard", "GET", "/arena/leaderboard")
     save_state(ctx.state_file, ctx.state)
@@ -1128,9 +1190,20 @@ def build_parser() -> argparse.ArgumentParser:
     quests_sub = quests.add_subparsers(dest="quests_command", required=True)
     quests_list = quests_sub.add_parser("list", help="list quests")
     quests_list.set_defaults(func=cmd_quests_list)
+    quests_show = quests_sub.add_parser("show", help="show quest runtime detail")
+    quests_show.add_argument("--quest-id", required=True)
+    quests_show.set_defaults(func=cmd_quests_show)
     quests_accept = quests_sub.add_parser("accept", help="accept a quest")
     quests_accept.add_argument("--quest-id", required=True)
     quests_accept.set_defaults(func=cmd_quests_accept)
+    quests_choice = quests_sub.add_parser("choice", help="submit a quest choice")
+    quests_choice.add_argument("--quest-id", required=True)
+    quests_choice.add_argument("--choice-key", required=True)
+    quests_choice.set_defaults(func=cmd_quests_choice)
+    quests_interact = quests_sub.add_parser("interact", help="submit a quest interaction")
+    quests_interact.add_argument("--quest-id", required=True)
+    quests_interact.add_argument("--interaction", required=True)
+    quests_interact.set_defaults(func=cmd_quests_interact)
     quests_submit = quests_sub.add_parser("submit", help="submit a quest")
     quests_submit.add_argument("--quest-id", required=True)
     quests_submit.set_defaults(func=cmd_quests_submit)
@@ -1166,6 +1239,10 @@ def build_parser() -> argparse.ArgumentParser:
     buildings_sell.add_argument("--building-id", required=True)
     buildings_sell.add_argument("--item-id", required=True)
     buildings_sell.set_defaults(func=cmd_buildings_sell)
+    buildings_salvage = buildings_sub.add_parser("salvage", help="salvage an item")
+    buildings_salvage.add_argument("--building-id", required=True)
+    buildings_salvage.add_argument("--item-id", required=True)
+    buildings_salvage.set_defaults(func=cmd_buildings_salvage)
     buildings_heal = buildings_sub.add_parser("heal", help="heal at a building")
     buildings_heal.add_argument("--building-id", required=True)
     buildings_heal.set_defaults(func=cmd_buildings_heal)
@@ -1217,6 +1294,10 @@ def build_parser() -> argparse.ArgumentParser:
     arena_signup.set_defaults(func=cmd_arena_signup)
     arena_current = arena_sub.add_parser("current", help="show current arena state")
     arena_current.set_defaults(func=cmd_arena_current)
+    arena_entries = arena_sub.add_parser("entries", help="list arena entrants with pagination")
+    arena_entries.add_argument("--limit", type=int)
+    arena_entries.add_argument("--cursor")
+    arena_entries.set_defaults(func=cmd_arena_entries)
     arena_leaderboard = arena_sub.add_parser("leaderboard", help="show arena leaderboard")
     arena_leaderboard.set_defaults(func=cmd_arena_leaderboard)
 

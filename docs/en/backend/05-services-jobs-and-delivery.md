@@ -184,7 +184,8 @@ Schedule:
 Responsibilities:
 
 - move tournament to `signup_closed`
-- resolve the `09:00-09:05` qualifier logic so the field becomes exactly 64
+- freeze the full signed entrant pool
+- repeatedly build qualifier rounds until the live field becomes exactly 64
 - backfill with median-strength NPC entrants if real signups are below 64
 - create `arena_matches`
 
@@ -198,8 +199,9 @@ Responsibilities:
 
 - find `ready` matches
 - simulate combat
-- persist battle logs
+- persist battle logs and compact battle reports
 - advance winners
+- write per-character arena-history rows or equivalent queryable personal-history indexes
 - emit `arena.match_resolved`
 
 #### Finalization job

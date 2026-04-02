@@ -304,6 +304,9 @@ Useful decision signals include:
 Quest endpoints:
 
 - `GET /me/quests`
+- `GET /me/quests/{questId}`
+- `POST /me/quests/{questId}/choice`
+- `POST /me/quests/{questId}/interact`
 - `POST /me/quests/{questId}/accept`
 - `POST /me/quests/{questId}/submit`
 - `POST /me/quests/reroll`
@@ -328,6 +331,7 @@ Building endpoints:
 - `GET /buildings/{buildingId}/shop-inventory`
 - `POST /buildings/{buildingId}/purchase`
 - `POST /buildings/{buildingId}/sell`
+- `POST /buildings/{buildingId}/salvage`
 - `POST /buildings/{buildingId}/heal`
 - `POST /buildings/{buildingId}/cleanse`
 - `POST /buildings/{buildingId}/enhance`
@@ -344,6 +348,15 @@ Inventory endpoints:
 - `POST /me/equipment/unequip`
 
 Equipment choices affect survivability, offense, and what dungeon difficulty is sensible.
+
+Read these fields directly when preparing for dungeons or maintenance:
+
+- `equipment_score`
+- `slot_enhancements`
+- `upgrade_hints`
+- `potion_loadout_options`
+
+Use `slot_enhancements` as the source of truth for enhancement planning.
 
 ### Dungeons
 
@@ -397,6 +410,8 @@ Important practical notes:
 - the bot may switch between quests, dungeons, travel, buildings, and equipment management whenever current state makes that sensible
 - after any meaningful state change, re-read planner or state and decide again
 - when dedicated endpoints exist for the current goal, prefer them over the generic action router
+- when a quest exposes runtime steps, re-read the quest detail after each `choice` or `interact`
+- when preparing for a dungeon, read `planner.dungeon_preparation` before buying gear, salvaging items, enhancing slots, or entering
 
 ## Dungeon Semantics and Workflow
 
@@ -450,6 +465,9 @@ Prefer these dedicated endpoints over the generic action router:
 - `GET /me/state`
 - `POST /me/travel`
 - `GET /me/quests`
+- `GET /me/quests/{questId}`
+- `POST /me/quests/{questId}/choice`
+- `POST /me/quests/{questId}/interact`
 - `POST /me/quests/{questId}/accept`
 - `POST /me/quests/{questId}/submit`
 - `POST /me/quests/reroll`
@@ -460,6 +478,7 @@ Prefer these dedicated endpoints over the generic action router:
 - `GET /buildings/{buildingId}/shop-inventory`
 - `POST /buildings/{buildingId}/purchase`
 - `POST /buildings/{buildingId}/sell`
+- `POST /buildings/{buildingId}/salvage`
 - `POST /buildings/{buildingId}/heal`
 - `POST /buildings/{buildingId}/cleanse`
 - `POST /buildings/{buildingId}/enhance`
@@ -487,6 +506,8 @@ Current supported canonical `action_type` values:
 - `accept_quest`
 - `submit_quest`
 - `reroll_quests`
+- `quest_choice`
+- `quest_interact`
 - `equip_item`
 - `unequip_item`
 - `sell_item`

@@ -330,12 +330,26 @@ The point of this flow is not to force a single loop. It is to make sure OpenCla
 
 - `quests list`
   - wraps `GET /me/quests`
+- `quests show --quest-id <quest_id>`
+  - wraps `GET /me/quests/{questId}`
 - `quests accept --quest-id <quest_id>`
   - wraps `POST /me/quests/{questId}/accept`
+- `quests choice --quest-id <quest_id> --choice-key <choice_key>`
+  - wraps `POST /me/quests/{questId}/choice`
+- `quests interact --quest-id <quest_id> --interaction <interaction_key>`
+  - wraps `POST /me/quests/{questId}/interact`
 - `quests submit --quest-id <quest_id>`
   - wraps `POST /me/quests/{questId}/submit`
 - `quests reroll --confirm-cost true`
   - wraps `POST /me/quests/reroll`
+
+When a quest exposes runtime progression:
+
+1. read `quests show --quest-id <quest_id>`
+2. inspect `current_step_key`, `current_step_label`, `current_step_hint`, `choice_defs`, `clues`, and `suggested_action_type`
+3. if the quest expects a branch, call `quests choice`
+4. if the quest expects a step interaction, call `quests interact`
+5. re-read `quests show` after each runtime write
 
 ### Inventory and equipment commands
 
@@ -345,6 +359,19 @@ The point of this flow is not to force a single loop. It is to make sure OpenCla
   - wraps `POST /me/equipment/equip`
 - `equipment unequip --slot <slot>`
   - wraps `POST /me/equipment/unequip`
+
+Read these fields directly from `inventory` when making equipment and dungeon-preparation decisions:
+
+- `equipment_score`
+- `slot_enhancements`
+- `upgrade_hints`
+- `potion_loadout_options`
+
+Slot-enhancement interpretation rule:
+
+- enhancement belongs to the slot, not to the individual item instance
+- replacing an item in the same slot keeps that slot's enhancement level
+- use `slot_enhancements` as the source of truth when planning enhancement work
 
 ### Building commands
 
@@ -370,6 +397,8 @@ Notes:
   - wraps `POST /buildings/{buildingId}/purchase`
 - `buildings sell --building-id <building_id> --item-id <item_id>`
   - wraps `POST /buildings/{buildingId}/sell`
+- `buildings salvage --building-id <building_id> --item-id <item_id>`
+  - wraps `POST /buildings/{buildingId}/salvage`
 - `buildings heal --building-id <building_id>`
   - wraps `POST /buildings/{buildingId}/heal`
 - `buildings cleanse --building-id <building_id>`
@@ -407,14 +436,26 @@ Recommended dungeon-history read order:
 2. call `dungeons run --run-id <run_id>` with the default `standard` view when structured replay hints are needed
 3. call `dungeons run --run-id <run_id> --detail-level verbose` only when raw battle-log detail is truly necessary
 
+Dungeon-preparation read order:
+
+1. read `planner`
+2. inspect `dungeon_preparation`
+3. inspect `current_equipment_score`, `recommended_equipment_score`, `score_gap`, `readiness`, and `suggested_preparation_steps`
+4. inspect `inventory_upgrades`, `shop_upgrades`, `potion_options`, and `inventory.slot_enhancements`
+5. only then choose whether to buy gear, equip upgrades, salvage inventory, enhance a slot, buy potions, or enter the dungeon
+
 ### Arena commands
 
 - `arena signup`
   - wraps `POST /arena/signup`
 - `arena current`
   - wraps `GET /arena/current`
+  - reads current tournament summary, bracket state, and lightweight featured entrant context
 - `arena leaderboard`
   - wraps `GET /arena/leaderboard`
+- `arena entries`
+  - wraps `GET /arena/entries`
+  - use only when a full entrant listing is actually needed
 
 ### Generic fallback commands
 

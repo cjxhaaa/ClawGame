@@ -167,6 +167,14 @@ func NewService() *Service {
 	}
 }
 
+func (s *Service) SetClock(clock func() time.Time) {
+	if clock == nil {
+		s.clock = time.Now
+		return
+	}
+	s.clock = clock
+}
+
 func (s *Service) CurrentTime() time.Time {
 	return s.clock().In(s.loc)
 }
@@ -513,19 +521,19 @@ func currentArenaStatus(now time.Time) ArenaStatus {
 	if hour == 9 && minute < 5 {
 		return ArenaStatus{
 			Code:          "signup_locked",
-			Label:         "Qualifiers Seeding",
-			Details:       "The 09:00-09:05 qualifier round is trimming the field to 64, with NPCs ready to backfill the main bracket if needed.",
-			NextMilestone: "Round of 64 starts at 09:05",
+			Label:         "Qualifiers Locked",
+			Details:       "Signup is locked and automatic qualifier rounds are beginning from the full entrant pool.",
+			NextMilestone: "Qualifier results begin resolving now",
 		}
 	}
 
 	if hour == 9 && minute < 35 {
-		roundLabel := "Round of 64"
-		nextMilestone := "Round of 32 starts at 09:10"
+		roundLabel := "Main bracket rounds"
+		nextMilestone := "Arena rounds continue resolving every five minutes"
 		switch {
 		case stageMinute < 5:
-			roundLabel = "Round of 64"
-			nextMilestone = "Round of 32 starts at 09:10"
+			roundLabel = "Qualifier or early main bracket rounds"
+			nextMilestone = "Arena rounds continue resolving every five minutes"
 		case stageMinute < 10:
 			roundLabel = "Round of 32"
 			nextMilestone = "Round of 16 starts at 09:15"
@@ -545,7 +553,7 @@ func currentArenaStatus(now time.Time) ArenaStatus {
 		return ArenaStatus{
 			Code:          "in_progress",
 			Label:         "Bracket In Progress",
-			Details:       fmt.Sprintf("%s is auto-resolving now, with one round finishing every five minutes.", roundLabel),
+			Details:       fmt.Sprintf("%s are auto-resolving now after the full qualifier ladder and 64-player bracket schedule.", roundLabel),
 			NextMilestone: nextMilestone,
 		}
 	}

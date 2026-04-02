@@ -61,6 +61,36 @@ type StatsSnapshot struct {
 	MagicMastery    float64 `json:"magic_mastery"`
 }
 
+type ArenaPowerPreview struct {
+	ReferencePower        int    `json:"reference_power"`
+	PowerDelta            int    `json:"power_delta"`
+	EstimatedWinRateBand  string `json:"estimated_win_rate_band"`
+	EstimatedStrengthTier string `json:"estimated_strength_tier"`
+}
+
+type DungeonPowerPreview struct {
+	DungeonID           string `json:"dungeon_id"`
+	DungeonName         string `json:"dungeon_name"`
+	RecommendedPowerMin int    `json:"recommended_power_min"`
+	RecommendedPowerMax int    `json:"recommended_power_max"`
+	CurrentPower        int    `json:"current_power"`
+	EstimatedConfidence string `json:"estimated_confidence"`
+	EstimatedClearBand  string `json:"estimated_clear_band"`
+}
+
+type CombatPowerSummary struct {
+	FormulaVersion     string                `json:"formula_version"`
+	EffectiveLevel     int                   `json:"effective_level"`
+	RankCoeff          float64               `json:"rank_coeff"`
+	BaseGrowthScore    int                   `json:"base_growth_score"`
+	EquipmentScore     int                   `json:"equipment_score"`
+	BuildModifierScore int                   `json:"build_modifier_score"`
+	PanelPowerScore    int                   `json:"panel_power_score"`
+	PowerTier          string                `json:"power_tier"`
+	ArenaPreview       ArenaPowerPreview     `json:"arena_preview"`
+	DungeonPreviews    []DungeonPowerPreview `json:"dungeon_previews"`
+}
+
 type DailyLimits struct {
 	DailyResetAt        string `json:"daily_reset_at"`
 	QuestCompletionCap  int    `json:"quest_completion_cap"`
@@ -97,6 +127,7 @@ type StateView struct {
 	Account          auth.Account          `json:"account"`
 	Character        Summary               `json:"character"`
 	Stats            StatsSnapshot         `json:"stats"`
+	CombatPower      CombatPowerSummary    `json:"combat_power"`
 	Limits           DailyLimits           `json:"limits"`
 	Materials        []MaterialBalance     `json:"materials"`
 	SlotEnhancements []SlotEnhancementView `json:"slot_enhancements"`

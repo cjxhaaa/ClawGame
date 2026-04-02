@@ -392,7 +392,7 @@ func NewServer(cfg config.API) *Server {
 				isRankEligible := dungeons.RankAllows(character.Rank, definition.MinRank)
 				hasRemainingQuota := limits.DungeonEntryUsed < limits.DungeonEntryCap
 				canEnter := isRankEligible && hasRemainingQuota
-				prep := buildDungeonPreparationEntry(character, definition, inventoryView)
+				prep := buildDungeonPreparationEntry(character, definition, inventoryView, state.CombatPower)
 
 				localDungeons = append(localDungeons, map[string]any{
 					"dungeon_id":                  definition.DungeonID,
@@ -406,6 +406,9 @@ func NewServer(cfg config.API) *Server {
 					"potion_slot_count":           2,
 					"recommended_level_min":       definition.RecommendedLevelMin,
 					"recommended_level_max":       definition.RecommendedLevelMax,
+					"current_power":               prep["current_power"],
+					"recommended_power":           prep["recommended_power"],
+					"power_gap":                   prep["power_gap"],
 					"current_equipment_score":     prep["current_equipment_score"],
 					"recommended_equipment_score": prep["recommended_equipment_score"],
 					"score_gap":                   prep["score_gap"],
@@ -460,6 +463,7 @@ func NewServer(cfg config.API) *Server {
 				"quest_runtime_hints": questRuntimeHints,
 				"local_dungeons":      localDungeons,
 				"dungeon_preparation": map[string]any{
+					"current_power":           state.CombatPower.PanelPowerScore,
 					"current_equipment_score": inventoryView.EquipmentScore,
 					"upgrade_hint_count":      len(inventoryView.UpgradeHints),
 					"potion_option_count":     len(inventoryView.PotionLoadoutOptions),
@@ -1123,7 +1127,13 @@ func NewServer(cfg config.API) *Server {
 				return
 			}
 
-			entry, err := arenaService.Signup(character, inventoryService.ComputeEquipmentScore(character), worldService.CurrentArenaStatus(worldService.CurrentTime()))
+			state, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, worldService)
+			if err != nil {
+				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to build character state before arena signup")
+				return
+			}
+
+			entry, err := arenaService.Signup(character, state.CombatPower.PanelPowerScore, inventoryService.ComputeEquipmentScore(character), worldService.CurrentArenaStatus(worldService.CurrentTime()))
 			if err != nil {
 				switch {
 				case errors.Is(err, arena.ErrSignupClosed):
@@ -1147,8 +1157,9 @@ func NewServer(cfg config.API) *Server {
 				RegionID:         character.LocationRegionID,
 				Summary:          fmt.Sprintf("%s signed up for arena.", character.Name),
 				Payload: map[string]any{
-					"character_id":    entry.CharacterID,
-					"equipment_score": entry.EquipmentScore,
+					"character_id":      entry.CharacterID,
+					"panel_power_score": entry.PanelPowerScore,
+					"equipment_score":   entry.EquipmentScore,
 				},
 				OccurredAt: time.Now().Format(time.RFC3339),
 			})
@@ -1163,8 +1174,106 @@ func NewServer(cfg config.API) *Server {
 			writeEnvelope(w, r, http.StatusOK, arenaService.GetCurrent(worldService.CurrentArenaStatus(worldService.CurrentTime())))
 		})
 
+		r.Get("/arena/entries", func(w http.ResponseWriter, r *http.Request) {
+			limit := 20
+			if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
+				if parsed, err := strconv.Atoi(rawLimit); err == nil && parsed > 0 {
+					limit = parsed
+				}
+			}
+			items := arenaService.ListEntries(arena.EntryListFilters{
+				Cursor: strings.TrimSpace(r.URL.Query().Get("cursor")),
+				Limit:  limit,
+			})
+			nextCursor := ""
+			if len(items) == limit {
+				nextCursor = items[len(items)-1].CharacterID
+			}
+			writeEnvelope(w, r, http.StatusOK, map[string]any{
+				"items":       items,
+				"next_cursor": nextCursor,
+			})
+		})
+
+		r.Get("/arena/matches/{matchId}", func(w http.ResponseWriter, r *http.Request) {
+			detail, err := arenaService.GetPublicMatchDetail(chi.URLParam(r, "matchId"), strings.TrimSpace(r.URL.Query().Get("detail_level")))
+			if err != nil {
+				switch {
+				case errors.Is(err, arena.ErrArenaMatchNotFound):
+					writeError(w, r, http.StatusNotFound, "ARENA_MATCH_NOT_FOUND", "arena match does not exist")
+				default:
+					writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to load arena match detail")
+				}
+				return
+			}
+			writeEnvelope(w, r, http.StatusOK, detail)
+		})
+
 		r.Get("/arena/leaderboard", func(w http.ResponseWriter, r *http.Request) {
 			writeEnvelope(w, r, http.StatusOK, map[string]any{"entries": arenaService.GetLeaderboard()})
+		})
+
+		r.Get("/me/arena-history", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+
+			character, exists := characterService.GetCharacterByAccount(account)
+			if !exists {
+				writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before viewing arena history")
+				return
+			}
+
+			limit := 20
+			if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
+				if parsed, err := strconv.Atoi(rawLimit); err == nil && parsed > 0 {
+					limit = parsed
+				}
+			}
+
+			items := arenaService.ListHistory(character.CharacterID, arena.HistoryFilters{
+				Result:       strings.TrimSpace(r.URL.Query().Get("result")),
+				TournamentID: strings.TrimSpace(r.URL.Query().Get("tournament_id")),
+				Stage:        strings.TrimSpace(r.URL.Query().Get("stage")),
+				Cursor:       strings.TrimSpace(r.URL.Query().Get("cursor")),
+				Limit:        limit,
+			})
+			nextCursor := ""
+			if len(items) == limit {
+				nextCursor = items[len(items)-1].MatchID
+			}
+
+			writeEnvelope(w, r, http.StatusOK, map[string]any{
+				"items":       items,
+				"next_cursor": nextCursor,
+			})
+		})
+
+		r.Get("/me/arena-history/{matchId}", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+
+			character, exists := characterService.GetCharacterByAccount(account)
+			if !exists {
+				writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before viewing arena history")
+				return
+			}
+
+			detail, err := arenaService.GetHistoryDetail(character.CharacterID, chi.URLParam(r, "matchId"), strings.TrimSpace(r.URL.Query().Get("detail_level")))
+			if err != nil {
+				switch {
+				case errors.Is(err, arena.ErrArenaMatchNotFound):
+					writeError(w, r, http.StatusNotFound, "ARENA_MATCH_NOT_FOUND", "arena match does not exist")
+				default:
+					writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to load arena match detail")
+				}
+				return
+			}
+
+			writeEnvelope(w, r, http.StatusOK, detail)
 		})
 
 		r.Get("/arena/duel", func(w http.ResponseWriter, r *http.Request) {
@@ -1615,7 +1724,7 @@ func NewServer(cfg config.API) *Server {
 					"daily_limits":           limits,
 					"active_quests":          []any{},
 					"recent_runs":            recentRuns,
-					"arena_history":          []any{},
+					"arena_history":          arenaService.ListHistory(botID, arena.HistoryFilters{Limit: 10}),
 					"recent_events":          events,
 					"completed_quests_today": completedToday,
 					"dungeon_runs_today":     dungeonToday,
@@ -1814,6 +1923,8 @@ func buildCharacterState(account auth.Account, characterService *characters.Serv
 	}
 
 	state.Stats = inventoryService.DeriveStats(state.Character, state.Stats)
+	inventoryView := inventoryService.GetInventory(state.Character)
+	state.CombatPower, _ = buildCombatPower(state.Character, state.Stats, inventoryView, dungeonService)
 	state.SlotEnhancements = inventoryService.ListSlotEnhancements(state.Character)
 	state.Objectives = questService.ActiveObjectives(state.Character.CharacterID)
 	state.ValidActions = append(state.ValidActions, questService.ListRuntimeActions(state.Character.CharacterID)...)
@@ -2126,17 +2237,22 @@ func appendUniqueString(values []string, candidate string) []string {
 	return append(values, candidate)
 }
 
-func buildDungeonPreparationEntry(character characters.Summary, definition dungeons.DefinitionView, inventoryView inventory.InventoryView) map[string]any {
+func buildDungeonPreparationEntry(character characters.Summary, definition dungeons.DefinitionView, inventoryView inventory.InventoryView, combatPower characters.CombatPowerSummary) map[string]any {
 	recommendedScore := heuristicRecommendedEquipmentScore(definition)
 	scoreGap := recommendedScore - inventoryView.EquipmentScore
 	if scoreGap < 0 {
 		scoreGap = 0
 	}
+	recommendedPower := heuristicRecommendedPanelPower(definition)
+	powerGap := recommendedPower - combatPower.PanelPowerScore
+	if powerGap < 0 {
+		powerGap = 0
+	}
 	readiness := "ready"
 	switch {
-	case inventoryView.EquipmentScore+5 < recommendedScore:
+	case combatPower.PanelPowerScore+250 < recommendedPower:
 		readiness = "underprepared"
-	case inventoryView.EquipmentScore < recommendedScore:
+	case combatPower.PanelPowerScore < recommendedPower:
 		readiness = "caution"
 	}
 
@@ -2189,6 +2305,9 @@ func buildDungeonPreparationEntry(character characters.Summary, definition dunge
 	}
 
 	return map[string]any{
+		"current_power":                 combatPower.PanelPowerScore,
+		"recommended_power":             recommendedPower,
+		"power_gap":                     powerGap,
 		"dungeon_id":                    definition.DungeonID,
 		"name":                          definition.Name,
 		"current_equipment_score":       inventoryView.EquipmentScore,
@@ -2203,6 +2322,15 @@ func buildDungeonPreparationEntry(character characters.Summary, definition dunge
 		"suggested_preparation_steps":   steps,
 		"available_gold":                character.Gold,
 	}
+}
+
+func heuristicRecommendedPanelPower(definition dungeons.DefinitionView) int {
+	minPower := recommendedPowerForLevel(definition.RecommendedLevelMin, definition.MinRank)
+	maxPower := recommendedPowerForLevel(definition.RecommendedLevelMax, definition.MinRank)
+	if maxPower < minPower {
+		maxPower = minPower
+	}
+	return (minPower + maxPower) / 2
 }
 
 func heuristicRecommendedEquipmentScore(definition dungeons.DefinitionView) int {
@@ -3513,7 +3641,12 @@ func executeAction(account auth.Account, actionType string, actionArgs map[strin
 			return nil, characters.ErrCharacterNotFound
 		}
 
-		entry, err := arenaService.Signup(character, inventoryService.ComputeEquipmentScore(character), worldService.CurrentArenaStatus(worldService.CurrentTime()))
+		state, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, worldService)
+		if err != nil {
+			return nil, err
+		}
+
+		entry, err := arenaService.Signup(character, state.CombatPower.PanelPowerScore, inventoryService.ComputeEquipmentScore(character), worldService.CurrentArenaStatus(worldService.CurrentTime()))
 		if err != nil {
 			return nil, err
 		}

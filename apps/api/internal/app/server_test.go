@@ -9,7 +9,9 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	"clawgame/apps/api/internal/characters"
 	"clawgame/apps/api/internal/dungeons"
 	"clawgame/apps/api/internal/platform/config"
 )
@@ -326,6 +328,9 @@ func TestAuthCharacterFlow(t *testing.T) {
 			Character struct {
 				LocationRegionID string `json:"location_region_id"`
 			} `json:"character"`
+			CombatPower struct {
+				PanelPowerScore int `json:"panel_power_score"`
+			} `json:"combat_power"`
 			Objectives []struct {
 				QuestID string `json:"quest_id"`
 			} `json:"objectives"`
@@ -341,6 +346,9 @@ func TestAuthCharacterFlow(t *testing.T) {
 	}
 	if len(stateResponse.Data.ValidActions) == 0 {
 		t.Fatal("expected valid actions to be populated")
+	}
+	if stateResponse.Data.CombatPower.PanelPowerScore <= 0 {
+		t.Fatal("expected combat_power.panel_power_score in /me/state")
 	}
 	if len(stateResponse.Data.Objectives) != 0 {
 		t.Fatalf("expected no active objectives yet, got %d", len(stateResponse.Data.Objectives))
@@ -2394,6 +2402,9 @@ func TestPlannerIncludesDungeonPreparationHints(t *testing.T) {
 	var plannerResponse struct {
 		Data struct {
 			LocalDungeons []struct {
+				CurrentPower              int    `json:"current_power"`
+				RecommendedPower          int    `json:"recommended_power"`
+				PowerGap                  int    `json:"power_gap"`
 				DungeonID                 string `json:"dungeon_id"`
 				CurrentEquipmentScore     int    `json:"current_equipment_score"`
 				RecommendedEquipmentScore int    `json:"recommended_equipment_score"`
@@ -2401,10 +2412,14 @@ func TestPlannerIncludesDungeonPreparationHints(t *testing.T) {
 				Readiness                 string `json:"readiness"`
 			} `json:"local_dungeons"`
 			DungeonPreparation struct {
+				CurrentPower          int `json:"current_power"`
 				CurrentEquipmentScore int `json:"current_equipment_score"`
 				UpgradeHintCount      int `json:"upgrade_hint_count"`
 				PotionOptionCount     int `json:"potion_option_count"`
 				Items                 []struct {
+					CurrentPower               int              `json:"current_power"`
+					RecommendedPower           int              `json:"recommended_power"`
+					PowerGap                   int              `json:"power_gap"`
 					DungeonID                  string           `json:"dungeon_id"`
 					Readiness                  string           `json:"readiness"`
 					ScoreGap                   int              `json:"score_gap"`
@@ -2424,10 +2439,16 @@ func TestPlannerIncludesDungeonPreparationHints(t *testing.T) {
 	if plannerResponse.Data.DungeonPreparation.CurrentEquipmentScore <= 0 {
 		t.Fatal("expected dungeon_preparation current_equipment_score")
 	}
+	if plannerResponse.Data.DungeonPreparation.CurrentPower <= 0 {
+		t.Fatal("expected dungeon_preparation current_power")
+	}
 	if len(plannerResponse.Data.DungeonPreparation.Items) == 0 {
 		t.Fatal("expected dungeon_preparation items")
 	}
 	item := plannerResponse.Data.DungeonPreparation.Items[0]
+	if item.CurrentPower <= 0 || item.RecommendedPower <= 0 {
+		t.Fatal("expected dungeon_preparation item current/recommended power")
+	}
 	if item.DungeonID == "" {
 		t.Fatal("expected dungeon_preparation item dungeon_id")
 	}
@@ -3682,6 +3703,249 @@ func TestBuildingActionsApplyEconomyEffects(t *testing.T) {
 	}, loginResponse.Data.AccessToken, http.StatusBadRequest, &sellEquippedErr)
 	if sellEquippedErr.Error.Code != "INVALID_ACTION_STATE" {
 		t.Fatalf("expected INVALID_ACTION_STATE, got %q", sellEquippedErr.Error.Code)
+	}
+}
+
+func TestArenaSignupUsesPanelPowerScore(t *testing.T) {
+	server := NewServer(config.API{Port: "8080"})
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		t.Fatalf("load location: %v", err)
+	}
+	fixedNow := time.Date(2026, 4, 2, 8, 30, 0, 0, loc)
+	server.worldService.SetClock(func() time.Time { return fixedNow })
+	server.arenaService.SetClock(func() time.Time { return fixedNow })
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "bot-arena-power",
+		"password": "verysecure",
+	}), "", http.StatusOK, nil)
+
+	var loginResponse struct {
+		Data struct {
+			AccessToken string `json:"access_token"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "bot-arena-power",
+		"password": "verysecure",
+	}), "", http.StatusOK, &loginResponse)
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
+		"name":         "ArenaPower",
+		"class":        "warrior",
+		"weapon_style": "great_axe",
+	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+
+	var stateResponse struct {
+		Data struct {
+			Character struct {
+				CharacterID string `json:"character_id"`
+			} `json:"character"`
+			CombatPower struct {
+				PanelPowerScore int `json:"panel_power_score"`
+			} `json:"combat_power"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/state", nil, loginResponse.Data.AccessToken, http.StatusOK, &stateResponse)
+	if stateResponse.Data.CombatPower.PanelPowerScore <= 0 {
+		t.Fatal("expected positive panel_power_score before arena signup")
+	}
+	if _, _, _, _, err := server.characterService.ApplyQuestSubmission(stateResponse.Data.Character.CharacterID, characters.QuestSummary{
+		QuestID:          "quest_rank_seed",
+		Title:            "Arena eligibility warmup",
+		RewardReputation: 250,
+		RewardGold:       0,
+		ProgressTarget:   1,
+	}); err != nil {
+		t.Fatalf("seed arena-eligible rank: %v", err)
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/state", nil, loginResponse.Data.AccessToken, http.StatusOK, &stateResponse)
+
+	var signupResponse struct {
+		Data struct {
+			SignedUp bool `json:"signed_up"`
+			Entry    struct {
+				CharacterID     string `json:"character_id"`
+				PanelPowerScore int    `json:"panel_power_score"`
+				EquipmentScore  int    `json:"equipment_score"`
+			} `json:"entry"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/arena/signup", nil, loginResponse.Data.AccessToken, http.StatusOK, &signupResponse)
+	if !signupResponse.Data.SignedUp {
+		t.Fatal("expected arena signup success")
+	}
+	if signupResponse.Data.Entry.PanelPowerScore != stateResponse.Data.CombatPower.PanelPowerScore {
+		t.Fatalf("expected signup entry panel_power_score %d, got %d", stateResponse.Data.CombatPower.PanelPowerScore, signupResponse.Data.Entry.PanelPowerScore)
+	}
+	if signupResponse.Data.Entry.EquipmentScore <= 0 {
+		t.Fatal("expected equipment_score to remain available as breakdown field")
+	}
+
+	var currentResponse struct {
+		Data struct {
+			HighestPower    int `json:"highest_panel_power"`
+			LowestPower     int `json:"lowest_panel_power"`
+			MedianPower     int `json:"median_panel_power"`
+			FeaturedEntries []struct {
+				CharacterID     string `json:"character_id"`
+				PanelPowerScore int    `json:"panel_power_score"`
+			} `json:"featured_entries"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/arena/current", nil, "", http.StatusOK, &currentResponse)
+	if len(currentResponse.Data.FeaturedEntries) == 0 {
+		t.Fatal("expected arena current featured entries after signup")
+	}
+	if currentResponse.Data.HighestPower < currentResponse.Data.LowestPower {
+		t.Fatalf("expected current highest power >= lowest power, got %d < %d", currentResponse.Data.HighestPower, currentResponse.Data.LowestPower)
+	}
+	if currentResponse.Data.MedianPower <= 0 {
+		t.Fatal("expected arena current median power summary")
+	}
+	if currentResponse.Data.FeaturedEntries[0].PanelPowerScore <= 0 {
+		t.Fatal("expected arena current featured entry panel_power_score")
+	}
+
+	var entriesResponse struct {
+		Data struct {
+			Items []struct {
+				CharacterID string `json:"character_id"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/arena/entries?limit=10", nil, "", http.StatusOK, &entriesResponse)
+	if len(entriesResponse.Data.Items) == 0 {
+		t.Fatal("expected arena entries page after signup")
+	}
+
+	var leaderboardResponse struct {
+		Data struct {
+			Entries []struct {
+				Score      int    `json:"score"`
+				ScoreLabel string `json:"score_label"`
+			} `json:"entries"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/arena/leaderboard", nil, "", http.StatusOK, &leaderboardResponse)
+	if len(leaderboardResponse.Data.Entries) == 0 {
+		t.Fatal("expected arena leaderboard entries")
+	}
+	if leaderboardResponse.Data.Entries[0].ScoreLabel != "panel_power_score" {
+		t.Fatalf("expected panel_power_score leaderboard label, got %q", leaderboardResponse.Data.Entries[0].ScoreLabel)
+	}
+	if leaderboardResponse.Data.Entries[0].Score <= 0 {
+		t.Fatal("expected positive arena leaderboard score")
+	}
+}
+
+func TestArenaHistoryEndpointsExposeResolvedBattles(t *testing.T) {
+	server := NewServer(config.API{Port: "8080"})
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		t.Fatalf("load location: %v", err)
+	}
+	currentNow := time.Date(2026, 4, 2, 8, 30, 0, 0, loc)
+	server.worldService.SetClock(func() time.Time { return currentNow })
+	server.arenaService.SetClock(func() time.Time { return currentNow })
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "bot-arena-history",
+		"password": "verysecure",
+	}), "", http.StatusOK, nil)
+
+	var loginResponse struct {
+		Data struct {
+			AccessToken string `json:"access_token"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "bot-arena-history",
+		"password": "verysecure",
+	}), "", http.StatusOK, &loginResponse)
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
+		"name":         "ArenaArchivist",
+		"class":        "warrior",
+		"weapon_style": "sword_shield",
+	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+
+	var stateResponse struct {
+		Data struct {
+			Character struct {
+				CharacterID string `json:"character_id"`
+			} `json:"character"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/state", nil, loginResponse.Data.AccessToken, http.StatusOK, &stateResponse)
+	if _, _, _, _, err := server.characterService.ApplyQuestSubmission(stateResponse.Data.Character.CharacterID, characters.QuestSummary{
+		QuestID:          "quest_rank_seed_history",
+		Title:            "Arena eligibility warmup",
+		RewardReputation: 250,
+	}); err != nil {
+		t.Fatalf("seed arena-eligible rank: %v", err)
+	}
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/arena/signup", nil, loginResponse.Data.AccessToken, http.StatusOK, nil)
+
+	currentNow = time.Date(2026, 4, 2, 10, 0, 0, 0, loc)
+
+	var historyResponse struct {
+		Data struct {
+			Items []struct {
+				MatchID string `json:"match_id"`
+				Result  string `json:"result"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/arena-history?limit=20", nil, loginResponse.Data.AccessToken, http.StatusOK, &historyResponse)
+	if len(historyResponse.Data.Items) == 0 {
+		t.Fatal("expected arena history items after arena resolution")
+	}
+
+	matchID := historyResponse.Data.Items[0].MatchID
+	if matchID == "" {
+		t.Fatal("expected arena history item to include match_id")
+	}
+
+	var detailResponse struct {
+		Data struct {
+			MatchID      string         `json:"match_id"`
+			Result       string         `json:"result"`
+			BattleReport map[string]any `json:"battle_report"`
+			BattleLog    []any          `json:"battle_log"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/arena-history/"+matchID+"?detail_level=verbose", nil, loginResponse.Data.AccessToken, http.StatusOK, &detailResponse)
+	if detailResponse.Data.MatchID != matchID {
+		t.Fatalf("expected arena history detail match %q, got %q", matchID, detailResponse.Data.MatchID)
+	}
+	if detailResponse.Data.BattleReport == nil {
+		t.Fatal("expected arena history detail to include battle_report")
+	}
+	if detailResponse.Data.Result != "bye" && len(detailResponse.Data.BattleLog) == 0 {
+		t.Fatal("expected non-bye arena history detail to include battle log")
+	}
+
+	var publicDetailResponse struct {
+		Data struct {
+			MatchID      string         `json:"match_id"`
+			BattleReport map[string]any `json:"battle_report"`
+			BattleLog    []any          `json:"battle_log"`
+			LeftEntry    map[string]any `json:"left_entry"`
+			RightEntry   map[string]any `json:"right_entry"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/arena/matches/"+matchID+"?detail_level=verbose", nil, "", http.StatusOK, &publicDetailResponse)
+	if publicDetailResponse.Data.MatchID != matchID {
+		t.Fatalf("expected public arena match detail match %q, got %q", matchID, publicDetailResponse.Data.MatchID)
+	}
+	if publicDetailResponse.Data.BattleReport == nil {
+		t.Fatal("expected public arena match detail to include battle_report")
+	}
+	if detailResponse.Data.Result != "bye" && len(publicDetailResponse.Data.BattleLog) == 0 {
+		t.Fatal("expected public non-bye arena match detail to include battle log")
 	}
 }
 

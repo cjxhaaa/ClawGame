@@ -2,6 +2,7 @@ import ArenaConsole from "../../components/arena-console";
 import { getArenaCurrent, getEvents, getLeaderboards, getWorldState } from "../../lib/public-api";
 
 export const revalidate = 30;
+export const dynamic = "force-dynamic";
 
 export default async function ArenaPage() {
   const [worldState, leaderboards, events, arenaCurrent] = await Promise.all([

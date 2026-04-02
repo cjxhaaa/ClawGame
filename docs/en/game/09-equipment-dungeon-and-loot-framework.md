@@ -2,20 +2,21 @@
 
 ## 1. Design Goals
 
-This module defines the first complete dungeon-driven equipment framework for ClawGame.
+This module defines the revised V1 dungeon-driven equipment framework for ClawGame.
 
-Goals:
+Core goals:
 
-- equipment progression should be primarily sourced from dungeon drops
-- a new baseline gear band should appear every `20` levels
-- bots should clearly understand what dungeon they should farm for each level bracket
-- dungeons should use a room-by-room challenge flow with up to `6` rooms per run
-- equipment rewards should primarily be driven by final challenge rating rather than a fixed final-boss chest
-- materials should mainly come from monster kills to preserve combat-level rewards
-- only weapons are class-restricted
-- all other wearable slots are shared across all classes
-- rarity, affix count, and set effects should be explicit and machine-readable
-- late-season play should naturally shift from leveling routes into dungeon and material routes
+- only `4` core dungeons are needed in the first live season
+- all `4` dungeons remain farmable for the entire season
+- bots should choose dungeons by desired set effect, not by obsolete level band
+- all `4` dungeons should expose readable loot identity before entry
+- each dungeon should drop a full shared equipment pool:
+  - all `6` weapon styles
+  - all universal body equipment slots
+- weapon drops are intentionally class-agnostic
+- dungeon identity should mainly come from set family and materials, not from exclusive slot access
+- set progression should revolve around `2-piece`, `4-piece`, and `6-piece` effects
+- rating-based rewards should stay readable for bots and observer UI
 
 ## 2. Equipment Slots and Wear Rules
 
@@ -23,7 +24,6 @@ Each character equips the following slots:
 
 - `weapon`
 - `head`
-- `wrist`
 - `chest`
 - `boots`
 - `ring`
@@ -31,630 +31,424 @@ Each character equips the following slots:
 
 Rules:
 
-- `weapon` is class-restricted
-- all other slots are universal and can be worn by any class
+- `weapon` has class and weapon-style restrictions when equipped
+- drops themselves are not class-filtered
+- all non-weapon slots are universal
 - only one item may occupy each slot
-- red and prismatic set pieces count by equipped set name, not by slot family
-- gear score should be derived from item tier, rarity, affix count, and upgrade level later
+- red and prismatic set pieces count by `set_id`
 
-## 3. Tier Structure
+## 3. Shared Dungeon Loot Structure
 
-Equipment is divided into five progression tiers tied to season level.
+The four V1 dungeons are parallel seasonal farms rather than a strict low-to-high ladder.
 
-| Tier | Recommended Level Range | Dungeon Band | Core Purpose |
-| --- | --- | --- | --- |
-| T1 | 1-20 | novice dungeon band | onboarding and stable early stats |
-| T2 | 21-40 | low-mid dungeon band | transition out of starter routes |
-| T3 | 41-60 | mid dungeon band | first serious build shaping |
-| T4 | 61-80 | advanced dungeon band | pre-cap optimization |
-| T5 | 81-100 | capstone dungeon band | max-level farming and set chasing |
+System rules:
 
-Recommended equip rule:
+- all four dungeons drop the current seasonal dungeon gear band
+- base stat budget is shared across all four dungeons
+- dungeon identity comes from:
+  - set family
+  - set effects
+  - monster/material theme
+  - difficulty profile
+- no dungeon should become worthless simply because the bot has reached a higher season level
 
-- bots can wear any tier they meet the level requirement for
-- dungeon drop tables heavily favor the matching band
-- lower-tier gear remains useful mainly for temporary gaps and salvage materials
+This means:
 
-## 4. Rarity and Affix Rules
+- Ancient Catacomb is still valuable in late season if the bot wants the defensive set
+- Thorned Hollow is still valuable if the bot wants precision/crit scaling
+- Sunscar Warvault is still valuable if the bot wants physical burst pressure
+- Obsidian Spire is still valuable if the bot wants spell throughput
 
-The game uses five quality grades.
+## 4. Quality and Affix Rules
 
-| Quality | Color | Affix Count | Set Bonus | Intended Identity |
+The game uses five quality grades:
+
+| Quality | Color | Extra Affixes | Set Bonus | Identity |
 | --- | --- | --- | --- | --- |
 | Blue | blue | 0 | no | stable baseline drop |
-| Purple | purple | 1 | no | efficient progression piece |
-| Gold | gold | 2 | no | premium farm target before set chase |
-| Red | red | 3 | yes | set-entry item |
-| Prismatic | rainbow | 4 | yes | apex chase item |
+| Purple | purple | 1 | no | efficient transition piece |
+| Gold | gold | 2 | no | high-value non-set piece |
+| Red | red | 3 | yes | standard set chase piece |
+| Prismatic | rainbow | 4 | yes | premium chase piece |
 
 Rules:
 
-- blue gear only has base slot stats
-- every rarity step above blue adds `+1` extra affix
-- red and prismatic gear can belong to named sets
-- red and prismatic sets support `2-piece`, `4-piece`, and `6-piece` effects
-- prismatic items should not introduce a separate set line in V1; they should be the highest-quality form of the same dungeon set family
+- blue items only have base slot stats
+- every quality step above blue adds `+1` extra affix
+- red and prismatic items can belong to named sets
+- all set lines support `2-piece`, `4-piece`, and `6-piece`
+- prismatic is the apex version of the same dungeon set family rather than a separate set line
 
-## 5. Slot Stat Identity
-
-Each slot should have a predictable baseline role.
+## 5. Slot Identity
 
 ### 5.1 Weapon
 
-Main purpose:
-
-- primary offense slot
+- primary offensive slot
 - strongest source of attack or healing scaling
-
-Main stat directions:
-
-- warrior weapons: `physical_attack`, small `max_hp`
-- mage weapons: `magic_attack`, small `speed`
-- priest weapons: `magic_attack`, `healing_power`, small `max_hp`
 
 ### 5.2 Head
 
-Main purpose:
-
 - balanced survivability slot
+- mostly `max_hp`, `physical_defense`, `magic_defense`
 
-Main stat directions:
-
-- `max_hp`
-- `physical_defense`
-- `magic_defense`
-
-### 5.3 Wrist
-
-Main purpose:
-
-- precision, offensive support, and build shaping
-
-Main stat directions:
-
-- `physical_attack` or `magic_attack`
-- `speed`
-- niche combat utility
-
-### 5.4 Chest
-
-Main purpose:
+### 5.3 Chest
 
 - largest defensive armor slot
+- mostly `max_hp`, `physical_defense`, `magic_defense`
 
-Main stat directions:
+### 5.4 Boots
 
-- `max_hp`
-- `physical_defense`
-- `magic_defense`
+- tempo and mobility slot
+- mostly `speed`, `max_hp`, and one defensive stat
 
-### 5.5 Boots
+### 5.5 Ring
 
-Main purpose:
+- offensive specialization slot
+- mostly `physical_attack`, `magic_attack`, or `healing_power`
 
-- movement tempo and tactical survivability
+### 5.6 Necklace
 
-Main stat directions:
+- sustain and utility slot
+- mostly `max_hp`, `healing_power`, `magic_defense`, and occasional `speed`
 
-- `speed`
-- `max_hp`
-- one defensive stat
+## 6. Shared Weapon and Armor Pool
 
-### 5.6 Ring
+Each dungeon can drop the same global equipment families.
 
-Main purpose:
+### 6.1 Weapon pool
 
-- offensive specialization
+All dungeons can drop all six weapon styles:
 
-Main stat directions:
+- Warrior: `sword_shield`
+- Warrior: `great_axe`
+- Mage: `staff`
+- Mage: `spellbook`
+- Priest: `scepter`
+- Priest: `holy_tome`
 
-- `physical_attack`
-- `magic_attack`
-- `healing_power`
+Drop rule:
 
-### 5.7 Necklace
+- the dungeon does not bias the weapon family to the active bot's class by default
+- a warrior can receive a staff
+- a mage can receive a shield weapon
+- duplicate or off-class weapons are expected and should feed salvage, reroll, trade-like economy later, or long-term stash logic
 
-Main purpose:
+### 6.2 Universal armor pool
 
-- resource and sustain specialization
+All dungeons can drop:
 
-Main stat directions:
+- `head`
+- `chest`
+- `boots`
+- `ring`
+- `necklace`
 
-- `max_hp`
-- `healing_power`
-- `magic_defense`
-- occasional `speed`
+## 7. Four Dungeon Set Families
 
-## 6. Affix Pool
+The first live season uses four parallel dungeon set families.
 
-Base affix pool for V1:
-
-- `+max_hp`
-- `+physical_attack`
-- `+magic_attack`
-- `+physical_defense`
-- `+magic_defense`
-- `+speed`
-- `+healing_power`
-
-Optional phase-two affixes:
-
-- `+accuracy`
-- `+status_mastery`
-- `+status_resistance`
-
-Affix rules:
-
-- affixes should roll from a slot-appropriate pool
-- the same affix should not duplicate on the same item in V1
-- blue items never roll affixes
-- prismatic items always roll four affixes with at least one high-value affix
-
-## 7. Dungeon Bands and Equipment Themes
-
-The following dungeons define the first five equipment bands.
-
-## 7.1 T1 Dungeon: Ancient Catacomb
-
-Level band:
-
-- recommended for levels `1-20`
+## 7.1 Ancient Catacomb
 
 Theme:
 
 - sealed tomb corridors
 - undead sentries
-- necromancer rites
+- ritual guardians
 
-Set family name:
+Set family:
 
-- `Gravewake`
+- `Gravewake Bastion`
 
-Narrative identity:
+Loot identity:
 
-- gear made from grave iron, candle soot cloth, and burial wards reclaimed from the catacomb
+- defense
+- block
+- anti-collapse sustain
 
-### T1 Weapon Names
+Bot-facing summary:
 
-| Class | Item Name | Theme |
-| --- | --- | --- |
-| Warrior | Gravewake Bastionblade | tomb guard sword-shield weapon |
-| Warrior | Gravewake Reaper Axe | executioner axe recovered from burial halls |
-| Mage | Gravewake Ash Staff | ashwood conduit from ritual braziers |
-| Mage | Gravewake Bone Codex | bone-bound spellbook from a necromancer archive |
-| Priest | Gravewake Chapel Scepter | reliquary scepter reclaimed from a ruined chapel |
-| Priest | Gravewake Vigil Tome | prayer tome sealed with funeral wax |
+- best for frontline stability
+- best for teams that need to survive long room chains
+- lower burst ceiling, higher consistency
 
-### T1 Universal Armor Names
+Set effects:
 
-| Slot | Item Name | Flavor |
-| --- | --- | --- |
-| Head | Gravewake Hood | stitched from burial cloth and ward thread |
-| Wrist | Gravewake Shackles | iron bands once used on the dead |
-| Chest | Gravewake Vestment | robe or coat lined with grave sigils |
-| Boots | Gravewake Marchers | boots hardened by tomb dust |
-| Ring | Gravewake Seal | seal ring from catacomb wardens |
-| Necklace | Gravewake Reliquary | bone charm holding dim holy residue |
+- `2-piece`: +10% `max_hp`, +8% `physical_defense`, +8% `magic_defense`
+- `4-piece`: after entering battle, gain a guard effect for `2` rounds; while guarded, damage taken is reduced by `10%`
+- `6-piece`: once per battle, when HP first falls below `35%`, restore `12% max_hp`, cleanse `1` debuff, and gain a shield equal to `15% max_hp`
 
-### T1 Baseline Slot Stats
+Suggested side flavor:
 
-| Slot | Main Stats |
-| --- | --- |
-| Weapon | +18 primary attack, +6 secondary scaling |
-| Head | +60 HP, +6 P.Def, +6 M.Def |
-| Wrist | +8 primary attack, +2 speed |
-| Chest | +90 HP, +10 P.Def, +10 M.Def |
-| Boots | +45 HP, +3 speed, +4 P.Def |
-| Ring | +10 primary attack |
-| Necklace | +45 HP, +8 healing or +6 magic attack |
+- block-triggered minor retaliation damage can be added later if the combat system formalizes block events
 
-## 7.2 T2 Dungeon: Thorned Hollow
-
-Level band:
-
-- recommended for levels `21-40`
+## 7.2 Thorned Hollow
 
 Theme:
 
-- overgrown ruin under Whispering Forest
-- venomous roots
-- cursed beast altars
+- overgrown ruin
+- venom roots
+- cursed hunting grounds
 
-Set family name:
+Set family:
 
-- `Briarbound`
+- `Briarbound Sight`
 
-Narrative identity:
+Loot identity:
 
-- gear woven from thorn hide, root resin, and druidic ward fragments
+- precision
+- crit
+- target focus
 
-### T2 Weapon Names
+Bot-facing summary:
 
-| Class | Item Name |
-| --- | --- |
-| Warrior | Briarbound Wardblade |
-| Warrior | Briarbound Ravager Axe |
-| Mage | Briarbound Sap Staff |
-| Mage | Briarbound Hex Grimoire |
-| Priest | Briarbound Bloom Scepter |
-| Priest | Briarbound Oath Tome |
+- best for accuracy-sensitive builds
+- best for execution and priority-target removal
+- strongest when the team can maintain tempo and focus fire
 
-### T2 Universal Armor Names
+Set effects:
 
-| Slot | Item Name |
-| --- | --- |
-| Head | Briarbound Crown |
-| Wrist | Briarbound Bracers |
-| Chest | Briarbound Carapace |
-| Boots | Briarbound Rootwalkers |
-| Ring | Briarbound Thornband |
-| Necklace | Briarbound Heartvine Pendant |
+- `2-piece`: +10% `accuracy`, +8% `speed`
+- `4-piece`: the first hit against a full-HP enemy each round gains +12% crit chance and +18% crit damage
+- `6-piece`: when landing a critical hit, gain `1` stack of Hunter's Focus for `2` rounds; at `2` stacks, the next damaging skill gains +15% final damage and ignores `12%` of the target's defense
 
-### T2 Baseline Slot Stats
+Suggested side flavor:
 
-| Slot | Main Stats |
-| --- | --- |
-| Weapon | +34 primary attack, +10 secondary scaling |
-| Head | +110 HP, +10 P.Def, +10 M.Def |
-| Wrist | +14 primary attack, +4 speed |
-| Chest | +160 HP, +16 P.Def, +16 M.Def |
-| Boots | +80 HP, +5 speed, +7 M.Def |
-| Ring | +18 primary attack or +14 healing |
-| Necklace | +85 HP, +12 healing or +12 magic attack |
+- future expansion can let this set slightly extend mark, poison, or exposed-target mechanics
 
-## 7.3 T3 Dungeon: Sunscar Warvault
-
-Level band:
-
-- recommended for levels `41-60`
+## 7.3 Sunscar Warvault
 
 Theme:
 
-- buried desert armory
-- heat-forged automata
-- scorched military relics
+- buried war armory
+- scorched legion relics
+- siege pressure
 
-Set family name:
+Set family:
 
-- `Sunscar`
+- `Sunscar Assault`
 
-Narrative identity:
+Loot identity:
 
-- gear salvaged from a ruined war vault beneath the frontier sands
+- physical offense
+- burst windows
+- elite and boss breakpoints
 
-### T3 Weapon Names
+Bot-facing summary:
 
-| Class | Item Name |
-| --- | --- |
-| Warrior | Sunscar Bulwark Edge |
-| Warrior | Sunscar Siege Axe |
-| Mage | Sunscar Ember Rod |
-| Mage | Sunscar Signal Codex |
-| Priest | Sunscar Standard Scepter |
-| Priest | Sunscar Covenant Tome |
+- best for warrior-led physical teams
+- strongest for short kill windows
+- weaker on defensive recovery than the Catacomb set
 
-### T3 Universal Armor Names
+Set effects:
 
-| Slot | Item Name |
-| --- | --- |
-| Head | Sunscar Helmguard |
-| Wrist | Sunscar Command Wraps |
-| Chest | Sunscar Warplate |
-| Boots | Sunscar Dune Striders |
-| Ring | Sunscar Officer Ring |
-| Necklace | Sunscar Medalion |
+- `2-piece`: +12% `physical_attack`
+- `4-piece`: the first active damaging skill each battle gains +20% damage; if it defeats a target, recover `1` skill cooldown turn from a random non-ultimate skill
+- `6-piece`: after defeating an elite, boss add, or boss phase threshold, gain `2` rounds of +15% `physical_attack` and +10% `speed`
 
-### T3 Baseline Slot Stats
+Suggested side flavor:
 
-| Slot | Main Stats |
-| --- | --- |
-| Weapon | +54 primary attack, +16 secondary scaling |
-| Head | +170 HP, +15 P.Def, +15 M.Def |
-| Wrist | +22 primary attack, +6 speed |
-| Chest | +240 HP, +24 P.Def, +22 M.Def |
-| Boots | +120 HP, +7 speed, +10 P.Def |
-| Ring | +28 primary attack or +22 healing |
-| Necklace | +135 HP, +18 healing or +18 magic attack |
+- later tuning can add bonus effect against armor-broken targets
 
-## 7.4 T4 Dungeon: Obsidian Spire
-
-Level band:
-
-- recommended for levels `61-80`
+## 7.4 Obsidian Spire
 
 Theme:
 
 - volcanic black tower
 - void priests
-- obsidian mirrors and curse engines
+- mirror curses and spell engines
 
-Set family name:
+Set family:
 
-- `Nightglass`
+- `Nightglass Arcanum`
 
-Narrative identity:
+Loot identity:
 
-- gear forged from black glass shards and sealed abyssal script
+- spell damage
+- cast chaining
+- magic burst and sustain casting
 
-### T4 Weapon Names
+Bot-facing summary:
 
-| Class | Item Name |
-| --- | --- |
-| Warrior | Nightglass Bastion Fang |
-| Warrior | Nightglass Cataclysm Axe |
-| Mage | Nightglass Rift Staff |
-| Mage | Nightglass Mirror Codex |
-| Priest | Nightglass Halo Scepter |
-| Priest | Nightglass Liturgy Tome |
+- best for mage and priest spell throughput
+- strongest in builds that rotate multiple active skills
+- especially valuable in long boss fights
 
-### T4 Universal Armor Names
+Set effects:
 
-| Slot | Item Name |
-| --- | --- |
-| Head | Nightglass Visor |
-| Wrist | Nightglass Bindings |
-| Chest | Nightglass Aegis |
-| Boots | Nightglass Tread |
-| Ring | Nightglass Vow Ring |
-| Necklace | Nightglass Eclipse Pendant |
+- `2-piece`: +12% `magic_attack`, +10% `healing_power`
+- `4-piece`: after casting a non-basic skill, gain Arc Echo; the next magic or holy skill within `2` rounds gains +16% effect value
+- `6-piece`: every `3` rounds, the next magic or holy skill costs no tempo penalty, gains +20% effect value, and reduces another random skill cooldown by `1`
 
-### T4 Baseline Slot Stats
+Suggested side flavor:
 
-| Slot | Main Stats |
-| --- | --- |
-| Weapon | +78 primary attack, +24 secondary scaling |
-| Head | +250 HP, +22 P.Def, +22 M.Def |
-| Wrist | +32 primary attack, +9 speed |
-| Chest | +340 HP, +34 P.Def, +30 M.Def |
-| Boots | +170 HP, +9 speed, +14 M.Def |
-| Ring | +40 primary attack or +32 healing |
-| Necklace | +195 HP, +26 healing or +26 magic attack |
+- later tuning can let this set convert over-heal into a minor shield
 
-## 7.5 T5 Dungeon: Sandworm Den
+## 8. Dungeon Info Exposure for Bots
 
-Level band:
+Bots should be able to read dungeon output identity directly before entering.
 
-- recommended for levels `81-100`
+Each dungeon definition should expose at least:
 
-Theme:
+- `dungeon_id`
+- `name`
+- `set_id`
+- `set_identity_tags`
+- `set_bonus_preview`
+- `weapon_pool_summary`
+- `armor_pool_summary`
+- `material_identity`
+- `difficulty_summary`
 
-- colossal sand tunnels
-- venom pressure
-- matriarch ambush patterns
+Example identity tags:
 
-Set family name:
+- Ancient Catacomb: `defense`, `block`, `survival`
+- Thorned Hollow: `accuracy`, `crit`, `focus_fire`
+- Sunscar Warvault: `physical_attack`, `burst`, `execution`
+- Obsidian Spire: `magic_attack`, `holy_power`, `cast_chain`
 
-- `Dunescourge`
+## 9. Rating and Reward Rules
 
-Narrative identity:
-
-- gear crafted from sandworm shell, venom sacs, and matriarch spinal crystal
-
-### T5 Weapon Names
-
-| Class | Item Name |
-| --- | --- |
-| Warrior | Dunescourge Matriarch Blade |
-| Warrior | Dunescourge Mawsplitter |
-| Mage | Dunescourge Venomspire |
-| Mage | Dunescourge Brood Ledger |
-| Priest | Dunescourge Dawn Scepter |
-| Priest | Dunescourge Lifebind Tome |
-
-### T5 Universal Armor Names
-
-| Slot | Item Name |
-| --- | --- |
-| Head | Dunescourge Crownshell |
-| Wrist | Dunescourge Coilguards |
-| Chest | Dunescourge Carapace Mail |
-| Boots | Dunescourge Burrowstep Boots |
-| Ring | Dunescourge Fang Ring |
-| Necklace | Dunescourge Heartspine Chain |
-
-### T5 Baseline Slot Stats
-
-| Slot | Main Stats |
-| --- | --- |
-| Weapon | +108 primary attack, +34 secondary scaling |
-| Head | +360 HP, +30 P.Def, +30 M.Def |
-| Wrist | +44 primary attack, +11 speed |
-| Chest | +470 HP, +45 P.Def, +40 M.Def |
-| Boots | +230 HP, +12 speed, +18 P.Def |
-| Ring | +56 primary attack or +42 healing |
-| Necklace | +265 HP, +36 healing or +36 magic attack |
-
-## 8. Set Effects
-
-Only red and prismatic items can roll as set pieces.
-
-Each dungeon set uses the same progression shape:
-
-### 8.1 Gravewake Set
-
-- `2-piece`: +8% max HP, +6% magic defense
-- `4-piece`: after entering battle, gain a tomb ward shield equal to 12% max HP for 2 turns
-- `6-piece`: once per battle, when dropping below 35% HP, cleanse one negative status and restore 10% HP
-
-### 8.2 Briarbound Set
-
-- `2-piece`: +6% speed, +8% status resistance
-- `4-piece`: damaging a poisoned or rooted enemy grants +8% primary attack for 2 turns
-- `6-piece`: the first control or poison effect applied each battle gains +1 turn duration
-
-### 8.3 Sunscar Set
-
-- `2-piece`: +10% physical attack and +10% magic attack
-- `4-piece`: first offensive skill each battle deals +18% increased damage
-- `6-piece`: after defeating an elite or boss phase, restore 12% HP and reduce one skill cooldown by 1
-
-### 8.4 Nightglass Set
-
-- `2-piece`: +12% magic defense and +10% healing power
-- `4-piece`: when casting a non-basic skill, gain 8% damage reduction for 2 turns
-- `6-piece`: once every 4 turns, the next magic or holy skill gains +15% effect value and reduces its cooldown by 1
-
-### 8.5 Dunescourge Set
-
-- `2-piece`: +10% max HP and +10% speed
-- `4-piece`: against boss targets, gain +12% damage and +12% healing output
-- `6-piece`: after receiving lethal damage once per battle, survive at 1 HP, gain a 15% HP shield, and cleanse poison
-
-## 9. Dungeon Challenge And Rating Rewards
-
-Dungeons should no longer rely on a single final-boss chest. Instead, they should use a room-by-room challenge structure with an end-of-run rating.
-
-## 9.1 Room Progression Rules
-
-Core rules:
-
-- each dungeon run contains `1-6` consecutive rooms
-- room difficulty increases in order, with later rooms adding more stat pressure, skill complexity, and boss pressure
-- every room should have a readable encounter identity such as standard fight, elite fight, event room, or phase boss room
-- if a player or bot fails in a room, the final rating is based on the highest completed room
-- room `6` is the final challenge room, and only a clear of room `6` can award `S`
-
-Recommended cadence:
-
-| Room | Identity | Notes |
-| --- | --- | --- |
-| 1 | warm-up room | baseline enemies to validate current loadout |
-| 2 | standard room | introduces smaller mechanics and sustain pressure |
-| 3 | elite room | forces the team to spend real resources |
-| 4 | pressure room | heavier debuffs or summons start separating builds |
-| 5 | pre-boss room | near-limit pressure that gates high ratings |
-| 6 | finale room | strongest boss or end-stage encounter that decides `S` rewards |
-
-## 9.2 Rating Rules
-
-This follows the confirmed six-grade structure: `S / A / B / C / D / E`.
+Dungeon progression still uses a `6`-room structure with end-of-run rating.
 
 Suggested mapping:
 
-| Highest Completed Room | Rating | Notes |
-| --- | --- | --- |
-| 6 | `S` | cleared all `6` rooms |
-| 5 | `A` | stopped just before the final full clear |
-| 4 | `B` | strong completion depth and stable farming value |
-| 3 | `C` | mid-run completion, suitable for progression |
-| 2 | `D` | only early progress completed |
-| 1 or failed before clearing room 1 | `E` | failed run or minimal progress |
-
-Additional rules:
-
-- rating only controls end-of-run equipment rewards and does not replace in-combat drops
-- future phases can fine-tune within a rating using remaining HP, deaths, or round count
-- V1 should mainly use room completion depth so bots can predict value cleanly
-
-## 9.3 Equipment Reward Probabilities
-
-Equipment rewards should be granted from the final rating pool, not primarily from a boss material chest.
-
-### 9.3.1 Number of Gear Rolls
-
-| Rating | End-of-run Gear Rule |
+| Highest Completed Room | Rating |
 | --- | --- |
-| `S` | guaranteed `2` gear rolls, including `1` high-quality roll |
-| `A` | guaranteed `1` gear roll, plus `35%` chance for `1` extra roll |
-| `B` | guaranteed `1` gear roll |
-| `C` | `75%` chance to receive `1` gear roll |
-| `D` | `45%` chance to receive `1` gear roll |
-| `E` | `20%` chance to receive `1` gear roll |
+| 6 | `S` |
+| 5 | `A` |
+| 4 | `B` |
+| 3 | `C` |
+| 2 | `D` |
+| 1 or failed before room 1 clear | `E` |
 
-### 9.3.2 Quality Distribution Per Roll
+Rules:
 
-| Rating | Blue | Purple | Gold | Red | Prismatic |
-| --- | --- | --- | --- | --- | --- |
-| `S` | 0% | 18% | 42% | 32% | 8% |
-| `A` | 8% | 34% | 36% | 18% | 4% |
-| `B` | 24% | 42% | 24% | 9% | 1% |
-| `C` | 46% | 36% | 14% | 4% | 0% |
-| `D` | 65% | 27% | 7% | 1% | 0% |
-| `E` | 82% | 16% | 2% | 0% | 0% |
+- rating determines end-of-run equipment reward quality
+- monster kills determine material rewards
+- all four dungeons use the same reward-shape logic
+- only `set_id` and material identity change by dungeon
 
-Control rules:
+## 10. Equipment Reward Pool
 
-- `S` and `A` are the main sources of red and prismatic gear
-- `B` is the baseline lane for long-term stable farming
-- below `C`, the system should mainly serve progression and gap-filling rather than endgame chase
-- future phases should add soft pity for long red/prismatic droughts
-- set pieces should still be weighted slightly toward armor over jewelry so bots can assemble `2-piece` and `4-piece` bonuses earlier
+Shared reward rules:
 
-## 9.4 Material Drop Principles
+- all four dungeons use the same slot distribution and quality distribution tables
+- dungeon selection changes set family, not the overall item power budget
+- red and prismatic pieces from a dungeon always belong to that dungeon's set family
+- blue, purple, and gold pieces may be non-set items from the shared seasonal pool
 
-Materials should no longer be modeled primarily as a shared dungeon completion bundle. Instead, they should come from monster kills during combat.
-
-Core rules:
-
-- normal monsters drop base materials
-- elite monsters drop base materials plus a small chance at advanced materials
-- bosses or final-room key enemies drop high-value and dungeon-specific materials
-- deeper room progress should bias monster material weights toward higher-tier pools
-- even on a failed run, materials earned from already-killed monsters should be retained
-
-## 10. Slot Drop Weight
-
-Suggested boss-slot distribution:
+Suggested slot drop weight:
 
 | Slot | Weight |
 | --- | --- |
-| Weapon | 16% |
-| Head | 14% |
-| Wrist | 14% |
-| Chest | 16% |
-| Boots | 14% |
-| Ring | 13% |
-| Necklace | 13% |
+| Weapon | 18% |
+| Head | 16% |
+| Chest | 18% |
+| Boots | 16% |
+| Ring | 16% |
+| Necklace | 16% |
 
-Additional rule:
+## 11. Difficulty Reward Efficiency
 
-- class-restricted weapon drops should bias toward the class composition of the active party in multiplayer or toward the looting bot's class in solo play
+The four seasonal dungeons share the same reward structure, but difficulty changes how efficiently bots progress toward real set completion.
 
-## 11. Salvage and Duplicate Value
+Design intent:
 
-Duplicate dungeon gear should remain useful.
+- `easy` is the onboarding tier and should be worth clearing early, but not the best long-term farm once `hard` is stable
+- `hard` is the transition tier and should reliably move bots into real set ownership
+- `nightmare` is the long-term farming tier for red pieces, prismatic chase pieces, and affix refinement
 
-Recommended outputs when salvaging:
+Recommended equipment reward rolls by difficulty and rating:
 
-- blue: tier dust
-- purple: tier dust plus affix shards
-- gold: tier dust plus polished cores
-- red: tier dust plus set embers
-- prismatic: tier dust plus prismatic thread
+| Difficulty | Rating | Equipment rolls | Quality distribution per roll | Material multiplier | Intended use |
+| --- | --- | --- | --- | --- | --- |
+| easy | `S` | 2 | Blue `50%`, Purple `32%`, Gold `14%`, Red `4%`, Prismatic `0%` | `1.00x` | first 2-piece starts, early replacement upgrades |
+| easy | `A` | 1 | Blue `56%`, Purple `28%`, Gold `13%`, Red `3%`, Prismatic `0%` | `0.85x` | acceptable recovery reward |
+| easy | `B` | 1 | Blue `68%`, Purple `22%`, Gold `9%`, Red `1%`, Prismatic `0%` | `0.70x` | weak fallback, not a stable farm target |
+| hard | `S` | 2 | Blue `28%`, Purple `34%`, Gold `24%`, Red `12%`, Prismatic `2%` | `1.30x` | reliable progression into real set ownership |
+| hard | `A` | 2 | Blue `35%`, Purple `34%`, Gold `21%`, Red `9%`, Prismatic `1%` | `1.10x` | solid mid-season farming baseline |
+| hard | `B` | 1 | Blue `44%`, Purple `31%`, Gold `18%`, Red `6%`, Prismatic `1%` | `0.90x` | okay while stabilizing the difficulty |
+| nightmare | `S` | 3 | Blue `12%`, Purple `24%`, Gold `28%`, Red `28%`, Prismatic `8%` | `1.70x` | primary endgame farm line |
+| nightmare | `A` | 2 | Blue `18%`, Purple `28%`, Gold `28%`, Red `22%`, Prismatic `4%` | `1.45x` | default efficient farm for most mature bots |
+| nightmare | `B` | 2 | Blue `26%`, Purple `30%`, Gold `24%`, Red `17%`, Prismatic `3%` | `1.20x` | acceptable if the bot can finish but not dominate |
 
-These materials should later feed:
+Rules:
 
-- enhancement
-- reroll
-- set upgrading
-- late-season crafting sinks
+- `C`, `D`, and `E` should award materials only and should not grant rating-based equipment rolls
+- red and prismatic results always use the active dungeon's `set_id`
+- blue, purple, and gold results may use the shared seasonal off-set pool
+- difficulty changes efficiency, not the base stat budget of an item at the same quality
 
-## 12. Implementation Notes
+### 11.1 Bot Farming Guidance
+
+Bots should use the reward table with the recommended power bands instead of always forcing the highest unlocked difficulty.
+
+Suggested logic:
+
+- clear `easy` aggressively until `hard` median is within reach, especially if a desired 2-piece bonus can be activated quickly
+- farm `hard` as the main bridge if `nightmare` clear confidence is below the target stable line
+- switch to `nightmare` as the main destination once the bot can sustain at least `A` clears
+- only stay on `easy` after day `10` for emergency slot replacement or if a build specifically needs a fast 2-piece stopgap
+
+### 11.2 Season Completion Pace Targets
+
+Assuming the bot is farming one chosen dungeon for one main build and is not requiring perfect affixes:
+
+| Farming profile | Expected milestone cadence |
+| --- | --- |
+| stable `easy S` from early season | first usable `2-piece` in about `5-7` reward claims; not a reliable path to `6-piece` graduation |
+| stable `hard A-S` around day `10` | `2-piece` in `4-6` claims, `4-piece` in `12-18` claims, `6-piece` in `30-42` claims |
+| stable `nightmare A` around day `15` | `2-piece` in `3-5` claims, `4-piece` in `10-15` claims, `6-piece` in `24-34` claims |
+| stable `nightmare S` after build stabilization | first meaningful affix refinement in `45-60` claims; near-finished main build in `80-110` claims |
+
+Interpretation:
+
+- a bot that reaches stable `nightmare` by about day `15` should spend the rest of the season improving set coverage and affix quality, not hunting raw item tier unlocks
+- full prismatic best-in-slot completion should remain unlikely for every slot within one season
+- off-class weapon drops are part of the time budget and are intentionally offset by salvage value
+
+## 12. Salvage and Duplicate Value
+
+Duplicate gear must remain valuable.
+
+Recommended salvage outputs:
+
+- blue: seasonal dust
+- purple: seasonal dust + affix shards
+- gold: seasonal dust + polish cores
+- red: seasonal dust + set embers
+- prismatic: seasonal dust + prismatic thread
+
+This is especially important because:
+
+- all weapon families can drop in every dungeon
+- off-class drops are intentional, not a mistake
+- the system depends on duplicates having long-term value
+
+## 13. Implementation Notes
 
 Recommended item fields:
 
 - `item_id`
 - `template_id`
-- `tier`
-- `required_level`
+- `season_band`
 - `slot`
+- `weapon_style`
 - `rarity`
 - `set_id`
 - `class_restriction`
 - `base_stats`
 - `affixes`
-- `flavor_text`
 - `drop_source_type`
 - `drop_source_id`
 
 Recommended API requirements:
 
-- every item response should expose slot, rarity, tier, stat lines, and set membership explicitly
-- dungeon result payloads should separate rating-based equipment rewards from in-combat kill drops
-- website observer pages should be able to show where a visible high-end item originated
+- every dungeon response should show set identity and reward summary directly
+- every item response should expose slot, rarity, set membership, and weapon style explicitly
+- result payloads should separate rating-based equipment rewards from in-combat material drops
 
-## 13. Open Tuning Questions
+## 14. Open Follow-Up Tasks
 
-- whether ring and necklace should eventually allow dual-slot expansion
-- whether prismatic items should be dungeon-exclusive or partly seasonal-reward based
-- whether each dungeon needs a second side-set for build diversity in a later phase
+- decide whether every dungeon should have one boss material and one generic seasonal material, or multiple unique materials
+- define whether block is a formal combat stat or an event-style defensive keyword in V1

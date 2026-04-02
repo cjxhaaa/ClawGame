@@ -30,6 +30,11 @@ Panel Combat Power = Base Growth Score + Equipment Score + Build Modifier
 
 Scenario modifier is excluded from the default panel to keep UI stable.
 
+Usage rule:
+
+- panel combat power is the single primary strength number shown on character panels, dungeon preparation surfaces, and arena entrant displays
+- equipment score is a breakdown component and should be shown as supporting information rather than the main headline strength
+
 ## 4. Base Growth Score
 
 ### 4.1 Rank Coefficient
@@ -77,14 +82,22 @@ Per-item score:
 
 Item Score = Rarity Base + Main Stat Score + Sub Stat Score + Enhancement Score + Set Bonus Allocation
 
-### 5.1 Rarity Base
+### 5.1 Quality Base
 
-- common: 30
-- uncommon: 55
-- rare: 90
-- epic: 145
-- legendary: 220
-- mythic: 320
+The seasonal equipment system uses the same five quality names as the dungeon and loot framework:
+
+- Blue: 36
+- Purple: 64
+- Gold: 102
+- Red: 154
+- Prismatic: 228
+
+Calibration rule:
+
+- Blue is the baseline quality and should keep total equipment share near `30%-35%` of panel combat power once the season reaches stable midgame
+- Purple and Gold are transition upgrades and should not outscale level growth on their own
+- Red is the main endgame set-chase quality
+- Prismatic is the premium chase layer and should improve ceiling without invalidating the rest of the progression model
 
 ### 5.2 Main/Sub Stat Coefficients
 
@@ -154,6 +167,43 @@ Clear-confidence bands:
 - median to upper: high (65%-85%)
 - above upper: very high (>85%)
 
+### 8.1.1 First Live Season Dungeon Bands
+
+The first live season uses four parallel dungeons with shared pacing targets:
+
+- `easy`: first reliable clear around day `5`
+- `hard`: first reliable clear around day `10`
+- `nightmare`: first reliable clear around day `15`
+
+The table below gives the concrete panel combat power bands that should be written into dungeon definitions for V1.
+
+| Dungeon | Difficulty | Target day | Lower bound | Median | Upper bound | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| Ancient Catacomb | easy | day 5 | 2350 | 2800 | 3250 | most forgiving first-clear profile |
+| Thorned Hollow | easy | day 5 | 2420 | 2880 | 3340 | slightly stricter on speed and hit consistency |
+| Sunscar Warvault | easy | day 5 | 2460 | 2920 | 3380 | front-loaded damage check is a bit sharper |
+| Obsidian Spire | easy | day 5 | 2440 | 2900 | 3360 | punishes weak sustain and poor skill rotation |
+| Ancient Catacomb | hard | day 10 | 5350 | 6100 | 6850 | defensive set line makes this the gentlest hard entry |
+| Thorned Hollow | hard | day 10 | 5480 | 6230 | 6980 | accuracy and turn-order pressure raise the floor |
+| Sunscar Warvault | hard | day 10 | 5560 | 6310 | 7060 | elite burst windows increase wipe risk |
+| Obsidian Spire | hard | day 10 | 5520 | 6270 | 7020 | repeated caster pressure stresses cooldown planning |
+| Ancient Catacomb | nightmare | day 15 | 8900 | 10050 | 11200 | preferred first nightmare farm for stable bots |
+| Thorned Hollow | nightmare | day 15 | 9080 | 10230 | 11380 | needs cleaner precision and crit scaling to stabilize |
+| Sunscar Warvault | nightmare | day 15 | 9200 | 10350 | 11500 | highest physical burst check among the four |
+| Obsidian Spire | nightmare | day 15 | 9140 | 10290 | 11440 | hardest on mana-tempo and healing throughput |
+
+Interpretation:
+
+- lower bound means a roughly `P50` clear line and is acceptable for first attempts
+- median means a stable farming line and should be the default recommendation for bots
+- upper bound means high-confidence speed clears and is the point where bots should start optimizing for affixes rather than raw survivability
+
+Implementation note:
+
+- store these as `recommended_power_floor`, `recommended_power_mid`, and `recommended_power_ceiling`
+- dungeon UI and bots should prefer `median` as the "recommended combat power" headline
+- if real clear data drifts by more than `5-7%`, recalibrate the table instead of changing the formula weights first
+
 ### 8.2 Arena Preview
 
 For two sides A and B:
@@ -171,6 +221,11 @@ UI should show confidence tiers instead of exact percentages:
 - close: 45%-55%
 - advantage: 55%-70%
 - strong advantage: >70%
+
+Arena usage rule:
+
+- arena signup, entrant cards, bracket cards, and arena leaderboards should use panel combat power as the visible strength field
+- equipment score may be exposed as a secondary breakdown value but should not be the main arena score label
 
 ## 9. UI Display Requirements
 

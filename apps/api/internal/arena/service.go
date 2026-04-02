@@ -16,44 +16,50 @@ import (
 )
 
 var (
-	ErrSignupClosed    = errors.New("arena signup closed")
-	ErrRankNotEligible = errors.New("arena rank not eligible")
-	ErrAlreadySignedUp = errors.New("arena already signed up")
+	ErrSignupClosed       = errors.New("arena signup closed")
+	ErrRankNotEligible    = errors.New("arena rank not eligible")
+	ErrAlreadySignedUp    = errors.New("arena already signed up")
+	ErrArenaMatchNotFound = errors.New("arena match not found")
 )
 
-const (
-	mainBracketSize      = 64
-	maxQualifierEntrants = 128
-)
+const mainBracketSize = 64
 
 type Entry struct {
-	CharacterID    string `json:"character_id"`
-	CharacterName  string `json:"character_name"`
-	Class          string `json:"class"`
-	WeaponStyle    string `json:"weapon_style"`
-	Rank           string `json:"rank"`
-	EquipmentScore int    `json:"equipment_score"`
-	SignedUpAt     string `json:"signed_up_at"`
-	IsNPC          bool   `json:"is_npc,omitempty"`
+	CharacterID     string `json:"character_id"`
+	CharacterName   string `json:"character_name"`
+	Class           string `json:"class"`
+	WeaponStyle     string `json:"weapon_style"`
+	Rank            string `json:"rank"`
+	PanelPowerScore int    `json:"panel_power_score"`
+	EquipmentScore  int    `json:"equipment_score"`
+	SignedUpAt      string `json:"signed_up_at"`
+	IsNPC           bool   `json:"is_npc,omitempty"`
 }
 
 type Matchup struct {
-	MatchNumber int    `json:"match_number"`
-	Status      string `json:"status"`
-	ScheduledAt string `json:"scheduled_at"`
-	ResolvedAt  string `json:"resolved_at,omitempty"`
-	LeftEntry   *Entry `json:"left_entry,omitempty"`
-	RightEntry  *Entry `json:"right_entry,omitempty"`
-	WinnerEntry *Entry `json:"winner_entry,omitempty"`
+	MatchID        string `json:"match_id"`
+	Stage          string `json:"stage"`
+	RoundNumber    int    `json:"round_number"`
+	MatchNumber    int    `json:"match_number"`
+	Status         string `json:"status"`
+	ScheduledAt    string `json:"scheduled_at"`
+	ResolvedAt     string `json:"resolved_at,omitempty"`
+	BattleReportID string `json:"battle_report_id,omitempty"`
+	LeftEntry      *Entry `json:"left_entry,omitempty"`
+	RightEntry     *Entry `json:"right_entry,omitempty"`
+	ByeEntry       *Entry `json:"bye_entry,omitempty"`
+	WinnerEntry    *Entry `json:"winner_entry,omitempty"`
 }
 
 type Round struct {
-	Name        string    `json:"name"`
-	Stage       string    `json:"stage"`
-	Status      string    `json:"status"`
-	ScheduledAt string    `json:"scheduled_at"`
-	ResolvedAt  string    `json:"resolved_at,omitempty"`
-	Matchups    []Matchup `json:"matchups"`
+	Name         string    `json:"name"`
+	Stage        string    `json:"stage"`
+	RoundNumber  int       `json:"round_number"`
+	EntrantCount int       `json:"entrant_count"`
+	Status       string    `json:"status"`
+	ScheduledAt  string    `json:"scheduled_at"`
+	ResolvedAt   string    `json:"resolved_at,omitempty"`
+	Matchups     []Matchup `json:"matchups"`
 }
 
 type CurrentView struct {
@@ -64,8 +70,12 @@ type CurrentView struct {
 	SignupCount       int               `json:"signup_count"`
 	QualifiedCount    int               `json:"qualified_count"`
 	NPCCount          int               `json:"npc_count"`
-	Entries           []Entry           `json:"entries"`
+	HighestPower      int               `json:"highest_panel_power"`
+	LowestPower       int               `json:"lowest_panel_power"`
+	MedianPower       int               `json:"median_panel_power"`
+	FeaturedEntries   []Entry           `json:"featured_entries"`
 	QualifierMatchups []Matchup         `json:"qualifier_matchups"`
+	QualifierRounds   []Round           `json:"qualifier_rounds"`
 	Matchups          []Matchup         `json:"matchups"`
 	Rounds            []Round           `json:"rounds"`
 	Champion          *Entry            `json:"champion,omitempty"`
@@ -78,6 +88,70 @@ type LeaderboardEntry struct {
 	Name        string `json:"name"`
 	Score       int    `json:"score"`
 	ScoreLabel  string `json:"score_label"`
+}
+
+type HistoryFilters struct {
+	Result       string
+	TournamentID string
+	Stage        string
+	Cursor       string
+	Limit        int
+}
+
+type HistoryOpponent struct {
+	CharacterID     string `json:"character_id"`
+	CharacterName   string `json:"character_name"`
+	Class           string `json:"class"`
+	WeaponStyle     string `json:"weapon_style"`
+	Rank            string `json:"rank"`
+	PanelPowerScore int    `json:"panel_power_score"`
+	IsNPC           bool   `json:"is_npc,omitempty"`
+}
+
+type HistorySummary struct {
+	MatchID        string           `json:"match_id"`
+	BattleReportID string           `json:"battle_report_id,omitempty"`
+	TournamentID   string           `json:"tournament_id"`
+	DayKey         string           `json:"day_key"`
+	Stage          string           `json:"stage"`
+	RoundNumber    int              `json:"round_number"`
+	RoundName      string           `json:"round_name"`
+	Result         string           `json:"result"`
+	SummaryTag     string           `json:"summary_tag"`
+	StartedAt      string           `json:"started_at"`
+	ResolvedAt     string           `json:"resolved_at,omitempty"`
+	Opponent       *HistoryOpponent `json:"opponent_summary,omitempty"`
+}
+
+type HistoryDetail struct {
+	HistorySummary
+	BattleReport map[string]any   `json:"battle_report,omitempty"`
+	BattleLog    []map[string]any `json:"battle_log,omitempty"`
+}
+
+type PublicMatchDetail struct {
+	MatchID        string           `json:"match_id"`
+	BattleReportID string           `json:"battle_report_id,omitempty"`
+	TournamentID   string           `json:"tournament_id"`
+	DayKey         string           `json:"day_key"`
+	Stage          string           `json:"stage"`
+	RoundNumber    int              `json:"round_number"`
+	RoundName      string           `json:"round_name"`
+	Status         string           `json:"status"`
+	SummaryTag     string           `json:"summary_tag"`
+	StartedAt      string           `json:"started_at"`
+	ResolvedAt     string           `json:"resolved_at,omitempty"`
+	LeftEntry      *HistoryOpponent `json:"left_entry,omitempty"`
+	RightEntry     *HistoryOpponent `json:"right_entry,omitempty"`
+	ByeEntry       *HistoryOpponent `json:"bye_entry,omitempty"`
+	WinnerEntry    *HistoryOpponent `json:"winner_entry,omitempty"`
+	BattleReport   map[string]any   `json:"battle_report,omitempty"`
+	BattleLog      []map[string]any `json:"battle_log,omitempty"`
+}
+
+type EntryListFilters struct {
+	Cursor string
+	Limit  int
 }
 
 type Service struct {
@@ -93,7 +167,15 @@ func NewService() *Service {
 	}
 }
 
-func (s *Service) Signup(character characters.Summary, equipmentScore int, arenaStatus world.ArenaStatus) (Entry, error) {
+func (s *Service) SetClock(clock func() time.Time) {
+	if clock == nil {
+		s.clock = time.Now
+		return
+	}
+	s.clock = clock
+}
+
+func (s *Service) Signup(character characters.Summary, panelPowerScore, equipmentScore int, arenaStatus world.ArenaStatus) (Entry, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -113,13 +195,14 @@ func (s *Service) Signup(character characters.Summary, equipmentScore int, arena
 	}
 
 	entry := Entry{
-		CharacterID:    character.CharacterID,
-		CharacterName:  character.Name,
-		Class:          character.Class,
-		WeaponStyle:    character.WeaponStyle,
-		Rank:           character.Rank,
-		EquipmentScore: equipmentScore,
-		SignedUpAt:     s.clock().Format(time.RFC3339),
+		CharacterID:     character.CharacterID,
+		CharacterName:   character.Name,
+		Class:           character.Class,
+		WeaponStyle:     character.WeaponStyle,
+		Rank:            character.Rank,
+		PanelPowerScore: panelPowerScore,
+		EquipmentScore:  equipmentScore,
+		SignedUpAt:      s.clock().Format(time.RFC3339),
 	}
 	s.entriesByDay[dayKey][character.CharacterID] = entry
 	return entry, nil
@@ -131,34 +214,55 @@ func (s *Service) GetCurrent(arenaStatus world.ArenaStatus) CurrentView {
 
 	now := s.clock()
 	dayKey := dayKeyFor(now)
-	entriesMap := s.entriesByDay[dayKey]
-	entries := make([]Entry, 0, len(entriesMap))
-	for _, entry := range entriesMap {
-		entries = append(entries, entry)
-	}
-	sort.Slice(entries, func(i, j int) bool {
-		if entries[i].EquipmentScore != entries[j].EquipmentScore {
-			return entries[i].EquipmentScore > entries[j].EquipmentScore
-		}
-		return entries[i].SignedUpAt < entries[j].SignedUpAt
-	})
-
+	entries := sortedEntries(s.entriesByDay[dayKey])
 	snapshot := buildTournamentSnapshot(dayKey, now, entries)
+
 	return CurrentView{
-		TournamentID:      "tourn_" + dayKey,
+		TournamentID:      tournamentIDForDay(dayKey),
 		DayKey:            dayKey,
 		WeekKey:           dayKey,
 		Status:            arenaStatus,
 		SignupCount:       len(entries),
 		QualifiedCount:    len(snapshot.mainField),
 		NPCCount:          snapshot.npcCount,
-		Entries:           entries,
-		QualifierMatchups: snapshot.qualifierMatchups,
+		HighestPower:      highestPanelPower(entries),
+		LowestPower:       lowestPanelPower(entries),
+		MedianPower:       medianPanelPower(entries),
+		FeaturedEntries:   featuredEntries(entries, 8),
+		QualifierMatchups: snapshot.currentQualifierMatchups,
+		QualifierRounds:   snapshot.qualifierRounds,
 		Matchups:          snapshot.currentMatchups,
 		Rounds:            snapshot.rounds,
 		Champion:          snapshot.champion,
-		NextRoundTime:     nextArenaMilestoneTime(now, arenaStatus.Code).Format(time.RFC3339),
+		NextRoundTime:     determineNextRoundTime(now, arenaStatus.Code, snapshot).Format(time.RFC3339),
 	}
+}
+
+func (s *Service) ListEntries(filters EntryListFilters) []Entry {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	dayKey := dayKeyFor(s.clock())
+	entries := sortedEntries(s.entriesByDay[dayKey])
+	if filters.Limit <= 0 {
+		filters.Limit = 20
+	}
+	if filters.Cursor != "" {
+		start := -1
+		for i, entry := range entries {
+			if entry.CharacterID == filters.Cursor {
+				start = i + 1
+				break
+			}
+		}
+		if start >= 0 {
+			entries = entries[start:]
+		}
+	}
+	if len(entries) > filters.Limit {
+		return entries[:filters.Limit]
+	}
+	return entries
 }
 
 func (s *Service) GetLeaderboard() []LeaderboardEntry {
@@ -166,30 +270,49 @@ func (s *Service) GetLeaderboard() []LeaderboardEntry {
 	defer s.mu.Unlock()
 
 	dayKey := dayKeyFor(s.clock())
-	entriesMap := s.entriesByDay[dayKey]
-	entries := make([]Entry, 0, len(entriesMap))
-	for _, entry := range entriesMap {
-		entries = append(entries, entry)
-	}
-
-	sort.Slice(entries, func(i, j int) bool {
-		if entries[i].EquipmentScore != entries[j].EquipmentScore {
-			return entries[i].EquipmentScore > entries[j].EquipmentScore
-		}
-		return entries[i].CharacterName < entries[j].CharacterName
-	})
-
+	entries := sortedEntries(s.entriesByDay[dayKey])
 	result := make([]LeaderboardEntry, 0, len(entries))
 	for i, entry := range entries {
 		result = append(result, LeaderboardEntry{
 			Rank:        i + 1,
 			CharacterID: entry.CharacterID,
 			Name:        entry.CharacterName,
-			Score:       entry.EquipmentScore,
-			ScoreLabel:  "equipment_score",
+			Score:       entry.PanelPowerScore,
+			ScoreLabel:  "panel_power_score",
 		})
 	}
 	return result
+}
+
+func (s *Service) ListHistory(characterID string, filters HistoryFilters) []HistorySummary {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	items := s.buildHistoryLocked(characterID)
+	items = filterHistory(items, filters)
+	return paginateHistory(items, filters.Cursor, filters.Limit)
+}
+
+func (s *Service) GetHistoryDetail(characterID, matchID, detailLevel string) (HistoryDetail, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	match, round, found := s.findMatchLocked(characterID, matchID)
+	if !found {
+		return HistoryDetail{}, ErrArenaMatchNotFound
+	}
+	return buildHistoryDetail(characterID, round, match, detailLevel), nil
+}
+
+func (s *Service) GetPublicMatchDetail(matchID, detailLevel string) (PublicMatchDetail, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	match, round, found := s.findPublicMatchLocked(matchID)
+	if !found {
+		return PublicMatchDetail{}, ErrArenaMatchNotFound
+	}
+	return buildPublicMatchDetail(round, match, detailLevel), nil
 }
 
 func dayKeyFor(now time.Time) string {
@@ -197,108 +320,153 @@ func dayKeyFor(now time.Time) string {
 }
 
 type tournamentSnapshot struct {
-	mainField         []Entry
-	npcCount          int
-	qualifierMatchups []Matchup
-	currentMatchups   []Matchup
-	rounds            []Round
-	champion          *Entry
+	mainField                []Entry
+	npcCount                 int
+	qualifierRounds          []Round
+	currentQualifierMatchups []Matchup
+	currentMatchups          []Matchup
+	rounds                   []Round
+	champion                 *Entry
 }
 
 func buildTournamentSnapshot(dayKey string, now time.Time, entries []Entry) tournamentSnapshot {
 	var snapshot tournamentSnapshot
 
-	qualified, qualifierMatchups := buildQualifiedField(dayKey, now, entries)
+	qualified, qualifierRounds := buildQualifierRounds(dayKey, now, entries)
 	mainField, npcCount := fillNPCEntries(dayKey, qualified, mainBracketSize)
 	snapshot.mainField = mainField
 	snapshot.npcCount = npcCount
-	snapshot.qualifierMatchups = qualifierMatchups
+	snapshot.qualifierRounds = qualifierRounds
+	snapshot.currentQualifierMatchups = currentRoundMatchups(qualifierRounds)
 	if len(mainField) == 0 {
+		snapshot.currentMatchups = snapshot.currentQualifierMatchups
 		return snapshot
 	}
 
 	mainField = shuffleEntries(seedForKey(dayKey, "main-field"), mainField)
-	rounds, champion, currentMatchups := buildMainRounds(dayKey, now, mainField)
+	rounds, champion := buildMainRounds(dayKey, now, mainField, len(qualifierRounds))
 	snapshot.rounds = rounds
 	snapshot.champion = champion
-	snapshot.currentMatchups = currentMatchups
-	if now.Hour() == 9 && now.Minute() < 5 {
-		snapshot.currentMatchups = qualifierMatchups
+	if len(snapshot.currentQualifierMatchups) > 0 {
+		snapshot.currentMatchups = snapshot.currentQualifierMatchups
+	} else {
+		snapshot.currentMatchups = currentRoundMatchups(rounds)
 	}
 	return snapshot
 }
 
-func buildQualifiedField(dayKey string, now time.Time, entries []Entry) ([]Entry, []Matchup) {
+func buildQualifierRounds(dayKey string, now time.Time, entries []Entry) ([]Entry, []Round) {
 	if len(entries) == 0 {
 		return nil, nil
 	}
 
-	shuffled := shuffleEntries(seedForKey(dayKey, "qualifier-pool"), entries)
-	if len(shuffled) <= mainBracketSize {
-		return shuffled, nil
-	}
-
-	if len(shuffled) > maxQualifierEntrants {
-		shuffled = shuffled[:maxQualifierEntrants]
-	}
-
-	byeCount := (2 * mainBracketSize) - len(shuffled)
-	if byeCount < 0 {
-		byeCount = 0
-	}
-	if byeCount > len(shuffled) {
-		byeCount = len(shuffled)
-	}
-	qualified := append([]Entry(nil), shuffled[:byeCount]...)
-	contestants := shuffled[byeCount:]
-
+	participants := append([]Entry(nil), entries...)
 	scheduledAt := qualifierStartTime(now)
-	resolvedAt := scheduledAt.Add(5 * time.Minute)
-	matchups := make([]Matchup, 0, len(contestants)/2)
-	for i := 0; i+1 < len(contestants); i += 2 {
-		left := contestants[i]
-		right := contestants[i+1]
-		winner := resolveEntryDuel(left, right)
-		match := Matchup{
-			MatchNumber: (i / 2) + 1,
-			Status:      matchupStatus(now, scheduledAt, resolvedAt),
-			ScheduledAt: scheduledAt.Format(time.RFC3339),
-			LeftEntry:   cloneEntry(left),
-			RightEntry:  cloneEntry(right),
+	roundNumber := 1
+	rounds := make([]Round, 0, 8)
+
+	for len(participants) > mainBracketSize {
+		entrantCount := len(participants)
+		shuffled := shuffleEntries(seedForKey(dayKey, fmt.Sprintf("qualifier-round-%02d", roundNumber)), participants)
+		resolvedAt := scheduledAt.Add(5 * time.Minute)
+		matchups := make([]Matchup, 0, (len(shuffled)+1)/2)
+		nextParticipants := make([]Entry, 0, (len(shuffled)+1)/2)
+		matchNumber := 1
+
+		if len(shuffled)%2 == 1 {
+			bye := shuffled[len(shuffled)-1]
+			match := Matchup{
+				MatchID:     arenaMatchID(dayKey, "qualifier", roundNumber, matchNumber),
+				Stage:       "qualifier",
+				RoundNumber: roundNumber,
+				MatchNumber: matchNumber,
+				Status:      matchupStatus(now, scheduledAt, resolvedAt),
+				ScheduledAt: scheduledAt.Format(time.RFC3339),
+				ByeEntry:    cloneEntry(bye),
+			}
+			if !now.Before(resolvedAt) {
+				match.ResolvedAt = resolvedAt.Format(time.RFC3339)
+				match.WinnerEntry = cloneEntry(bye)
+			}
+			matchups = append(matchups, match)
+			nextParticipants = append(nextParticipants, bye)
+			shuffled = shuffled[:len(shuffled)-1]
+			matchNumber++
+		}
+
+		for i := 0; i+1 < len(shuffled); i += 2 {
+			left := shuffled[i]
+			right := shuffled[i+1]
+			winner, reportID := resolveArenaMatch(dayKey, "qualifier", roundNumber, matchNumber, left, right)
+			match := Matchup{
+				MatchID:        arenaMatchID(dayKey, "qualifier", roundNumber, matchNumber),
+				Stage:          "qualifier",
+				RoundNumber:    roundNumber,
+				MatchNumber:    matchNumber,
+				Status:         matchupStatus(now, scheduledAt, resolvedAt),
+				ScheduledAt:    scheduledAt.Format(time.RFC3339),
+				BattleReportID: reportID,
+				LeftEntry:      cloneEntry(left),
+				RightEntry:     cloneEntry(right),
+			}
+			if !now.Before(resolvedAt) {
+				match.ResolvedAt = resolvedAt.Format(time.RFC3339)
+				match.WinnerEntry = cloneEntry(winner)
+			}
+			matchups = append(matchups, match)
+			nextParticipants = append(nextParticipants, winner)
+			matchNumber++
+		}
+
+		round := Round{
+			Name:         fmt.Sprintf("Qualifier Round %d", roundNumber),
+			Stage:        "qualifier",
+			RoundNumber:  roundNumber,
+			EntrantCount: entrantCount,
+			Status:       roundStatusFromMatches(matchups),
+			ScheduledAt:  scheduledAt.Format(time.RFC3339),
+			Matchups:     matchups,
 		}
 		if !now.Before(resolvedAt) {
-			match.ResolvedAt = resolvedAt.Format(time.RFC3339)
-			match.WinnerEntry = cloneEntry(winner)
+			round.ResolvedAt = resolvedAt.Format(time.RFC3339)
 		}
-		matchups = append(matchups, match)
-		qualified = append(qualified, winner)
+		rounds = append(rounds, round)
+		participants = nextParticipants
+		scheduledAt = scheduledAt.Add(5 * time.Minute)
+		roundNumber++
 	}
 
-	return qualified, matchups
+	return participants, rounds
 }
 
-func buildMainRounds(dayKey string, now time.Time, mainField []Entry) ([]Round, *Entry, []Matchup) {
+func buildMainRounds(dayKey string, now time.Time, mainField []Entry, qualifierRounds int) ([]Round, *Entry) {
 	participants := append([]Entry(nil), mainField...)
-	scheduledAt := qualifierStartTime(now).Add(5 * time.Minute)
+	scheduledAt := mainBracketStartTime(now, qualifierRounds)
 	rounds := make([]Round, 0, 6)
-	var champion *Entry
-	var current []Matchup
 
 	for len(participants) >= 2 {
-		roundName := roundNameFor(len(participants))
+		entrantCount := len(participants)
+		stage := fmt.Sprintf("top_%d", len(participants))
+		roundNumber := len(rounds) + 1
 		resolvedAt := scheduledAt.Add(5 * time.Minute)
 		matchups := make([]Matchup, 0, len(participants)/2)
 		nextParticipants := make([]Entry, 0, len(participants)/2)
+
 		for i := 0; i+1 < len(participants); i += 2 {
+			matchNumber := (i / 2) + 1
 			left := participants[i]
 			right := participants[i+1]
-			winner := resolveEntryDuel(left, right)
+			winner, reportID := resolveArenaMatch(dayKey, stage, roundNumber, matchNumber, left, right)
 			match := Matchup{
-				MatchNumber: (i / 2) + 1,
-				Status:      matchupStatus(now, scheduledAt, resolvedAt),
-				ScheduledAt: scheduledAt.Format(time.RFC3339),
-				LeftEntry:   cloneEntry(left),
-				RightEntry:  cloneEntry(right),
+				MatchID:        arenaMatchID(dayKey, stage, roundNumber, matchNumber),
+				Stage:          stage,
+				RoundNumber:    roundNumber,
+				MatchNumber:    matchNumber,
+				Status:         matchupStatus(now, scheduledAt, resolvedAt),
+				ScheduledAt:    scheduledAt.Format(time.RFC3339),
+				BattleReportID: reportID,
+				LeftEntry:      cloneEntry(left),
+				RightEntry:     cloneEntry(right),
 			}
 			if !now.Before(resolvedAt) {
 				match.ResolvedAt = resolvedAt.Format(time.RFC3339)
@@ -308,35 +476,27 @@ func buildMainRounds(dayKey string, now time.Time, mainField []Entry) ([]Round, 
 			nextParticipants = append(nextParticipants, winner)
 		}
 
-		roundStatus := roundStatusFromMatches(matchups)
 		round := Round{
-			Name:        roundName,
-			Stage:       fmt.Sprintf("top_%d", len(participants)),
-			Status:      roundStatus,
-			ScheduledAt: scheduledAt.Format(time.RFC3339),
-			Matchups:    matchups,
+			Name:         roundNameFor(len(participants)),
+			Stage:        stage,
+			RoundNumber:  roundNumber,
+			EntrantCount: entrantCount,
+			Status:       roundStatusFromMatches(matchups),
+			ScheduledAt:  scheduledAt.Format(time.RFC3339),
+			Matchups:     matchups,
 		}
 		if !now.Before(resolvedAt) {
 			round.ResolvedAt = resolvedAt.Format(time.RFC3339)
 		}
 		rounds = append(rounds, round)
-		if roundStatus == "in_progress" {
-			current = matchups
-		}
-		if roundStatus == "scheduled" && len(current) == 0 {
-			current = matchups
-		}
 		participants = nextParticipants
 		scheduledAt = scheduledAt.Add(5 * time.Minute)
 	}
 
-	if len(participants) == 1 && !now.Before(scheduledAt) {
-		champion = cloneEntry(participants[0])
+	if len(participants) == 1 && len(rounds) > 0 && rounds[len(rounds)-1].Status == "resolved" {
+		return rounds, cloneEntry(participants[0])
 	}
-	if len(current) == 0 && len(rounds) > 0 {
-		current = rounds[len(rounds)-1].Matchups
-	}
-	return rounds, champion, current
+	return rounds, nil
 }
 
 func fillNPCEntries(dayKey string, entries []Entry, target int) ([]Entry, int) {
@@ -344,9 +504,13 @@ func fillNPCEntries(dayKey string, entries []Entry, target int) ([]Entry, int) {
 		return entries[:target], 0
 	}
 
-	medianScore := medianEquipment(entries)
+	medianScore := medianPanelPower(entries)
 	if medianScore == 0 {
-		medianScore = 320
+		medianScore = 6200
+	}
+	medianEquipmentScore := medianEquipment(entries)
+	if medianEquipmentScore == 0 {
+		medianEquipmentScore = 320
 	}
 	rank := medianRank(entries)
 	if rank == "" {
@@ -356,25 +520,26 @@ func fillNPCEntries(dayKey string, entries []Entry, target int) ([]Entry, int) {
 	result := append([]Entry(nil), entries...)
 	for i := len(entries); i < target; i++ {
 		result = append(result, Entry{
-			CharacterID:    fmt.Sprintf("npc_%s_%02d", dayKey, i+1),
-			CharacterName:  fmt.Sprintf("Arena NPC %02d", i+1),
-			Class:          npcClassFor(i),
-			WeaponStyle:    npcWeaponFor(i),
-			Rank:           rank,
-			EquipmentScore: medianScore,
-			SignedUpAt:     "",
-			IsNPC:          true,
+			CharacterID:     fmt.Sprintf("npc_%s_%02d", dayKey, i+1),
+			CharacterName:   fmt.Sprintf("Arena NPC %02d", i+1),
+			Class:           npcClassFor(i),
+			WeaponStyle:     npcWeaponFor(i),
+			Rank:            rank,
+			PanelPowerScore: medianScore,
+			EquipmentScore:  medianEquipmentScore,
+			SignedUpAt:      "",
+			IsNPC:           true,
 		})
 	}
 	return result, target - len(entries)
 }
 
-func resolveEntryDuel(left, right Entry) Entry {
-	result := simulateEntryDuel(left, right)
+func resolveArenaMatch(dayKey, stage string, roundNumber, matchNumber int, left, right Entry) (Entry, string) {
+	result := simulateEntryDuel(left, right, arenaMatchID(dayKey, stage, roundNumber, matchNumber))
 	if result.SideAWon {
-		return left
+		return left, arenaReportID(dayKey, stage, roundNumber, matchNumber)
 	}
-	return right
+	return right, arenaReportID(dayKey, stage, roundNumber, matchNumber)
 }
 
 func cloneEntry(entry Entry) *Entry {
@@ -382,10 +547,16 @@ func cloneEntry(entry Entry) *Entry {
 	return &item
 }
 
-func seedForDay(dayKey string) int64 {
-	hasher := fnv.New64a()
-	_, _ = hasher.Write([]byte(dayKey))
-	return int64(hasher.Sum64())
+func tournamentIDForDay(dayKey string) string {
+	return "tourn_" + dayKey
+}
+
+func arenaMatchID(dayKey, stage string, roundNumber, matchNumber int) string {
+	return fmt.Sprintf("match_%s_%s_r%02d_m%03d", dayKey, stage, roundNumber, matchNumber)
+}
+
+func arenaReportID(dayKey, stage string, roundNumber, matchNumber int) string {
+	return fmt.Sprintf("report_%s_%s_r%02d_m%03d", dayKey, stage, roundNumber, matchNumber)
 }
 
 func seedForKey(dayKey, suffix string) int64 {
@@ -396,29 +567,33 @@ func seedForKey(dayKey, suffix string) int64 {
 	return int64(hasher.Sum64())
 }
 
-func nextArenaMilestoneTime(now time.Time, statusCode string) time.Time {
-	todayQualifiers := qualifierStartTime(now)
-
-	switch statusCode {
-	case "signup_open":
-		return todayQualifiers
-	case "signup_locked":
-		return todayQualifiers.Add(5 * time.Minute)
-	case "in_progress":
-		minute := now.Minute()
-		roundIndex := 1
-		if minute >= 5 {
-			roundIndex = ((minute - 5) / 5) + 2
-		}
-		next := todayQualifiers.Add(time.Duration(roundIndex*5) * time.Minute)
-		final := todayQualifiers.Add(35 * time.Minute)
-		if next.After(final) {
-			return final
-		}
-		return next
-	default:
-		return todayQualifiers.Add(24 * time.Hour)
+func determineNextRoundTime(now time.Time, statusCode string, snapshot tournamentSnapshot) time.Time {
+	if statusCode == "signup_open" {
+		return qualifierStartTime(now)
 	}
+
+	for _, round := range append(append([]Round(nil), snapshot.qualifierRounds...), snapshot.rounds...) {
+		if round.Status == "scheduled" {
+			if ts, err := time.Parse(time.RFC3339, round.ScheduledAt); err == nil {
+				return ts
+			}
+		}
+		if round.Status == "in_progress" && round.ResolvedAt != "" {
+			if ts, err := time.Parse(time.RFC3339, round.ResolvedAt); err == nil {
+				return ts
+			}
+		}
+	}
+
+	return qualifierStartTime(now).Add(24 * time.Hour)
+}
+
+func mainBracketStartTime(now time.Time, qualifierRounds int) time.Time {
+	start := qualifierStartTime(now)
+	if qualifierRounds == 0 {
+		return start.Add(5 * time.Minute)
+	}
+	return start.Add(time.Duration(qualifierRounds) * 5 * time.Minute)
 }
 
 func qualifierStartTime(now time.Time) time.Time {
@@ -432,6 +607,50 @@ func shuffleEntries(seed int64, entries []Entry) []Entry {
 		shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
 	})
 	return shuffled
+}
+
+func sortedEntries(entriesMap map[string]Entry) []Entry {
+	entries := make([]Entry, 0, len(entriesMap))
+	for _, entry := range entriesMap {
+		entries = append(entries, entry)
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].PanelPowerScore != entries[j].PanelPowerScore {
+			return entries[i].PanelPowerScore > entries[j].PanelPowerScore
+		}
+		if entries[i].EquipmentScore != entries[j].EquipmentScore {
+			return entries[i].EquipmentScore > entries[j].EquipmentScore
+		}
+		if entries[i].SignedUpAt != entries[j].SignedUpAt {
+			return entries[i].SignedUpAt < entries[j].SignedUpAt
+		}
+		return entries[i].CharacterID < entries[j].CharacterID
+	})
+	return entries
+}
+
+func featuredEntries(entries []Entry, limit int) []Entry {
+	if limit <= 0 || len(entries) == 0 {
+		return nil
+	}
+	if len(entries) <= limit {
+		return append([]Entry(nil), entries...)
+	}
+	return append([]Entry(nil), entries[:limit]...)
+}
+
+func currentRoundMatchups(rounds []Round) []Matchup {
+	for _, round := range rounds {
+		if round.Status == "in_progress" {
+			return round.Matchups
+		}
+	}
+	for _, round := range rounds {
+		if round.Status == "scheduled" {
+			return round.Matchups
+		}
+	}
+	return nil
 }
 
 func matchupStatus(now, scheduledAt, resolvedAt time.Time) string {
@@ -495,6 +714,36 @@ func medianEquipment(entries []Entry) int {
 	return scores[mid]
 }
 
+func medianPanelPower(entries []Entry) int {
+	if len(entries) == 0 {
+		return 0
+	}
+	scores := make([]int, 0, len(entries))
+	for _, entry := range entries {
+		scores = append(scores, entry.PanelPowerScore)
+	}
+	sort.Ints(scores)
+	mid := len(scores) / 2
+	if len(scores)%2 == 0 {
+		return (scores[mid-1] + scores[mid]) / 2
+	}
+	return scores[mid]
+}
+
+func highestPanelPower(entries []Entry) int {
+	if len(entries) == 0 {
+		return 0
+	}
+	return entries[0].PanelPowerScore
+}
+
+func lowestPanelPower(entries []Entry) int {
+	if len(entries) == 0 {
+		return 0
+	}
+	return entries[len(entries)-1].PanelPowerScore
+}
+
 func medianRank(entries []Entry) string {
 	if len(entries) == 0 {
 		return ""
@@ -521,12 +770,12 @@ func npcWeaponFor(index int) string {
 	return weapons[index%len(weapons)]
 }
 
-func simulateEntryDuel(a, b Entry) combat.BattleResult {
+func simulateEntryDuel(a, b Entry, runID string) combat.BattleResult {
 	combA := buildCombatantFromEntry(a, "a")
 	combB := buildCombatantFromEntry(b, "b")
 	return combat.SimulateBattle(combat.BattleConfig{
 		BattleType: "arena_duel",
-		RunID:      fmt.Sprintf("duel_%s_%s", a.CharacterID, b.CharacterID),
+		RunID:      runID,
 		RoomIndex:  1,
 		SideA:      combA,
 		SideB:      combB,
@@ -540,8 +789,12 @@ func buildCombatantFromEntry(entry Entry, team string) combat.Combatant {
 	comb.Team = team
 	comb.IsPlayerSide = true
 	comb.PotionBag = combat.DefaultPotionBag(entry.Rank)
-	scoreFactor := 1 + ((float64(entry.EquipmentScore) - 320) / 1000)
-	scoreFactor = math.Max(0.75, math.Min(1.45, scoreFactor))
+	referencePower := 6200.0
+	if entry.Rank == "high" {
+		referencePower = 9800.0
+	}
+	scoreFactor := float64(entry.PanelPowerScore) / referencePower
+	scoreFactor = math.Max(0.72, math.Min(1.45, scoreFactor))
 	rankFactor := 1.0
 	if entry.Rank == "high" {
 		rankFactor = 1.08
@@ -556,6 +809,375 @@ func buildCombatantFromEntry(entry Entry, team string) combat.Combatant {
 	comb.HealPow = maxInt(1, int(float64(comb.HealPow)*applyFactor))
 	comb.CurrentHP = comb.MaxHP
 	return comb
+}
+
+func buildHistoryDetail(characterID string, round Round, match Matchup, detailLevel string) HistoryDetail {
+	summary := historySummaryFromMatch(characterID, round, match)
+	detail := HistoryDetail{HistorySummary: summary}
+	if detailLevel == "" {
+		detailLevel = "standard"
+	}
+	report, log := buildBattleArtifacts(match, characterID)
+	switch detailLevel {
+	case "compact":
+		return detail
+	case "verbose":
+		detail.BattleReport = report
+		detail.BattleLog = log
+		return detail
+	default:
+		detail.BattleReport = report
+		return detail
+	}
+}
+
+func buildPublicMatchDetail(round Round, match Matchup, detailLevel string) PublicMatchDetail {
+	detail := PublicMatchDetail{
+		MatchID:        match.MatchID,
+		BattleReportID: match.BattleReportID,
+		TournamentID:   tournamentIDForDay(dayKeyFromMatchID(match.MatchID)),
+		DayKey:         dayKeyFromMatchID(match.MatchID),
+		Stage:          match.Stage,
+		RoundNumber:    match.RoundNumber,
+		RoundName:      round.Name,
+		Status:         match.Status,
+		SummaryTag:     publicSummaryTag(match),
+		StartedAt:      match.ScheduledAt,
+		ResolvedAt:     match.ResolvedAt,
+		LeftEntry:      historyOpponentFromEntry(match.LeftEntry),
+		RightEntry:     historyOpponentFromEntry(match.RightEntry),
+		ByeEntry:       historyOpponentFromEntry(match.ByeEntry),
+		WinnerEntry:    historyOpponentFromEntry(match.WinnerEntry),
+	}
+	if detailLevel == "" {
+		detailLevel = "standard"
+	}
+	report, log := buildPublicBattleArtifacts(match)
+	switch detailLevel {
+	case "compact":
+		return detail
+	case "verbose":
+		detail.BattleReport = report
+		detail.BattleLog = log
+		return detail
+	default:
+		detail.BattleReport = report
+		return detail
+	}
+}
+
+func buildBattleArtifacts(match Matchup, characterID string) (map[string]any, []map[string]any) {
+	if match.ByeEntry != nil && match.LeftEntry == nil && match.RightEntry == nil {
+		report := map[string]any{
+			"outcome":        "bye",
+			"winner":         match.WinnerEntry,
+			"summary_tag":    "advanced_by_bye",
+			"decisive_turns": []any{},
+		}
+		return report, nil
+	}
+	if match.LeftEntry == nil || match.RightEntry == nil {
+		return nil, nil
+	}
+
+	result := simulateEntryDuel(*match.LeftEntry, *match.RightEntry, match.MatchID)
+	report := map[string]any{
+		"outcome":              historyResultForMatch(match, characterID),
+		"winner":               match.WinnerEntry,
+		"loser":                loserFromMatch(match),
+		"winner_final_hp":      winnerFinalHP(match, result),
+		"player_power_delta":   match.LeftEntry.PanelPowerScore - match.RightEntry.PanelPowerScore,
+		"battle_length_events": len(result.Log),
+		"summary_tag":          summaryTag(match, result),
+	}
+	return report, result.Log
+}
+
+func buildPublicBattleArtifacts(match Matchup) (map[string]any, []map[string]any) {
+	if match.ByeEntry != nil && match.LeftEntry == nil && match.RightEntry == nil {
+		report := map[string]any{
+			"outcome":        "bye",
+			"winner":         match.WinnerEntry,
+			"summary_tag":    "advanced_by_bye",
+			"decisive_turns": []any{},
+		}
+		return report, nil
+	}
+	if match.LeftEntry == nil || match.RightEntry == nil {
+		return nil, nil
+	}
+
+	result := simulateEntryDuel(*match.LeftEntry, *match.RightEntry, match.MatchID)
+	report := map[string]any{
+		"outcome":              "resolved",
+		"winner":               match.WinnerEntry,
+		"loser":                loserFromMatch(match),
+		"winner_final_hp":      winnerFinalHP(match, result),
+		"power_delta":          match.LeftEntry.PanelPowerScore - match.RightEntry.PanelPowerScore,
+		"battle_length_events": len(result.Log),
+		"summary_tag":          publicSummaryTag(match),
+	}
+	return report, result.Log
+}
+
+func loserFromMatch(match Matchup) *Entry {
+	if match.LeftEntry == nil || match.RightEntry == nil || match.WinnerEntry == nil {
+		return nil
+	}
+	if match.WinnerEntry.CharacterID == match.LeftEntry.CharacterID {
+		return cloneEntry(*match.RightEntry)
+	}
+	return cloneEntry(*match.LeftEntry)
+}
+
+func winnerFinalHP(match Matchup, result combat.BattleResult) int {
+	if match.WinnerEntry == nil || match.LeftEntry == nil || match.RightEntry == nil {
+		return 0
+	}
+	if match.WinnerEntry.CharacterID == match.LeftEntry.CharacterID {
+		return result.SideAFinalHP
+	}
+	return result.SideBFinalHP
+}
+
+func summaryTag(match Matchup, result combat.BattleResult) string {
+	if match.ByeEntry != nil && match.LeftEntry == nil && match.RightEntry == nil {
+		return "advanced_by_bye"
+	}
+	if match.WinnerEntry == nil || match.LeftEntry == nil || match.RightEntry == nil {
+		return "unresolved"
+	}
+	winner := buildCombatantFromEntry(*match.WinnerEntry, "a")
+	winnerHP := winnerFinalHP(match, result)
+	if winnerHP >= int(float64(winner.MaxHP)*0.7) {
+		return "won_clean"
+	}
+	if winnerHP > 0 {
+		return "won_close"
+	}
+	return "lost"
+}
+
+func historySummaryFromMatch(characterID string, round Round, match Matchup) HistorySummary {
+	var opponent *HistoryOpponent
+	result := historyResultForMatch(match, characterID)
+	if match.ByeEntry == nil {
+		opponent = historyOpponentFor(match, characterID)
+	}
+	return HistorySummary{
+		MatchID:        match.MatchID,
+		BattleReportID: match.BattleReportID,
+		TournamentID:   tournamentIDForDay(dayKeyFromMatchID(match.MatchID)),
+		DayKey:         dayKeyFromMatchID(match.MatchID),
+		Stage:          match.Stage,
+		RoundNumber:    match.RoundNumber,
+		RoundName:      round.Name,
+		Result:         result,
+		SummaryTag:     historySummaryTag(result),
+		StartedAt:      match.ScheduledAt,
+		ResolvedAt:     match.ResolvedAt,
+		Opponent:       opponent,
+	}
+}
+
+func historySummaryTag(result string) string {
+	switch result {
+	case "win":
+		return "advanced"
+	case "loss":
+		return "eliminated"
+	case "bye":
+		return "advanced_by_bye"
+	default:
+		return "pending"
+	}
+}
+
+func historyResultForMatch(match Matchup, characterID string) string {
+	if match.ByeEntry != nil && match.ByeEntry.CharacterID == characterID {
+		return "bye"
+	}
+	if match.WinnerEntry == nil {
+		return "pending"
+	}
+	if match.WinnerEntry.CharacterID == characterID {
+		return "win"
+	}
+	return "loss"
+}
+
+func historyOpponentFor(match Matchup, characterID string) *HistoryOpponent {
+	var opponent *Entry
+	switch {
+	case match.LeftEntry != nil && match.LeftEntry.CharacterID == characterID:
+		opponent = match.RightEntry
+	case match.RightEntry != nil && match.RightEntry.CharacterID == characterID:
+		opponent = match.LeftEntry
+	}
+	if opponent == nil {
+		return nil
+	}
+	return &HistoryOpponent{
+		CharacterID:     opponent.CharacterID,
+		CharacterName:   opponent.CharacterName,
+		Class:           opponent.Class,
+		WeaponStyle:     opponent.WeaponStyle,
+		Rank:            opponent.Rank,
+		PanelPowerScore: opponent.PanelPowerScore,
+		IsNPC:           opponent.IsNPC,
+	}
+}
+
+func historyOpponentFromEntry(entry *Entry) *HistoryOpponent {
+	if entry == nil {
+		return nil
+	}
+	return &HistoryOpponent{
+		CharacterID:     entry.CharacterID,
+		CharacterName:   entry.CharacterName,
+		Class:           entry.Class,
+		WeaponStyle:     entry.WeaponStyle,
+		Rank:            entry.Rank,
+		PanelPowerScore: entry.PanelPowerScore,
+		IsNPC:           entry.IsNPC,
+	}
+}
+
+func (s *Service) buildHistoryLocked(characterID string) []HistorySummary {
+	now := s.clock()
+	dayKeys := make([]string, 0, len(s.entriesByDay))
+	for dayKey := range s.entriesByDay {
+		dayKeys = append(dayKeys, dayKey)
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(dayKeys)))
+
+	items := make([]HistorySummary, 0, 32)
+	for _, dayKey := range dayKeys {
+		effectiveNow := effectiveNowForDay(now, dayKey)
+		snapshot := buildTournamentSnapshot(dayKey, effectiveNow, sortedEntries(s.entriesByDay[dayKey]))
+		for _, round := range append(append([]Round(nil), snapshot.qualifierRounds...), snapshot.rounds...) {
+			for _, match := range round.Matchups {
+				if match.ResolvedAt == "" || !matchContainsCharacter(match, characterID) {
+					continue
+				}
+				items = append(items, historySummaryFromMatch(characterID, round, match))
+			}
+		}
+	}
+
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].ResolvedAt != items[j].ResolvedAt {
+			return items[i].ResolvedAt > items[j].ResolvedAt
+		}
+		return items[i].MatchID > items[j].MatchID
+	})
+	return items
+}
+
+func (s *Service) findMatchLocked(characterID, matchID string) (Matchup, Round, bool) {
+	now := s.clock()
+	for dayKey := range s.entriesByDay {
+		effectiveNow := effectiveNowForDay(now, dayKey)
+		snapshot := buildTournamentSnapshot(dayKey, effectiveNow, sortedEntries(s.entriesByDay[dayKey]))
+		for _, round := range append(append([]Round(nil), snapshot.qualifierRounds...), snapshot.rounds...) {
+			for _, match := range round.Matchups {
+				if match.MatchID == matchID && match.ResolvedAt != "" && matchContainsCharacter(match, characterID) {
+					return match, round, true
+				}
+			}
+		}
+	}
+	return Matchup{}, Round{}, false
+}
+
+func (s *Service) findPublicMatchLocked(matchID string) (Matchup, Round, bool) {
+	now := s.clock()
+	for dayKey := range s.entriesByDay {
+		effectiveNow := effectiveNowForDay(now, dayKey)
+		snapshot := buildTournamentSnapshot(dayKey, effectiveNow, sortedEntries(s.entriesByDay[dayKey]))
+		for _, round := range append(append([]Round(nil), snapshot.qualifierRounds...), snapshot.rounds...) {
+			for _, match := range round.Matchups {
+				if match.MatchID == matchID && match.ResolvedAt != "" {
+					return match, round, true
+				}
+			}
+		}
+	}
+	return Matchup{}, Round{}, false
+}
+
+func publicSummaryTag(match Matchup) string {
+	if match.ByeEntry != nil && match.LeftEntry == nil && match.RightEntry == nil {
+		return "advanced_by_bye"
+	}
+	if match.WinnerEntry == nil || match.LeftEntry == nil || match.RightEntry == nil {
+		return "pending"
+	}
+	result := simulateEntryDuel(*match.LeftEntry, *match.RightEntry, match.MatchID)
+	return summaryTag(match, result)
+}
+
+func filterHistory(items []HistorySummary, filters HistoryFilters) []HistorySummary {
+	filtered := make([]HistorySummary, 0, len(items))
+	for _, item := range items {
+		if filters.Result != "" && item.Result != filters.Result {
+			continue
+		}
+		if filters.TournamentID != "" && item.TournamentID != filters.TournamentID {
+			continue
+		}
+		if filters.Stage != "" && item.Stage != filters.Stage {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	return filtered
+}
+
+func paginateHistory(items []HistorySummary, cursor string, limit int) []HistorySummary {
+	if limit <= 0 {
+		limit = 20
+	}
+	if cursor != "" {
+		start := -1
+		for i, item := range items {
+			if item.MatchID == cursor {
+				start = i + 1
+				break
+			}
+		}
+		if start >= 0 {
+			items = items[start:]
+		}
+	}
+	if len(items) > limit {
+		return items[:limit]
+	}
+	return items
+}
+
+func effectiveNowForDay(now time.Time, dayKey string) time.Time {
+	if dayKey == dayKeyFor(now) {
+		return now
+	}
+	parsed, err := time.ParseInLocation("2006-01-02", dayKey, now.Location())
+	if err != nil {
+		return now
+	}
+	return parsed.Add(24 * time.Hour)
+}
+
+func matchContainsCharacter(match Matchup, characterID string) bool {
+	return (match.LeftEntry != nil && match.LeftEntry.CharacterID == characterID) ||
+		(match.RightEntry != nil && match.RightEntry.CharacterID == characterID) ||
+		(match.ByeEntry != nil && match.ByeEntry.CharacterID == characterID)
+}
+
+func dayKeyFromMatchID(matchID string) string {
+	if len(matchID) >= 16 {
+		return matchID[6:16]
+	}
+	return ""
 }
 
 func maxInt(a, b int) int {
