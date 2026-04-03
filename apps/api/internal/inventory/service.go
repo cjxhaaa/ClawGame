@@ -3,6 +3,7 @@ package inventory
 import (
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"math"
 	"sort"
 	"strings"
@@ -23,24 +24,44 @@ var (
 	ErrConsumableMissing  = errors.New("consumable missing")
 	ErrItemNotEnhanceable = errors.New("item not enhanceable")
 	ErrEnhancementCap     = errors.New("enhancement cap reached")
+	ErrItemNotReforgeable = errors.New("item not reforgeable")
+	ErrReforgeNotPending  = errors.New("reforge result not pending")
 )
 
 const EnhancementMaterialKey = "enhancement_shard"
+const ReforgeMaterialKey = "reforge_stone"
+
+type EquipmentAffix struct {
+	AffixKey string `json:"affix_key"`
+	Value    int    `json:"value"`
+}
+
+type PendingReforgeResult struct {
+	AttemptID        string           `json:"attempt_id"`
+	MaterialKey      string           `json:"material_key"`
+	MaterialQuantity int              `json:"material_quantity"`
+	PreviousAffixes  []EquipmentAffix `json:"previous_affixes"`
+	PreviewAffixes   []EquipmentAffix `json:"preview_affixes"`
+	CreatedAt        string           `json:"created_at"`
+}
 
 type EquipmentItem struct {
-	ItemID                string         `json:"item_id"`
-	CatalogID             string         `json:"catalog_id"`
-	Name                  string         `json:"name"`
-	Slot                  string         `json:"slot"`
-	Rarity                string         `json:"rarity"`
-	RequiredClass         string         `json:"required_class,omitempty"`
-	RequiredWeaponStyle   string         `json:"required_weapon_style,omitempty"`
-	EnhancementLevel      int            `json:"enhancement_level"`
-	Durability            int            `json:"durability"`
-	Stats                 map[string]int `json:"stats"`
-	PassiveAffix          map[string]any `json:"passive_affix,omitempty"`
-	State                 string         `json:"state"`
-	EnhancementPreviewPct float64        `json:"enhancement_preview_pct,omitempty"`
+	ItemID                string                `json:"item_id"`
+	CatalogID             string                `json:"catalog_id"`
+	Name                  string                `json:"name"`
+	Slot                  string                `json:"slot"`
+	Rarity                string                `json:"rarity"`
+	RequiredClass         string                `json:"required_class,omitempty"`
+	RequiredWeaponStyle   string                `json:"required_weapon_style,omitempty"`
+	EnhancementLevel      int                   `json:"enhancement_level"`
+	Durability            int                   `json:"durability"`
+	BaseStats             map[string]int        `json:"base_stats,omitempty"`
+	Stats                 map[string]int        `json:"stats"`
+	PassiveAffix          map[string]any        `json:"passive_affix,omitempty"`
+	ExtraAffixes          []EquipmentAffix      `json:"extra_affixes,omitempty"`
+	PendingReforge        *PendingReforgeResult `json:"pending_reforge,omitempty"`
+	State                 string                `json:"state"`
+	EnhancementPreviewPct float64               `json:"enhancement_preview_pct,omitempty"`
 }
 
 type InventoryView struct {
@@ -327,19 +348,15 @@ func (s *Service) PurchaseItem(character characters.Summary, catalogID string) (
 		return InventoryView{}, EquipmentItem{}, 0, ErrItemNotEquippable
 	}
 
-	purchased := EquipmentItem{
-		ItemID:              nextItemID(),
+	purchased := buildEquipmentItemFromCatalog(catalogItem{
 		CatalogID:           template.CatalogID,
 		Name:                template.Name,
 		Slot:                template.Slot,
 		Rarity:              template.Rarity,
 		RequiredClass:       template.RequiredClass,
 		RequiredWeaponStyle: template.RequiredWeaponStyle,
-		EnhancementLevel:    0,
-		Durability:          100,
 		Stats:               copyStats(template.Stats),
-		State:               "inventory",
-	}
+	}, "inventory")
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -360,19 +377,7 @@ func (s *Service) GrantItemFromCatalog(character characters.Summary, catalogID s
 		return InventoryView{}, EquipmentItem{}, ErrItemNotEquippable
 	}
 
-	reward := EquipmentItem{
-		ItemID:              nextItemID(),
-		CatalogID:           template.CatalogID,
-		Name:                template.Name,
-		Slot:                template.Slot,
-		Rarity:              template.Rarity,
-		RequiredClass:       template.RequiredClass,
-		RequiredWeaponStyle: template.RequiredWeaponStyle,
-		EnhancementLevel:    0,
-		Durability:          100,
-		Stats:               copyStats(template.Stats),
-		State:               "inventory",
-	}
+	reward := buildEquipmentItemFromCatalog(template, "inventory")
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -484,6 +489,108 @@ func (s *Service) EnhanceItem(character characters.Summary, itemID, slot string)
 	return buildView(character, items, s.ensureConsumablesForCharacterLocked(character), slotEnhancements), enhanced, nil
 }
 
+func (s *Service) ReforgeItem(character characters.Summary, itemID string) (InventoryView, EquipmentItem, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	items := s.ensureCharacterItemsLocked(character)
+	index := indexByID(items, strings.TrimSpace(itemID))
+	if index < 0 {
+		return InventoryView{}, EquipmentItem{}, ErrItemNotOwned
+	}
+	item := items[index]
+	if !isReforgeable(item) {
+		return InventoryView{}, EquipmentItem{}, ErrItemNotReforgeable
+	}
+
+	attemptID := nextItemID()
+	preview := rollExtraAffixes(item.ItemID, item.Slot, item.Rarity, attemptID)
+	items[index].PendingReforge = &PendingReforgeResult{
+		AttemptID:        attemptID,
+		MaterialKey:      ReforgeMaterialKey,
+		MaterialQuantity: reforgeStoneCost(item),
+		PreviousAffixes:  cloneAffixes(item.ExtraAffixes),
+		PreviewAffixes:   preview,
+		CreatedAt:        time.Now().Format(time.RFC3339),
+	}
+	s.itemsByCharacter[character.CharacterID] = items
+	view := buildView(character, items, s.ensureConsumablesForCharacterLocked(character), s.ensureSlotEnhancementsLocked(character.CharacterID))
+	reforged := findItemByID(view.Equipped, view.Inventory, item.ItemID)
+	return view, reforged, nil
+}
+
+func (s *Service) GetReforgeCost(character characters.Summary, itemID string) (EquipmentItem, int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	items := s.ensureCharacterItemsLocked(character)
+	index := indexByID(items, strings.TrimSpace(itemID))
+	if index < 0 {
+		return EquipmentItem{}, 0, ErrItemNotOwned
+	}
+	if !isReforgeable(items[index]) {
+		return EquipmentItem{}, 0, ErrItemNotReforgeable
+	}
+	return items[index], reforgeStoneCost(items[index]), nil
+}
+
+func (s *Service) ValidateReforgeTarget(character characters.Summary, itemID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	items := s.ensureCharacterItemsLocked(character)
+	index := indexByID(items, strings.TrimSpace(itemID))
+	if index < 0 {
+		return ErrItemNotOwned
+	}
+	if !isReforgeable(items[index]) {
+		return ErrItemNotReforgeable
+	}
+	return nil
+}
+
+func (s *Service) SaveReforge(character characters.Summary, itemID string) (InventoryView, EquipmentItem, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	items := s.ensureCharacterItemsLocked(character)
+	index := indexByID(items, strings.TrimSpace(itemID))
+	if index < 0 {
+		return InventoryView{}, EquipmentItem{}, ErrItemNotOwned
+	}
+	if items[index].PendingReforge == nil {
+		return InventoryView{}, EquipmentItem{}, ErrReforgeNotPending
+	}
+
+	items[index].ExtraAffixes = cloneAffixes(items[index].PendingReforge.PreviewAffixes)
+	items[index].PendingReforge = nil
+	items[index] = recomputeItemStats(items[index])
+	s.itemsByCharacter[character.CharacterID] = items
+	view := buildView(character, items, s.ensureConsumablesForCharacterLocked(character), s.ensureSlotEnhancementsLocked(character.CharacterID))
+	reforged := findItemByID(view.Equipped, view.Inventory, itemID)
+	return view, reforged, nil
+}
+
+func (s *Service) DiscardReforge(character characters.Summary, itemID string) (InventoryView, EquipmentItem, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	items := s.ensureCharacterItemsLocked(character)
+	index := indexByID(items, strings.TrimSpace(itemID))
+	if index < 0 {
+		return InventoryView{}, EquipmentItem{}, ErrItemNotOwned
+	}
+	if items[index].PendingReforge == nil {
+		return InventoryView{}, EquipmentItem{}, ErrReforgeNotPending
+	}
+
+	items[index].PendingReforge = nil
+	s.itemsByCharacter[character.CharacterID] = items
+	view := buildView(character, items, s.ensureConsumablesForCharacterLocked(character), s.ensureSlotEnhancementsLocked(character.CharacterID))
+	reforged := findItemByID(view.Equipped, view.Inventory, itemID)
+	return view, reforged, nil
+}
+
 func (s *Service) DeriveStats(character characters.Summary, base characters.StatsSnapshot) characters.StatsSnapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -588,19 +695,236 @@ func applySlotEnhancement(item EquipmentItem, level int) EquipmentItem {
 	return item
 }
 
-func starterItemsFor(character characters.Summary) []EquipmentItem {
-	weaponCatalogID := map[string]string{
-		"sword_shield": "warrior_sword_starter",
-		"great_axe":    "warrior_axe_starter",
-		"staff":        "mage_staff_starter",
-		"spellbook":    "mage_spellbook_starter",
-		"scepter":      "priest_scepter_starter",
-		"holy_tome":    "priest_tome_starter",
-	}[character.WeaponStyle]
+func buildEquipmentItemFromCatalog(catalog catalogItem, state string) EquipmentItem {
+	item := EquipmentItem{
+		ItemID:              nextItemID(),
+		CatalogID:           catalog.CatalogID,
+		Name:                catalog.Name,
+		Slot:                catalog.Slot,
+		Rarity:              catalog.Rarity,
+		RequiredClass:       catalog.RequiredClass,
+		RequiredWeaponStyle: catalog.RequiredWeaponStyle,
+		EnhancementLevel:    0,
+		Durability:          100,
+		BaseStats:           copyStats(catalog.Stats),
+		PassiveAffix:        nil,
+		ExtraAffixes:        nil,
+		State:               state,
+	}
+	item.ExtraAffixes = rollExtraAffixes(item.ItemID, item.Slot, item.Rarity, item.CatalogID)
+	return recomputeItemStats(item)
+}
 
-	chestCatalogID := "starter_chest_armor"
-	if character.Class != "warrior" {
-		chestCatalogID = "starter_chest_cloth"
+func recomputeItemStats(item EquipmentItem) EquipmentItem {
+	if item.BaseStats == nil {
+		item.BaseStats = copyStats(item.Stats)
+	}
+	item.Stats = copyStats(item.BaseStats)
+	for _, affix := range item.ExtraAffixes {
+		item.Stats[affix.AffixKey] += affix.Value
+	}
+	return item
+}
+
+func cloneAffixes(items []EquipmentAffix) []EquipmentAffix {
+	cloned := make([]EquipmentAffix, len(items))
+	copy(cloned, items)
+	return cloned
+}
+
+func findItemByID(equipped []EquipmentItem, bag []EquipmentItem, itemID string) EquipmentItem {
+	for _, item := range equipped {
+		if item.ItemID == itemID {
+			return item
+		}
+	}
+	for _, item := range bag {
+		if item.ItemID == itemID {
+			return item
+		}
+	}
+	return EquipmentItem{}
+}
+
+func isReforgeable(item EquipmentItem) bool {
+	return len(item.ExtraAffixes) > 0
+}
+
+func rollExtraAffixes(itemID, slot, rarity, seed string) []EquipmentAffix {
+	count := extraAffixCountForRarity(rarity)
+	if count <= 0 {
+		return nil
+	}
+	pool := affixPoolForSlot(slot)
+	used := map[string]struct{}{}
+	affixes := make([]EquipmentAffix, 0, count)
+	for i := 0; i < count && len(used) < len(pool); i++ {
+		key := pickAffixKey(pool, used, itemID, seed, i)
+		used[key] = struct{}{}
+		affixes = append(affixes, EquipmentAffix{
+			AffixKey: key,
+			Value:    rollAffixValue(key, rarity, itemID, seed, i),
+		})
+	}
+	return affixes
+}
+
+func extraAffixCountForRarity(rarity string) int {
+	switch strings.ToLower(strings.TrimSpace(rarity)) {
+	case "blue", "rare":
+		return 1
+	case "purple", "epic":
+		return 2
+	case "gold":
+		return 3
+	case "red", "prismatic":
+		return 4
+	default:
+		return 0
+	}
+}
+
+func affixPoolForSlot(slot string) []string {
+	switch strings.ToLower(strings.TrimSpace(slot)) {
+	case "weapon":
+		return []string{"physical_attack", "magic_attack", "healing_power", "precision", "crit_rate", "crit_damage", "speed"}
+	case "head":
+		return []string{"max_hp", "physical_defense", "magic_defense", "speed", "healing_power"}
+	case "chest":
+		return []string{"max_hp", "physical_defense", "magic_defense", "healing_power"}
+	case "boots":
+		return []string{"speed", "max_hp", "physical_defense", "magic_defense", "precision"}
+	case "ring":
+		return []string{"physical_attack", "magic_attack", "healing_power", "precision", "crit_rate", "crit_damage", "speed"}
+	case "necklace":
+		return []string{"max_hp", "healing_power", "magic_attack", "magic_defense", "speed", "precision"}
+	default:
+		return []string{"max_hp", "physical_attack", "magic_attack", "physical_defense", "magic_defense", "speed", "healing_power"}
+	}
+}
+
+func pickAffixKey(pool []string, used map[string]struct{}, itemID, seed string, offset int) string {
+	available := make([]string, 0, len(pool))
+	for _, key := range pool {
+		if _, exists := used[key]; !exists {
+			available = append(available, key)
+		}
+	}
+	if len(available) == 0 {
+		return pool[0]
+	}
+	index := deterministicIndex(itemID, seed, offset, len(available))
+	return available[index]
+}
+
+func rollAffixValue(key, rarity, itemID, seed string, offset int) int {
+	minValue, maxValue := affixRange(key)
+	if minValue >= maxValue {
+		return maxValue
+	}
+	if strings.EqualFold(strings.TrimSpace(rarity), "prismatic") {
+		return maxValue
+	}
+	minRoll, maxRoll := qualityRollBand(rarity)
+	position := minRoll + deterministicFloat(itemID, seed, offset)*(maxRoll-minRoll)
+	value := float64(minValue) + position*float64(maxValue-minValue)
+	return int(math.Round(value))
+}
+
+func affixRange(key string) (int, int) {
+	switch key {
+	case "max_hp":
+		return 10, 38
+	case "physical_attack", "magic_attack", "healing_power":
+		return 2, 8
+	case "physical_defense", "magic_defense":
+		return 1, 6
+	case "speed":
+		return 1, 3
+	case "precision":
+		return 2, 8
+	case "crit_rate":
+		return 1, 5
+	case "crit_damage":
+		return 3, 10
+	default:
+		return 1, 4
+	}
+}
+
+func qualityRollBand(rarity string) (float64, float64) {
+	switch strings.ToLower(strings.TrimSpace(rarity)) {
+	case "blue", "rare":
+		return 0.70, 0.82
+	case "purple", "epic":
+		return 0.78, 0.88
+	case "gold":
+		return 0.84, 0.93
+	case "red":
+		return 0.90, 0.97
+	case "prismatic":
+		return 1.0, 1.0
+	default:
+		return 0.70, 0.82
+	}
+}
+
+func reforgeStoneCost(item EquipmentItem) int {
+	switch strings.ToLower(strings.TrimSpace(item.Rarity)) {
+	case "blue":
+		return 1
+	case "purple":
+		return 2
+	case "gold":
+		return 3
+	case "red":
+		return 5
+	case "prismatic":
+		return 8
+	default:
+		return 3
+	}
+}
+
+func deterministicIndex(itemID, seed string, offset, length int) int {
+	if length <= 1 {
+		return 0
+	}
+	return int(deterministicFloat(itemID, seed, offset)*float64(length)) % length
+}
+
+func deterministicFloat(itemID, seed string, offset int) float64 {
+	hasher := fnv.New64a()
+	_, _ = hasher.Write([]byte(fmt.Sprintf("%s|%s|%d", itemID, seed, offset)))
+	return float64(hasher.Sum64()%10000) / 10000
+}
+
+func starterItemsFor(character characters.Summary) []EquipmentItem {
+	if strings.EqualFold(character.Class, "civilian") {
+		catalogIDs := []string{"starter_chest_cloth", "starter_boots"}
+		items := make([]EquipmentItem, 0, len(catalogIDs))
+		for _, id := range catalogIDs {
+			catalog, ok := starterCatalog[id]
+			if !ok {
+				continue
+			}
+			items = append(items, buildEquipmentItemFromCatalog(catalog, "equipped"))
+		}
+		for _, id := range catalogIDs {
+			catalog, ok := starterCatalog[id]
+			if !ok {
+				continue
+			}
+			items = append(items, buildEquipmentItemFromCatalog(catalog, "inventory"))
+		}
+		return items
+	}
+
+	weaponCatalogID := ProfessionStarterCatalogID(character.ProfessionRoute)
+
+	chestCatalogID := "starter_chest_cloth"
+	if character.Class == "warrior" {
+		chestCatalogID = "starter_chest_armor"
 	}
 
 	catalogIDs := []string{weaponCatalogID, chestCatalogID, "starter_boots"}
@@ -610,25 +934,41 @@ func starterItemsFor(character characters.Summary) []EquipmentItem {
 		if !ok {
 			continue
 		}
-		items = append(items, EquipmentItem{
-			ItemID:              nextItemID(),
-			CatalogID:           catalog.CatalogID,
-			Name:                catalog.Name,
-			Slot:                catalog.Slot,
-			Rarity:              catalog.Rarity,
-			RequiredClass:       catalog.RequiredClass,
-			RequiredWeaponStyle: catalog.RequiredWeaponStyle,
-			EnhancementLevel:    0,
-			Durability:          100,
-			Stats:               copyStats(catalog.Stats),
-			State:               "inventory",
-		})
+		items = append(items, buildEquipmentItemFromCatalog(catalog, "inventory"))
 	}
 
-	if len(items) > 0 {
-		items[0].State = "equipped"
+	for i := range items {
+		items[i].State = "equipped"
+	}
+	if len(items) >= 3 {
+		for _, id := range []string{chestCatalogID, "starter_boots"} {
+			catalog, ok := starterCatalog[id]
+			if !ok {
+				continue
+			}
+			items = append(items, buildEquipmentItemFromCatalog(catalog, "inventory"))
+		}
 	}
 	return items
+}
+
+func ProfessionStarterCatalogID(routeID string) string {
+	switch strings.ToLower(strings.TrimSpace(routeID)) {
+	case "tank", "magic_burst":
+		return "warrior_sword_starter"
+	case "physical_burst":
+		return "warrior_axe_starter"
+	case "aoe_burst":
+		return "mage_staff_starter"
+	case "single_burst", "control":
+		return "mage_spellbook_starter"
+	case "curse":
+		return "priest_scepter_starter"
+	case "healing_support", "summon":
+		return "priest_tome_starter"
+	default:
+		return ""
+	}
 }
 
 func buildView(character characters.Summary, items []EquipmentItem, consumables map[string]int, slotEnhancements map[string]int) InventoryView {

@@ -65,7 +65,7 @@ V1 后端由两个 Go 应用组成：
 职责：
 
 - 角色创建
-- 职业与武器流派选择
+- 平民阶段 onboarding 与 `10` 级职业路线选择
 - 角色档案读取
 - 派生属性计算
 - 阶位升级
@@ -145,7 +145,19 @@ V1 后端由两个 Go 应用组成：
 - 排行榜读模型
 - 公共事件分页与 SSE 推送
 
-### 3.10 Admin
+### 3.10 World Boss
+
+职责：
+
+- 世界 Boss 赛季配置
+- 异步 `6` 人匹配池编排
+- 讨伐实例创建与结算
+- 团队总伤害档位评估
+- 奖励发放
+- 装备额外副词条洗练请求
+- 待确认洗练结果的保存与放弃
+
+### 3.11 Admin
 
 职责：
 
@@ -201,7 +213,8 @@ V1 后端由两个 Go 应用组成：
 
 ### 6.1 角色相关枚举
 
-- `character_class`：`warrior`、`mage`、`priest`
+- `character_class`：`civilian`、`warrior`、`mage`、`priest`
+- `profession_route_id`：`tank`、`physical_burst`、`magic_burst`、`single_burst`、`aoe_burst`、`control`、`healing_support`、`curse`、`summon`
 - `weapon_style`：`sword_shield`、`great_axe`、`staff`、`spellbook`、`scepter`、`holy_tome`
 - `adventurer_rank`：`low`、`mid`、`high`
 - `character_status`：`active`、`locked`、`banned`
@@ -236,13 +249,20 @@ V1 后端由两个 Go 应用组成：
   - `claim_dungeon_rewards`
 
 
-### 6.6 竞技场枚举
+### 6.6 世界 Boss 枚举
+
+- `world_boss_queue_status`：`queued`、`matched`、`expired`、`cancelled`
+- `world_boss_raid_status`：`forming`、`resolving`、`resolved`、`rewarded`
+- `world_boss_reward_tier`：`D`、`C`、`B`、`A`、`S`
+- `reforge_result_status`：`pending`、`saved`、`discarded`、`expired`
+
+### 6.7 竞技场枚举
 
 - `arena_tournament_status`：`signup_open`、`signup_closed`、`in_progress`、`completed`、`cancelled`
 - `arena_entry_status`：`signed_up`、`seeded`、`eliminated`、`completed`
 - `arena_match_status`：`pending`、`ready`、`resolved`、`walkover`
 
-### 6.7 事件枚举
+### 6.8 事件枚举
 
 - `world_event_visibility`：`public`、`internal`、`admin_only`
 - `world_event_type`：
@@ -262,13 +282,20 @@ V1 后端由两个 Go 应用组成：
   - `dungeon.encounter_resolved`
   - `dungeon.cleared`
   - `dungeon.failed`
+  - `world_boss.queued`
+  - `world_boss.matched`
+  - `world_boss.resolved`
+  - `world_boss.reward_granted`
+  - `inventory.reforge_pending`
+  - `inventory.reforge_saved`
+  - `inventory.reforge_discarded`
   - `arena.signup_opened`
   - `arena.signup_closed`
   - `arena.entry_accepted`
   - `arena.match_resolved`
   - `arena.completed`
 
-### 6.8 错误码枚举
+### 6.9 错误码枚举
 
 首批必须定义的业务错误码：
 
@@ -362,6 +389,27 @@ V1 后端由两个 Go 应用组成：
 当前仓库说明：
 
 - 部分列表接口目前总是返回 `next_cursor: null`
+
+### 7.7 世界 Boss 与洗练接口方向
+
+建议的 V1 私有接口：
+
+- `GET /api/v1/world-boss/current`
+- `POST /api/v1/world-boss/queue`
+- `GET /api/v1/world-boss/queue-status`
+- `GET /api/v1/world-boss/raids/{raidId}`
+- `POST /api/v1/items/{itemId}/reforge`
+- `POST /api/v1/items/{itemId}/reforge/save`
+- `POST /api/v1/items/{itemId}/reforge/discard`
+
+契约方向：
+
+- 加入匹配池会为当前 Boss 窗口创建或刷新一条有效报名记录
+- 匹配池人数足够时，系统应自动创建一场 `6` 人讨伐实例
+- 讨伐详情应暴露团队总伤害、奖励档位和成员个人贡献
+- `POST /items/{itemId}/reforge` 应创建一条待确认洗练结果
+- `save` 会正式提交该次洗练结果
+- `discard` 会恢复旧的额外副词条状态，但材料消耗依然生效
 
 ## 8. 公共 JSON 对象形状
 
@@ -563,6 +611,7 @@ V1 后端由两个 Go 应用组成：
 - `account_id`
 - `name`
 - `class`
+- `profession_route_id`
 - `weapon_style`
 - `rank`
 - `reputation`
@@ -976,25 +1025,54 @@ V1 后端由两个 Go 应用组成：
 
 ```json
 {
-  "name": "bot-alpha",
-  "class": "mage",
-  "weapon_style": "staff"
+  "name": "bot-alpha"
 }
 ```
 
 校验：
 
 - 账号还没有角色
-- `weapon_style` 与 `class` 兼容
 - `name` 唯一
 
 副作用：
 
-- 插入角色与基础属性
+- 以 `civilian` 身份插入角色
+- 插入平民基础属性
 - 插入每日限制行
 - 发放初始物品与金币
 - 创建或安排每日任务板生成
 - 产生 `character.created`
+
+#### `POST /api/v1/me/profession-route`
+
+用途：
+
+- 在角色达到赛季 `10` 级后选择职业路线
+
+请求：
+
+```json
+{
+  "route_id": "control"
+}
+```
+
+校验：
+
+- 角色存在且归属于调用者
+- 当前 `class` 为 `civilian`
+- 赛季等级至少达到 `10`
+- `route_id` 合法
+- 本赛季尚未选择过职业路线
+
+副作用：
+
+- 写入 `profession_route_id`
+- 推导并写入转职后的 `class`
+- 写入该路线推荐的起始 `weapon_style`
+- 发放一把与路线匹配的起始职业武器
+- 重新计算转职后的基础属性
+- 产生 `character.profession_chosen`
 
 #### `GET /api/v1/me`
 
@@ -1680,8 +1758,15 @@ V1 后端由两个 Go 应用组成：
 ### 15.1 角色创建
 
 - 每账号只能有一个角色
-- 职业必须合法
-- 武器流派必须与职业兼容
+- 新角色创建后默认身份必须是 `civilian`
+- 创建角色时不选择职业和职业路线
+
+### 15.1.1 职业路线选择
+
+- 只有 `civilian` 才能选择职业路线
+- 赛季等级必须至少达到 `10`
+- 所选路线必须合法
+- 推导出的职业与起始武器流派必须符合路线映射
 
 ### 15.2 旅行
 

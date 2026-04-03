@@ -20,8 +20,14 @@ var (
 	ErrCharacterNotFound      = errors.New("character not found")
 	ErrCharacterInvalidClass  = errors.New("invalid class")
 	ErrCharacterInvalidWeapon = errors.New("invalid weapon style")
+	ErrCharacterInvalidRoute  = errors.New("invalid profession route")
+	ErrCharacterRouteLocked   = errors.New("profession route locked")
 	ErrCharacterNameTaken     = errors.New("character name already exists")
 	ErrCharacterInvalidName   = errors.New("invalid character name")
+	ErrSkillNotFound          = errors.New("skill not found")
+	ErrSkillLocked            = errors.New("skill locked")
+	ErrSkillMaxLevel          = errors.New("skill max level reached")
+	ErrSkillInvalidLoadout    = errors.New("skill loadout invalid")
 	ErrGoldInsufficient       = errors.New("gold insufficient")
 	ErrMaterialsInsufficient  = errors.New("materials insufficient")
 	ErrTravelRankLocked       = errors.New("travel rank locked")
@@ -36,7 +42,10 @@ type Summary struct {
 	CharacterID      string `json:"character_id"`
 	Name             string `json:"name"`
 	Class            string `json:"class"`
+	ProfessionRoute  string `json:"profession_route_id,omitempty"`
 	WeaponStyle      string `json:"weapon_style"`
+	SeasonLevel      int    `json:"season_level"`
+	SeasonXP         int    `json:"season_xp"`
 	Rank             string `json:"rank"`
 	Reputation       int    `json:"reputation"`
 	Gold             int    `json:"gold"`
@@ -122,12 +131,38 @@ type ValidAction struct {
 	ArgsSchema map[string]any `json:"args_schema"`
 }
 
+type SkillView struct {
+	SkillID           string `json:"skill_id"`
+	Name              string `json:"name"`
+	DisplayNameZH     string `json:"display_name_zh"`
+	Class             string `json:"class"`
+	RouteID           string `json:"route_id"`
+	Track             string `json:"skill_track"`
+	Tier              string `json:"skill_tier"`
+	CooldownRounds    int    `json:"cooldown_rounds"`
+	IsBasic           bool   `json:"is_basic"`
+	IsUnlocked        bool   `json:"is_unlocked"`
+	Level             int    `json:"level"`
+	MaxLevel          int    `json:"max_level"`
+	CurrentMultiplier int    `json:"current_multiplier_pct"`
+	NextLevelCost     int    `json:"next_level_cost_gold,omitempty"`
+}
+
+type SkillsStateView struct {
+	BasicAttack    SkillView   `json:"basic_attack"`
+	Universal      []SkillView `json:"universal_skills"`
+	ClassSkills    []SkillView `json:"class_skills"`
+	ActiveLoadout  []string    `json:"active_loadout"`
+	MaxActiveSlots int         `json:"max_active_slots"`
+}
+
 type StateView struct {
 	ServerTime       string                `json:"server_time"`
 	Account          auth.Account          `json:"account"`
 	Character        Summary               `json:"character"`
 	Stats            StatsSnapshot         `json:"stats"`
 	CombatPower      CombatPowerSummary    `json:"combat_power"`
+	Skills           SkillsStateView       `json:"skills"`
 	Limits           DailyLimits           `json:"limits"`
 	Materials        []MaterialBalance     `json:"materials"`
 	SlotEnhancements []SlotEnhancementView `json:"slot_enhancements"`
@@ -168,6 +203,8 @@ type StoredCharacter struct {
 	AccountID            string
 	Summary              Summary
 	Stats                StatsSnapshot
+	SkillLevels          map[string]int
+	SkillLoadout         []string
 	QuestCompletionUsed  int
 	DungeonEntryUsed     int
 	DailyLimitsResetDate string
@@ -183,6 +220,8 @@ type Repository interface {
 type record struct {
 	summary              Summary
 	stats                StatsSnapshot
+	skillLevels          map[string]int
+	skillLoadout         []string
 	questCompletionUsed  int
 	dungeonEntryUsed     int
 	materials            map[string]int
@@ -237,6 +276,8 @@ func NewServiceWithRepository(repo Repository) (*Service, error) {
 		service.characterByAccountID[stored.AccountID] = record{
 			summary:              stored.Summary,
 			stats:                stored.Stats,
+			skillLevels:          cloneSkillLevels(stored.SkillLevels),
+			skillLoadout:         cloneSkillLoadout(stored.SkillLoadout),
 			questCompletionUsed:  stored.QuestCompletionUsed,
 			dungeonEntryUsed:     stored.DungeonEntryUsed,
 			materials:            map[string]int{},
@@ -268,17 +309,9 @@ func NewServiceWithRepository(repo Repository) (*Service, error) {
 
 func (s *Service) CreateCharacter(account auth.Account, name, class, weaponStyle string, worldService *world.Service) (StateView, error) {
 	name = strings.TrimSpace(name)
-	class = strings.TrimSpace(strings.ToLower(class))
-	weaponStyle = strings.TrimSpace(strings.ToLower(weaponStyle))
 
 	if len(name) < 3 || len(name) > 32 {
 		return StateView{}, ErrCharacterInvalidName
-	}
-	if _, ok := allowedWeaponStyles[class]; !ok {
-		return StateView{}, ErrCharacterInvalidClass
-	}
-	if !isWeaponCompatible(class, weaponStyle) {
-		return StateView{}, ErrCharacterInvalidWeapon
 	}
 
 	s.mu.Lock()
@@ -294,8 +327,11 @@ func (s *Service) CreateCharacter(account auth.Account, name, class, weaponStyle
 	summary := Summary{
 		CharacterID:      nextID("char"),
 		Name:             name,
-		Class:            class,
-		WeaponStyle:      weaponStyle,
+		Class:            "civilian",
+		ProfessionRoute:  "",
+		WeaponStyle:      "",
+		SeasonLevel:      1,
+		SeasonXP:         0,
 		Rank:             "low",
 		Reputation:       0,
 		Gold:             100,
@@ -305,10 +341,12 @@ func (s *Service) CreateCharacter(account auth.Account, name, class, weaponStyle
 
 	entry := record{
 		summary:              summary,
-		stats:                baseStatsByStyle[weaponStyle],
+		stats:                civilianBaseStats,
+		skillLevels:          map[string]int{},
+		skillLoadout:         []string{},
 		materials:            map[string]int{},
 		dailyLimitsResetDate: s.businessDate(),
-		recentEvents:         []world.WorldEvent{s.newEvent(summary, "character.created", "main_city", fmt.Sprintf("%s completed character creation and entered Main City.", name), map[string]any{"class": class, "weapon_style": weaponStyle})},
+		recentEvents:         []world.WorldEvent{s.newEvent(summary, "character.created", "main_city", fmt.Sprintf("%s entered Main City as a civilian adventurer.", name), map[string]any{"class": summary.Class, "profession_route_id": "", "weapon_style": ""})},
 	}
 
 	if err := s.saveRecordLocked(account.AccountID, entry); err != nil {
@@ -327,6 +365,78 @@ func (s *Service) CreateCharacter(account auth.Account, name, class, weaponStyle
 	return s.GetState(account, worldService)
 }
 
+func (s *Service) GrantSeasonXP(characterID string, amount int) (Summary, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	accountID, entry, ok := s.lookupByCharacterIDLocked(characterID)
+	if !ok {
+		return Summary{}, ErrCharacterNotFound
+	}
+	entry, _, err := s.normalizeDailyLimitsLocked(accountID, entry)
+	if err != nil {
+		return Summary{}, err
+	}
+	grantSeasonXP(&entry.summary, amount)
+	if err := s.saveRecordLocked(accountID, entry); err != nil {
+		return Summary{}, err
+	}
+	s.characterByAccountID[accountID] = entry
+	return entry.summary, nil
+}
+
+func (s *Service) ChooseProfessionRoute(account auth.Account, routeID string, worldService *world.Service) (StateView, error) {
+	routeID = strings.TrimSpace(strings.ToLower(routeID))
+	route, ok := professionRoutes[routeID]
+	if !ok {
+		return StateView{}, ErrCharacterInvalidRoute
+	}
+
+	s.mu.Lock()
+	entry, ok := s.characterByAccountID[account.AccountID]
+	if !ok {
+		s.mu.Unlock()
+		return StateView{}, ErrCharacterNotFound
+	}
+	entry, _, err := s.normalizeDailyLimitsLocked(account.AccountID, entry)
+	if err != nil {
+		s.mu.Unlock()
+		return StateView{}, err
+	}
+	if entry.summary.Class != "civilian" || entry.summary.ProfessionRoute != "" {
+		s.mu.Unlock()
+		return StateView{}, ErrCharacterRouteLocked
+	}
+	if entry.summary.SeasonLevel < 10 {
+		s.mu.Unlock()
+		return StateView{}, ErrCharacterRouteLocked
+	}
+
+	entry.summary.ProfessionRoute = routeID
+	entry.summary.Class = route.Class
+	entry.summary.WeaponStyle = route.WeaponStyle
+	entry.stats = route.BaseStats
+	event := s.newEvent(entry.summary, "character.profession_chosen", entry.summary.LocationRegionID, fmt.Sprintf("%s chose the %s route.", entry.summary.Name, routeID), map[string]any{
+		"class":               route.Class,
+		"profession_route_id": routeID,
+		"weapon_style":        route.WeaponStyle,
+	})
+	entry.recentEvents = prependEvent(entry.recentEvents, event)
+
+	if err := s.saveRecordLocked(account.AccountID, entry); err != nil {
+		s.mu.Unlock()
+		return StateView{}, err
+	}
+	if err := s.appendEventsLocked(account.AccountID, entry.summary.CharacterID, []world.WorldEvent{event}); err != nil {
+		s.mu.Unlock()
+		return StateView{}, err
+	}
+	s.characterByAccountID[account.AccountID] = entry
+	s.mu.Unlock()
+
+	return s.GetState(account, worldService)
+}
+
 func (s *Service) GetSummary(accountID string) (Summary, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -339,6 +449,17 @@ func (s *Service) GetSummary(accountID string) (Summary, bool) {
 	entry, _, _ = s.normalizeDailyLimitsLocked(accountID, entry)
 
 	return entry.summary, true
+}
+
+func (s *Service) GetCharacterByID(characterID string) (Summary, StatsSnapshot, SkillsStateView, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	_, entry, ok := s.lookupByCharacterIDLocked(characterID)
+	if !ok {
+		return Summary{}, StatsSnapshot{}, SkillsStateView{}, false
+	}
+	return entry.summary, entry.stats, buildSkillsState(entry.summary, entry.skillLevels, entry.skillLoadout), true
 }
 
 func (s *Service) GetMe(account auth.Account) map[string]any {
@@ -384,6 +505,7 @@ func (s *Service) GetState(account auth.Account, worldService *world.Service) (S
 		Account:      account,
 		Character:    entry.summary,
 		Stats:        entry.stats,
+		Skills:       buildSkillsState(entry.summary, entry.skillLevels, entry.skillLoadout),
 		Limits:       limits,
 		Materials:    materialBalancesView(entry.materials),
 		Objectives:   []QuestSummary{},
@@ -591,6 +713,8 @@ func (s *Service) saveRecordLocked(accountID string, entry record) error {
 		AccountID:            accountID,
 		Summary:              entry.summary,
 		Stats:                entry.stats,
+		SkillLevels:          cloneSkillLevels(entry.skillLevels),
+		SkillLoadout:         cloneSkillLoadout(entry.skillLoadout),
 		QuestCompletionUsed:  entry.questCompletionUsed,
 		DungeonEntryUsed:     entry.dungeonEntryUsed,
 		DailyLimitsResetDate: entry.dailyLimitsResetDate,
@@ -774,6 +898,7 @@ func (s *Service) ApplyFieldEncounter(characterID string, rewardGold int, materi
 	if rewardGold > 0 {
 		entry.summary.Gold += rewardGold
 	}
+	grantSeasonXP(&entry.summary, 100)
 	if entry.materials == nil {
 		entry.materials = map[string]int{}
 	}
@@ -810,6 +935,7 @@ func (s *Service) ApplyDungeonRewardClaim(characterID, runID, dungeonID string, 
 	if rewardGold > 0 {
 		entry.summary.Gold += rewardGold
 	}
+	grantSeasonXP(&entry.summary, xpForDungeonRating(rating))
 	if entry.materials == nil {
 		entry.materials = map[string]int{}
 	}
@@ -871,6 +997,7 @@ func (s *Service) ApplyQuestSubmission(characterID string, quest QuestSummary) (
 	previousRank := entry.summary.Rank
 	entry.summary.Gold += quest.RewardGold
 	entry.summary.Reputation += quest.RewardReputation
+	grantSeasonXP(&entry.summary, xpForQuest(quest))
 	entry.questCompletionUsed++
 	entry.summary.Rank = rankForReputation(entry.summary.Reputation)
 
@@ -1133,6 +1260,19 @@ var allowedWeaponStyles = map[string][]string{
 	"priest":  {"scepter", "holy_tome"},
 }
 
+var civilianBaseStats = StatsSnapshot{
+	MaxHP:           96,
+	PhysicalAttack:  14,
+	MagicAttack:     14,
+	PhysicalDefense: 10,
+	MagicDefense:    10,
+	Speed:           12,
+	HealingPower:    6,
+	CritRate:        0.20,
+	CritDamage:      0.50,
+	BlockRate:       0.05,
+}
+
 var baseStatsByStyle = map[string]StatsSnapshot{
 	"sword_shield": {
 		MaxHP:           132,
@@ -1206,4 +1346,161 @@ var baseStatsByStyle = map[string]StatsSnapshot{
 		CritDamage:      0.50,
 		BlockRate:       0.05,
 	},
+}
+
+type professionRouteDefinition struct {
+	Class       string
+	WeaponStyle string
+	BaseStats   StatsSnapshot
+}
+
+var professionRoutes = map[string]professionRouteDefinition{
+	"tank": {
+		Class:       "warrior",
+		WeaponStyle: "sword_shield",
+		BaseStats: StatsSnapshot{
+			MaxHP: 180, PhysicalAttack: 34, MagicAttack: 8, PhysicalDefense: 26, MagicDefense: 16, Speed: 11, HealingPower: 4,
+			CritRate: 0.20, CritDamage: 0.50, BlockRate: 0.05,
+		},
+	},
+	"physical_burst": {
+		Class:       "warrior",
+		WeaponStyle: "great_axe",
+		BaseStats: StatsSnapshot{
+			MaxHP: 168, PhysicalAttack: 42, MagicAttack: 6, PhysicalDefense: 20, MagicDefense: 13, Speed: 12, HealingPower: 3,
+			CritRate: 0.20, CritDamage: 0.50, BlockRate: 0.05,
+		},
+	},
+	"magic_burst": {
+		Class:       "warrior",
+		WeaponStyle: "sword_shield",
+		BaseStats: StatsSnapshot{
+			MaxHP: 164, PhysicalAttack: 28, MagicAttack: 26, PhysicalDefense: 19, MagicDefense: 18, Speed: 11, HealingPower: 5,
+			CritRate: 0.20, CritDamage: 0.50, BlockRate: 0.05,
+		},
+	},
+	"single_burst": {
+		Class:       "mage",
+		WeaponStyle: "spellbook",
+		BaseStats: StatsSnapshot{
+			MaxHP: 128, PhysicalAttack: 12, MagicAttack: 48, PhysicalDefense: 11, MagicDefense: 21, Speed: 17, HealingPower: 11,
+			CritRate: 0.20, CritDamage: 0.50, BlockRate: 0.05,
+		},
+	},
+	"aoe_burst": {
+		Class:       "mage",
+		WeaponStyle: "staff",
+		BaseStats: StatsSnapshot{
+			MaxHP: 132, PhysicalAttack: 13, MagicAttack: 46, PhysicalDefense: 12, MagicDefense: 22, Speed: 16, HealingPower: 9,
+			CritRate: 0.20, CritDamage: 0.50, BlockRate: 0.05,
+		},
+	},
+	"control": {
+		Class:       "mage",
+		WeaponStyle: "spellbook",
+		BaseStats: StatsSnapshot{
+			MaxHP: 136, PhysicalAttack: 11, MagicAttack: 41, PhysicalDefense: 13, MagicDefense: 23, Speed: 18, HealingPower: 10,
+			CritRate: 0.20, CritDamage: 0.50, BlockRate: 0.05,
+		},
+	},
+	"healing_support": {
+		Class:       "priest",
+		WeaponStyle: "holy_tome",
+		BaseStats: StatsSnapshot{
+			MaxHP: 150, PhysicalAttack: 10, MagicAttack: 31, PhysicalDefense: 14, MagicDefense: 24, Speed: 14, HealingPower: 30,
+			CritRate: 0.20, CritDamage: 0.50, BlockRate: 0.05,
+		},
+	},
+	"curse": {
+		Class:       "priest",
+		WeaponStyle: "scepter",
+		BaseStats: StatsSnapshot{
+			MaxHP: 148, PhysicalAttack: 12, MagicAttack: 36, PhysicalDefense: 14, MagicDefense: 22, Speed: 15, HealingPower: 19,
+			CritRate: 0.20, CritDamage: 0.50, BlockRate: 0.05,
+		},
+	},
+	"summon": {
+		Class:       "priest",
+		WeaponStyle: "holy_tome",
+		BaseStats: StatsSnapshot{
+			MaxHP: 152, PhysicalAttack: 11, MagicAttack: 33, PhysicalDefense: 15, MagicDefense: 23, Speed: 14, HealingPower: 24,
+			CritRate: 0.20, CritDamage: 0.50, BlockRate: 0.05,
+		},
+	},
+}
+
+func grantSeasonXP(summary *Summary, amount int) {
+	if amount <= 0 {
+		return
+	}
+	summary.SeasonXP += amount
+	if summary.SeasonXP < 0 {
+		summary.SeasonXP = 0
+	}
+	summary.SeasonLevel = seasonLevelForXP(summary.SeasonXP)
+}
+
+func seasonLevelForXP(xp int) int {
+	if xp <= 0 {
+		return 1
+	}
+	level := 1
+	remaining := xp
+	bands := []struct {
+		steps int
+		cost  int
+	}{
+		{steps: 19, cost: 500},
+		{steps: 20, cost: 800},
+		{steps: 20, cost: 1100},
+		{steps: 20, cost: 1400},
+		{steps: 20, cost: 1700},
+	}
+	for _, band := range bands {
+		for step := 0; step < band.steps; step++ {
+			if remaining < band.cost {
+				return level
+			}
+			remaining -= band.cost
+			level++
+			if level >= 100 {
+				return 100
+			}
+		}
+	}
+	return 100
+}
+
+func xpForQuest(quest QuestSummary) int {
+	switch strings.ToLower(strings.TrimSpace(quest.Difficulty)) {
+	case "nightmare":
+		return 520
+	case "hard":
+		return 320
+	case "normal":
+		return 220
+	}
+	switch strings.ToLower(strings.TrimSpace(quest.Rarity)) {
+	case "challenge":
+		return 520
+	case "uncommon":
+		return 320
+	default:
+		return 220
+	}
+}
+
+func xpForDungeonRating(rating string) int {
+	switch strings.ToUpper(strings.TrimSpace(rating)) {
+	case "S":
+		return 520
+	case "A":
+		return 460
+	case "B":
+		return 400
+	case "C":
+		return 340
+	default:
+		return 280
+	}
 }

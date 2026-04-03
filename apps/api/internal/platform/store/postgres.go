@@ -223,7 +223,12 @@ func (s *PostgresStore) LoadCharacters() ([]characters.StoredCharacter, error) {
 			c.id,
 			c.name,
 			c.class,
-			c.weapon_style,
+			COALESCE(c.profession_route_id, ''),
+			COALESCE(c.weapon_style, ''),
+			COALESCE(c.season_level, 1),
+			COALESCE(c.season_xp, 0),
+			COALESCE(c.skill_levels_json, '{}'::jsonb),
+			COALESCE(c.skill_loadout_json, '[]'::jsonb),
 			c.rank,
 			c.reputation,
 			c.gold,
@@ -254,12 +259,19 @@ func (s *PostgresStore) LoadCharacters() ([]characters.StoredCharacter, error) {
 	for rows.Next() {
 		var item characters.StoredCharacter
 		var ignoredMaxMP int
+		var skillLevelsJSON []byte
+		var skillLoadoutJSON []byte
 		if err := rows.Scan(
 			&item.AccountID,
 			&item.Summary.CharacterID,
 			&item.Summary.Name,
 			&item.Summary.Class,
+			&item.Summary.ProfessionRoute,
 			&item.Summary.WeaponStyle,
+			&item.Summary.SeasonLevel,
+			&item.Summary.SeasonXP,
+			&skillLevelsJSON,
+			&skillLoadoutJSON,
 			&item.Summary.Rank,
 			&item.Summary.Reputation,
 			&item.Summary.Gold,
@@ -278,6 +290,16 @@ func (s *PostgresStore) LoadCharacters() ([]characters.StoredCharacter, error) {
 			&item.DungeonEntryUsed,
 		); err != nil {
 			return nil, err
+		}
+		if len(skillLevelsJSON) > 0 {
+			if err := json.Unmarshal(skillLevelsJSON, &item.SkillLevels); err != nil {
+				return nil, err
+			}
+		}
+		if len(skillLoadoutJSON) > 0 {
+			if err := json.Unmarshal(skillLoadoutJSON, &item.SkillLoadout); err != nil {
+				return nil, err
+			}
 		}
 
 		items = append(items, item)
@@ -347,6 +369,14 @@ func (s *PostgresStore) SaveCharacter(stored characters.StoredCharacter) error {
 		resetDate = businessDate(now)
 	}
 	limits := characters.LimitsForRank(stored.Summary.Rank, nextDailyReset(now), stored.QuestCompletionUsed, stored.DungeonEntryUsed)
+	skillLevelsJSON, err := json.Marshal(stored.SkillLevels)
+	if err != nil {
+		return err
+	}
+	skillLoadoutJSON, err := json.Marshal(stored.SkillLoadout)
+	if err != nil {
+		return err
+	}
 
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -356,14 +386,19 @@ func (s *PostgresStore) SaveCharacter(stored characters.StoredCharacter) error {
 
 	if _, err := tx.Exec(`
 		INSERT INTO characters (
-			id, account_id, name, class, weapon_style, rank, reputation, gold, status,
-			location_region_id, hp_current, mp_current, created_at, updated_at
+			id, account_id, name, class, profession_route_id, weapon_style, season_level, season_xp, skill_levels_json, skill_loadout_json,
+			rank, reputation, gold, status, location_region_id, hp_current, mp_current, created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
 		ON CONFLICT (id) DO UPDATE
 		SET name = EXCLUDED.name,
 		    class = EXCLUDED.class,
+		    profession_route_id = EXCLUDED.profession_route_id,
 		    weapon_style = EXCLUDED.weapon_style,
+		    season_level = EXCLUDED.season_level,
+		    season_xp = EXCLUDED.season_xp,
+		    skill_levels_json = EXCLUDED.skill_levels_json,
+		    skill_loadout_json = EXCLUDED.skill_loadout_json,
 		    rank = EXCLUDED.rank,
 		    reputation = EXCLUDED.reputation,
 		    gold = EXCLUDED.gold,
@@ -372,8 +407,8 @@ func (s *PostgresStore) SaveCharacter(stored characters.StoredCharacter) error {
 		    hp_current = EXCLUDED.hp_current,
 		    mp_current = EXCLUDED.mp_current,
 		    updated_at = EXCLUDED.updated_at
-	`, stored.Summary.CharacterID, stored.AccountID, stored.Summary.Name, stored.Summary.Class, stored.Summary.WeaponStyle,
-		stored.Summary.Rank, stored.Summary.Reputation, stored.Summary.Gold, stored.Summary.Status, stored.Summary.LocationRegionID,
+	`, stored.Summary.CharacterID, stored.AccountID, stored.Summary.Name, stored.Summary.Class, nullableString(stored.Summary.ProfessionRoute), nullableString(stored.Summary.WeaponStyle), stored.Summary.SeasonLevel, stored.Summary.SeasonXP,
+		skillLevelsJSON, skillLoadoutJSON, stored.Summary.Rank, stored.Summary.Reputation, stored.Summary.Gold, stored.Summary.Status, stored.Summary.LocationRegionID,
 		stored.Stats.MaxHP, 0, now, now); err != nil {
 		return err
 	}
@@ -660,6 +695,12 @@ func (s *PostgresStore) ensureSchema() error {
 		`ALTER TABLE auth_sessions ADD COLUMN IF NOT EXISTS access_token text`,
 		`ALTER TABLE auth_sessions ADD COLUMN IF NOT EXISTS access_token_expires_at timestamptz`,
 		`ALTER TABLE auth_sessions ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT NOW()`,
+		`ALTER TABLE characters ADD COLUMN IF NOT EXISTS profession_route_id text`,
+		`ALTER TABLE characters ALTER COLUMN weapon_style DROP NOT NULL`,
+		`ALTER TABLE characters ADD COLUMN IF NOT EXISTS season_level integer NOT NULL DEFAULT 1`,
+		`ALTER TABLE characters ADD COLUMN IF NOT EXISTS season_xp integer NOT NULL DEFAULT 0`,
+		`ALTER TABLE characters ADD COLUMN IF NOT EXISTS skill_levels_json jsonb NOT NULL DEFAULT '{}'::jsonb`,
+		`ALTER TABLE characters ADD COLUMN IF NOT EXISTS skill_loadout_json jsonb NOT NULL DEFAULT '[]'::jsonb`,
 		`ALTER TABLE quests ADD COLUMN IF NOT EXISTS difficulty text`,
 		`ALTER TABLE quests ADD COLUMN IF NOT EXISTS flow_kind text`,
 		`ALTER TABLE quests ADD COLUMN IF NOT EXISTS runtime_state_json jsonb NOT NULL DEFAULT '{}'::jsonb`,
@@ -684,4 +725,11 @@ func (s *PostgresStore) ensureSchema() error {
 	}
 
 	return nil
+}
+
+func nullableString(value string) any {
+	if value == "" {
+		return nil
+	}
+	return value
 }

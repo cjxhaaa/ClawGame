@@ -60,7 +60,7 @@ Responsibilities:
 Responsibilities:
 
 - character creation
-- class and weapon-style selection
+- civilian onboarding and level-10 profession-route selection
 - profile retrieval
 - derived stat calculation
 - rank upgrades
@@ -140,7 +140,19 @@ Responsibilities:
 - leaderboard read models
 - public event pagination and SSE streaming
 
-### 3.10 Admin
+### 3.10 World Boss
+
+Responsibilities:
+
+- world-boss season configuration
+- asynchronous `6`-player match-pool orchestration
+- raid instance creation and resolution
+- total-damage tier evaluation
+- reward distribution
+- equipment extra-affix reforge requests
+- pending-reforge result confirmation or discard
+
+### 3.11 Admin
 
 Responsibilities:
 
@@ -192,7 +204,8 @@ These string enums should be stable in DB and API payloads.
 
 ### 6.1 Character enums
 
-- `character_class`: `warrior`, `mage`, `priest`
+- `character_class`: `civilian`, `warrior`, `mage`, `priest`
+- `profession_route_id`: `tank`, `physical_burst`, `magic_burst`, `single_burst`, `aoe_burst`, `control`, `healing_support`, `curse`, `summon`
 - `weapon_style`: `sword_shield`, `great_axe`, `staff`, `spellbook`, `scepter`, `holy_tome`
 - `adventurer_rank`: `low`, `mid`, `high`
 - `character_status`: `active`, `locked`, `banned`
@@ -226,14 +239,20 @@ These string enums should be stable in DB and API payloads.
 - `dungeon_action_type`:
   - `claim_dungeon_rewards`
 
+### 6.6 World boss enums
 
-### 6.6 Arena enums
+- `world_boss_queue_status`: `queued`, `matched`, `expired`, `cancelled`
+- `world_boss_raid_status`: `forming`, `resolving`, `resolved`, `rewarded`
+- `world_boss_reward_tier`: `D`, `C`, `B`, `A`, `S`
+- `reforge_result_status`: `pending`, `saved`, `discarded`, `expired`
+
+### 6.7 Arena enums
 
 - `arena_tournament_status`: `signup_open`, `signup_closed`, `in_progress`, `completed`, `cancelled`
 - `arena_entry_status`: `signed_up`, `seeded`, `eliminated`, `completed`
 - `arena_match_status`: `pending`, `ready`, `resolved`, `walkover`
 
-### 6.7 Event enums
+### 6.8 Event enums
 
 - `world_event_visibility`: `public`, `internal`, `admin_only`
 - `world_event_type`:
@@ -257,6 +276,13 @@ These string enums should be stable in DB and API payloads.
   - `dungeon.loot_granted`
   - `dungeon.cleared`
   - `dungeon.failed`
+  - `world_boss.queued`
+  - `world_boss.matched`
+  - `world_boss.resolved`
+  - `world_boss.reward_granted`
+  - `inventory.reforge_pending`
+  - `inventory.reforge_saved`
+  - `inventory.reforge_discarded`
   - `arena.signup_opened`
   - `arena.signup_closed`
   - `arena.entry_accepted`
@@ -363,6 +389,27 @@ Cursor pagination uses:
 Current repo note:
 
 - some list endpoints currently always return `next_cursor: null`
+
+### 7.7 World-boss and reforge API direction
+
+Recommended V1 private routes:
+
+- `GET /api/v1/world-boss/current`
+- `POST /api/v1/world-boss/queue`
+- `GET /api/v1/world-boss/queue-status`
+- `GET /api/v1/world-boss/raids/{raidId}`
+- `POST /api/v1/items/{itemId}/reforge`
+- `POST /api/v1/items/{itemId}/reforge/save`
+- `POST /api/v1/items/{itemId}/reforge/discard`
+
+Contract direction:
+
+- joining the queue creates or refreshes one active queue entry for the current boss window
+- queue resolution should create one `6`-member raid instance when enough entries are available
+- raid detail should expose party total damage, reward tier, and each member's contribution
+- `POST /items/{itemId}/reforge` should create one pending reforge result
+- save commits the pending result
+- discard restores the previous extra-affix state while keeping the material cost spent
 
 ## 8. Public JSON Object Shapes
 
@@ -580,8 +627,9 @@ Fields:
 - `id` `text` primary key
 - `account_id` `text` unique not null references `accounts(id)`
 - `name` `text` unique not null
-- `class` `text` not null
-- `weapon_style` `text` not null
+- `class` `text` not null default `civilian`
+- `profession_route_id` `text` null
+- `weapon_style` `text` null
 - `rank` `text` not null default `low`
 - `reputation` `int` not null default `0`
 - `gold` `bigint` not null default `0`
@@ -1258,25 +1306,54 @@ Request:
 
 ```json
 {
-  "name": "bot-alpha",
-  "class": "mage",
-  "weapon_style": "staff"
+  "name": "bot-alpha"
 }
 ```
 
 Validation:
 
 - account must not already have a character
-- `weapon_style` must be compatible with `class`
 - `name` must be unique
 
 Side effects:
 
-- inserts character and base stats
+- inserts character as `civilian`
+- inserts civilian base stats
 - inserts daily limits row
 - grants starter items and gold
 - creates or schedules daily quest board generation
 - emits `character.created`
+
+#### `POST /api/v1/me/profession-route`
+
+Purpose:
+
+- choose the character's profession route after reaching season level `10`
+
+Request:
+
+```json
+{
+  "route_id": "control"
+}
+```
+
+Validation:
+
+- character exists and belongs to caller
+- current class is `civilian`
+- season level is at least `10`
+- `route_id` is valid
+- profession route has not already been chosen this season
+
+Side effects:
+
+- sets `profession_route_id`
+- derives and stores the promoted `class`
+- stores the route's recommended starter `weapon_style`
+- grants one route-aligned starter weapon
+- recalculates promoted base stats
+- emits `character.profession_chosen`
 
 #### `GET /api/v1/me`
 
@@ -2004,7 +2081,15 @@ Responsibilities:
 ### 15.1 Character creation
 
 - one character per account in V1
-- `weapon_style` must match selected `class`
+- new characters always start as `civilian`
+- class and profession route are not chosen during character creation
+
+### 15.1.1 Profession-route choice
+
+- only civilians may choose a profession route
+- season level must be at least `10`
+- chosen route must be valid
+- derived class and starter weapon style must match the route mapping
 
 ### 15.2 Travel
 

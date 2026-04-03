@@ -16,13 +16,22 @@ import (
 )
 
 var (
-	ErrSignupClosed       = errors.New("arena signup closed")
-	ErrRankNotEligible    = errors.New("arena rank not eligible")
-	ErrAlreadySignedUp    = errors.New("arena already signed up")
-	ErrArenaMatchNotFound = errors.New("arena match not found")
+	ErrSignupClosed           = errors.New("arena signup closed")
+	ErrRankNotEligible        = errors.New("arena rank not eligible")
+	ErrAlreadySignedUp        = errors.New("arena already signed up")
+	ErrArenaMatchNotFound     = errors.New("arena match not found")
+	ErrChallengeWindow        = errors.New("arena challenge window closed")
+	ErrNoChallengeAttempts    = errors.New("arena no challenge attempts remaining")
+	ErrInvalidChallengeTarget = errors.New("arena invalid challenge target")
+	ErrPurchaseCapReached     = errors.New("arena purchase cap reached")
 )
 
 const mainBracketSize = 64
+const (
+	freeRatingChallengesPerDay   = 3
+	maxPurchasedChallengesPerDay = 10
+	basePurchasePriceGold        = 20
+)
 
 type Entry struct {
 	CharacterID     string `json:"character_id"`
@@ -63,23 +72,24 @@ type Round struct {
 }
 
 type CurrentView struct {
-	TournamentID      string            `json:"tournament_id"`
-	DayKey            string            `json:"day_key"`
-	WeekKey           string            `json:"week_key,omitempty"`
-	Status            world.ArenaStatus `json:"status"`
-	SignupCount       int               `json:"signup_count"`
-	QualifiedCount    int               `json:"qualified_count"`
-	NPCCount          int               `json:"npc_count"`
-	HighestPower      int               `json:"highest_panel_power"`
-	LowestPower       int               `json:"lowest_panel_power"`
-	MedianPower       int               `json:"median_panel_power"`
-	FeaturedEntries   []Entry           `json:"featured_entries"`
-	QualifierMatchups []Matchup         `json:"qualifier_matchups"`
-	QualifierRounds   []Round           `json:"qualifier_rounds"`
-	Matchups          []Matchup         `json:"matchups"`
-	Rounds            []Round           `json:"rounds"`
-	Champion          *Entry            `json:"champion,omitempty"`
-	NextRoundTime     string            `json:"next_round_time"`
+	TournamentID        string            `json:"tournament_id"`
+	DayKey              string            `json:"day_key"`
+	WeekKey             string            `json:"week_key,omitempty"`
+	Status              world.ArenaStatus `json:"status"`
+	SignupCount         int               `json:"signup_count"`
+	QualifiedCount      int               `json:"qualified_count"`
+	NPCCount            int               `json:"npc_count"`
+	HighestPower        int               `json:"highest_panel_power"`
+	LowestPower         int               `json:"lowest_panel_power"`
+	MedianPower         int               `json:"median_panel_power"`
+	FeaturedEntries     []Entry           `json:"featured_entries"`
+	QualifierMatchups   []Matchup         `json:"qualifier_matchups"`
+	QualifierRounds     []Round           `json:"qualifier_rounds"`
+	Matchups            []Matchup         `json:"matchups"`
+	Rounds              []Round           `json:"rounds"`
+	Champion            *Entry            `json:"champion,omitempty"`
+	NextRoundTime       string            `json:"next_round_time"`
+	WeeklyRatingSummary map[string]any    `json:"weekly_rating_summary,omitempty"`
 }
 
 type LeaderboardEntry struct {
@@ -154,16 +164,81 @@ type EntryListFilters struct {
 	Limit  int
 }
 
+type RatingCandidate struct {
+	CharacterID     string `json:"character_id"`
+	CharacterName   string `json:"character_name"`
+	Class           string `json:"class"`
+	WeaponStyle     string `json:"weapon_style"`
+	Rank            string `json:"rank"`
+	Rating          int    `json:"rating"`
+	PanelPowerScore int    `json:"panel_power_score"`
+	EquipmentScore  int    `json:"equipment_score"`
+	IsNPC           bool   `json:"is_npc,omitempty"`
+}
+
+type RatingBoardView struct {
+	WeekKey               string            `json:"week_key"`
+	CharacterID           string            `json:"character_id"`
+	Rating                int               `json:"rating"`
+	FreeAttemptsRemaining int               `json:"free_attempts_remaining"`
+	PurchasedAttemptsUsed int               `json:"purchased_attempts_used"`
+	PurchasedAttemptsCap  int               `json:"purchased_attempts_cap"`
+	NextPurchasePriceGold int               `json:"next_purchase_price_gold"`
+	Candidates            []RatingCandidate `json:"candidates"`
+	Leaderboard           []RatingCandidate `json:"leaderboard"`
+}
+
+type RatingChallengeResult struct {
+	WeekKey         string         `json:"week_key"`
+	MatchID         string         `json:"match_id"`
+	Result          string         `json:"result"`
+	RatingDelta     int            `json:"rating_delta"`
+	CharacterRating int            `json:"character_rating"`
+	OpponentRating  int            `json:"opponent_rating"`
+	BattleReportID  string         `json:"battle_report_id"`
+	BattleReport    map[string]any `json:"battle_report"`
+}
+
+type ArenaTitleView struct {
+	TitleKey      string         `json:"title_key"`
+	TitleLabel    string         `json:"title_label"`
+	SourceWeekKey string         `json:"source_week_key"`
+	GrantedAt     string         `json:"granted_at"`
+	ExpiresAt     string         `json:"expires_at"`
+	BonusSnapshot map[string]any `json:"bonus_snapshot"`
+}
+
+type ratingState struct {
+	Rating                     int
+	FreeAttemptsRemaining      int
+	PurchasedAttemptsBought    int
+	PurchasedAttemptsRemaining int
+	PurchasePriceStep          int
+	DayKey                     string
+}
+
+type titleState struct {
+	View ArenaTitleView
+}
+
 type Service struct {
-	mu           sync.Mutex
-	clock        func() time.Time
-	entriesByDay map[string]map[string]Entry
+	mu              sync.Mutex
+	clock           func() time.Time
+	entriesByDay    map[string]map[string]Entry
+	ratingByWeek    map[string]map[string]ratingState
+	ratingHistory   map[string][]HistoryDetail
+	activeTitles    map[string]titleState
+	titlesFinalized map[string]bool
 }
 
 func NewService() *Service {
 	return &Service{
-		clock:        time.Now,
-		entriesByDay: make(map[string]map[string]Entry),
+		clock:           time.Now,
+		entriesByDay:    make(map[string]map[string]Entry),
+		ratingByWeek:    make(map[string]map[string]ratingState),
+		ratingHistory:   make(map[string][]HistoryDetail),
+		activeTitles:    make(map[string]titleState),
+		titlesFinalized: make(map[string]bool),
 	}
 }
 
@@ -175,6 +250,175 @@ func (s *Service) SetClock(clock func() time.Time) {
 	s.clock = clock
 }
 
+func (s *Service) GetRatingBoard(characterID string, entries []Entry) (RatingBoardView, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := s.clock()
+	weekKey := weekKeyFor(now)
+	entryMap := mapEntriesByCharacter(entries)
+	if _, ok := entryMap[characterID]; !ok {
+		return RatingBoardView{}, ErrInvalidChallengeTarget
+	}
+	s.ensureWeekStatesLocked(weekKey, entries)
+	s.finalizeTitlesIfNeededLocked(weekKey, entries)
+
+	state := s.ratingByWeek[weekKey][characterID]
+	leaderboard := buildRatingLeaderboard(entries, s.ratingByWeek[weekKey], 16)
+	candidates := buildRatingCandidates(entries, s.ratingByWeek[weekKey], characterID, weekKey, dayKeyFor(now), 5)
+
+	return RatingBoardView{
+		WeekKey:               weekKey,
+		CharacterID:           characterID,
+		Rating:                state.Rating,
+		FreeAttemptsRemaining: state.FreeAttemptsRemaining,
+		PurchasedAttemptsUsed: state.PurchasedAttemptsBought,
+		PurchasedAttemptsCap:  maxPurchasedChallengesPerDay,
+		NextPurchasePriceGold: purchasePriceForStep(state.PurchasePriceStep),
+		Candidates:            candidates,
+		Leaderboard:           leaderboard,
+	}, nil
+}
+
+func (s *Service) PurchaseRatingChallenge(characterID string) (int, RatingBoardView, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := s.clock()
+	if !isRatingWeekday(now) {
+		return 0, RatingBoardView{}, ErrChallengeWindow
+	}
+	weekKey := weekKeyFor(now)
+	state, ok := s.ratingByWeek[weekKey][characterID]
+	if !ok {
+		state = newRatingState(dayKeyFor(now))
+	}
+	if state.PurchasedAttemptsBought >= maxPurchasedChallengesPerDay {
+		return 0, RatingBoardView{}, ErrPurchaseCapReached
+	}
+	price := purchasePriceForStep(state.PurchasePriceStep)
+
+	view := RatingBoardView{
+		WeekKey:               weekKey,
+		CharacterID:           characterID,
+		Rating:                state.Rating,
+		FreeAttemptsRemaining: state.FreeAttemptsRemaining,
+		PurchasedAttemptsUsed: state.PurchasedAttemptsBought,
+		PurchasedAttemptsCap:  maxPurchasedChallengesPerDay,
+		NextPurchasePriceGold: purchasePriceForStep(state.PurchasePriceStep),
+	}
+	return price, view, nil
+}
+
+func (s *Service) ConfirmPurchasedRatingChallenge(characterID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := s.clock()
+	if !isRatingWeekday(now) {
+		return ErrChallengeWindow
+	}
+	weekKey := weekKeyFor(now)
+	state, ok := s.ratingByWeek[weekKey][characterID]
+	if !ok {
+		state = newRatingState(dayKeyFor(now))
+	}
+	if state.PurchasedAttemptsBought >= maxPurchasedChallengesPerDay {
+		return ErrPurchaseCapReached
+	}
+	state.PurchasedAttemptsBought++
+	state.PurchasedAttemptsRemaining++
+	state.PurchasePriceStep++
+	s.ratingByWeek[weekKey][characterID] = state
+	return nil
+}
+
+func (s *Service) ResolveRatingChallenge(characterID, targetCharacterID string, entries []Entry) (RatingChallengeResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := s.clock()
+	if !isRatingWeekday(now) {
+		return RatingChallengeResult{}, ErrChallengeWindow
+	}
+	weekKey := weekKeyFor(now)
+	entryMap := mapEntriesByCharacter(entries)
+	challenger, ok := entryMap[characterID]
+	if !ok {
+		return RatingChallengeResult{}, ErrInvalidChallengeTarget
+	}
+	target, ok := entryMap[targetCharacterID]
+	if !ok || targetCharacterID == characterID {
+		return RatingChallengeResult{}, ErrInvalidChallengeTarget
+	}
+
+	s.ensureWeekStatesLocked(weekKey, entries)
+	state := s.ratingByWeek[weekKey][characterID]
+	if state.FreeAttemptsRemaining+remainingPurchasedAttempts(state) <= 0 {
+		return RatingChallengeResult{}, ErrNoChallengeAttempts
+	}
+	candidateIDs := candidateIDSet(buildRatingCandidates(entries, s.ratingByWeek[weekKey], characterID, weekKey, dayKeyFor(now), 5))
+	if !candidateIDs[targetCharacterID] {
+		return RatingChallengeResult{}, ErrInvalidChallengeTarget
+	}
+
+	if state.FreeAttemptsRemaining > 0 {
+		state.FreeAttemptsRemaining--
+	} else {
+		state.PurchasedAttemptsRemaining--
+		if state.PurchasedAttemptsRemaining < 0 {
+			state.PurchasedAttemptsRemaining = 0
+		}
+	}
+
+	matchID := fmt.Sprintf("match_weekly_%s_%s_%s", weekKey, characterID, nextChallengeSuffix(now))
+	reportID := "report_" + matchID
+	result := simulateEntryDuel(challenger, target, matchID)
+	delta := ratingDeltaForWin(challenger, target)
+	outcome := "loss"
+	if result.SideAWon {
+		outcome = "win"
+		state.Rating += delta
+		targetState := s.ratingByWeek[weekKey][targetCharacterID]
+		targetState.Rating = maxInt(0, targetState.Rating-delta)
+		s.ratingByWeek[weekKey][targetCharacterID] = targetState
+	}
+	s.ratingByWeek[weekKey][characterID] = state
+
+	challengerDetail, targetDetail := buildRatingHistoryDetails(weekKey, challenger, target, matchID, reportID, result, outcome, delta, now)
+	s.ratingHistory[characterID] = prependHistoryDetail(s.ratingHistory[characterID], challengerDetail)
+	s.ratingHistory[targetCharacterID] = prependHistoryDetail(s.ratingHistory[targetCharacterID], targetDetail)
+
+	return RatingChallengeResult{
+		WeekKey:         weekKey,
+		MatchID:         matchID,
+		Result:          outcome,
+		RatingDelta:     challengerDetail.BattleReport["rating_delta"].(int),
+		CharacterRating: s.ratingByWeek[weekKey][characterID].Rating,
+		OpponentRating:  s.ratingByWeek[weekKey][targetCharacterID].Rating,
+		BattleReportID:  reportID,
+		BattleReport:    challengerDetail.BattleReport,
+	}, nil
+}
+
+func (s *Service) GetArenaTitle(characterID string, entries []Entry) (ArenaTitleView, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	weekKey := weekKeyFor(s.clock())
+	s.ensureWeekStatesLocked(weekKey, entries)
+	s.finalizeTitlesIfNeededLocked(weekKey, entries)
+	title, ok := s.activeTitles[characterID]
+	if !ok {
+		return ArenaTitleView{}, false
+	}
+	if expiresAt, err := time.Parse(time.RFC3339, title.View.ExpiresAt); err == nil && s.clock().After(expiresAt) {
+		delete(s.activeTitles, characterID)
+		return ArenaTitleView{}, false
+	}
+	return title.View, true
+}
+
 func (s *Service) Signup(character characters.Summary, panelPowerScore, equipmentScore int, arenaStatus world.ArenaStatus) (Entry, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -182,7 +426,7 @@ func (s *Service) Signup(character characters.Summary, panelPowerScore, equipmen
 	if character.Rank != "mid" && character.Rank != "high" {
 		return Entry{}, ErrRankNotEligible
 	}
-	if arenaStatus.Code != "signup_open" {
+	if arenaStatus.Code != "signup_open" && arenaStatus.Code != "rating_open" {
 		return Entry{}, ErrSignupClosed
 	}
 
@@ -208,33 +452,46 @@ func (s *Service) Signup(character characters.Summary, panelPowerScore, equipmen
 	return entry, nil
 }
 
-func (s *Service) GetCurrent(arenaStatus world.ArenaStatus) CurrentView {
+func (s *Service) GetCurrent(arenaStatus world.ArenaStatus, entries []Entry) CurrentView {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	now := s.clock()
 	dayKey := dayKeyFor(now)
-	entries := sortedEntries(s.entriesByDay[dayKey])
-	snapshot := buildTournamentSnapshot(dayKey, now, entries)
+	weekKey := weekKeyFor(now)
+	s.ensureWeekStatesLocked(weekKey, entries)
+	s.finalizeTitlesIfNeededLocked(weekKey, entries)
+
+	displayEntries := featuredEntriesByRating(entries, s.ratingByWeek[weekKey], len(entries))
+	featured := featuredEntries(displayEntries, 8)
+	snapshot := tournamentSnapshot{}
+	npcCount := 0
+	switch arenaStatus.Code {
+	case "knockout_pending", "knockout_in_progress", "knockout_results_live", "signup_locked", "in_progress", "results_live":
+		displayEntries, npcCount = knockoutEntriesForWeekLocked(dayKey, entries, s.ratingByWeek[weekKey])
+		snapshot = buildTournamentSnapshot(dayKey, now, displayEntries)
+		featured = featuredEntries(displayEntries, 8)
+	}
 
 	return CurrentView{
-		TournamentID:      tournamentIDForDay(dayKey),
-		DayKey:            dayKey,
-		WeekKey:           dayKey,
-		Status:            arenaStatus,
-		SignupCount:       len(entries),
-		QualifiedCount:    len(snapshot.mainField),
-		NPCCount:          snapshot.npcCount,
-		HighestPower:      highestPanelPower(entries),
-		LowestPower:       lowestPanelPower(entries),
-		MedianPower:       medianPanelPower(entries),
-		FeaturedEntries:   featuredEntries(entries, 8),
-		QualifierMatchups: snapshot.currentQualifierMatchups,
-		QualifierRounds:   snapshot.qualifierRounds,
-		Matchups:          snapshot.currentMatchups,
-		Rounds:            snapshot.rounds,
-		Champion:          snapshot.champion,
-		NextRoundTime:     determineNextRoundTime(now, arenaStatus.Code, snapshot).Format(time.RFC3339),
+		TournamentID:        tournamentIDForDay(dayKey),
+		DayKey:              dayKey,
+		WeekKey:             weekKey,
+		Status:              arenaStatus,
+		SignupCount:         len(displayEntries),
+		QualifiedCount:      len(snapshot.mainField),
+		NPCCount:            npcCount,
+		HighestPower:        highestPanelPower(displayEntries),
+		LowestPower:         lowestPanelPower(displayEntries),
+		MedianPower:         medianPanelPower(displayEntries),
+		FeaturedEntries:     featured,
+		QualifierMatchups:   snapshot.currentQualifierMatchups,
+		QualifierRounds:     snapshot.qualifierRounds,
+		Matchups:            snapshot.currentMatchups,
+		Rounds:              snapshot.rounds,
+		Champion:            snapshot.champion,
+		NextRoundTime:       determineNextRoundTime(now, arenaStatus.Code, snapshot).Format(time.RFC3339),
+		WeeklyRatingSummary: buildWeeklyRatingSummary(entries, s.ratingByWeek[weekKey]),
 	}
 }
 
@@ -289,6 +546,9 @@ func (s *Service) ListHistory(characterID string, filters HistoryFilters) []Hist
 	defer s.mu.Unlock()
 
 	items := s.buildHistoryLocked(characterID)
+	for _, detail := range s.ratingHistory[characterID] {
+		items = append(items, detail.HistorySummary)
+	}
 	items = filterHistory(items, filters)
 	return paginateHistory(items, filters.Cursor, filters.Limit)
 }
@@ -296,6 +556,12 @@ func (s *Service) ListHistory(characterID string, filters HistoryFilters) []Hist
 func (s *Service) GetHistoryDetail(characterID, matchID, detailLevel string) (HistoryDetail, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	for _, item := range s.ratingHistory[characterID] {
+		if item.MatchID == matchID {
+			return historyDetailByLevel(item, detailLevel), nil
+		}
+	}
 
 	match, round, found := s.findMatchLocked(characterID, matchID)
 	if !found {
@@ -307,6 +573,30 @@ func (s *Service) GetHistoryDetail(characterID, matchID, detailLevel string) (Hi
 func (s *Service) GetPublicMatchDetail(matchID, detailLevel string) (PublicMatchDetail, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	for _, items := range s.ratingHistory {
+		for _, item := range items {
+			if item.MatchID != matchID {
+				continue
+			}
+			detail := historyDetailByLevel(item, detailLevel)
+			return PublicMatchDetail{
+				MatchID:        detail.MatchID,
+				BattleReportID: detail.BattleReportID,
+				TournamentID:   detail.TournamentID,
+				DayKey:         detail.DayKey,
+				Stage:          detail.Stage,
+				RoundNumber:    detail.RoundNumber,
+				RoundName:      detail.RoundName,
+				Status:         "resolved",
+				SummaryTag:     detail.SummaryTag,
+				StartedAt:      detail.StartedAt,
+				ResolvedAt:     detail.ResolvedAt,
+				BattleReport:   detail.BattleReport,
+				BattleLog:      detail.BattleLog,
+			}, nil
+		}
+	}
 
 	match, round, found := s.findPublicMatchLocked(matchID)
 	if !found {
@@ -568,7 +858,13 @@ func seedForKey(dayKey, suffix string) int64 {
 }
 
 func determineNextRoundTime(now time.Time, statusCode string, snapshot tournamentSnapshot) time.Time {
-	if statusCode == "signup_open" {
+	if statusCode == "rating_open" || statusCode == "signup_open" {
+		return nextKnockoutStartTime(now)
+	}
+	if statusCode == "rest_day" {
+		return nextRatingWeekStart(now)
+	}
+	if statusCode == "knockout_pending" {
 		return qualifierStartTime(now)
 	}
 
@@ -586,6 +882,23 @@ func determineNextRoundTime(now time.Time, statusCode string, snapshot tournamen
 	}
 
 	return qualifierStartTime(now).Add(24 * time.Hour)
+}
+
+func nextKnockoutStartTime(now time.Time) time.Time {
+	daysUntilSaturday := (int(time.Saturday) - int(now.Weekday()) + 7) % 7
+	target := time.Date(now.Year(), now.Month(), now.Day(), 9, 0, 0, 0, now.Location()).AddDate(0, 0, daysUntilSaturday)
+	if !target.After(now) {
+		target = target.AddDate(0, 0, 7)
+	}
+	return target
+}
+
+func nextRatingWeekStart(now time.Time) time.Time {
+	daysUntilMonday := (int(time.Monday) - int(now.Weekday()) + 7) % 7
+	if daysUntilMonday == 0 {
+		daysUntilMonday = 7
+	}
+	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).AddDate(0, 0, daysUntilMonday)
 }
 
 func mainBracketStartTime(now time.Time, qualifierRounds int) time.Time {
@@ -637,6 +950,36 @@ func featuredEntries(entries []Entry, limit int) []Entry {
 		return append([]Entry(nil), entries...)
 	}
 	return append([]Entry(nil), entries[:limit]...)
+}
+
+func featuredEntriesByRating(entries []Entry, states map[string]ratingState, limit int) []Entry {
+	if len(entries) == 0 {
+		return nil
+	}
+	leaderboard := buildRatingLeaderboard(entries, states, limit)
+	if len(leaderboard) == 0 {
+		return featuredEntries(entries, limit)
+	}
+	entryByID := mapEntriesByCharacter(entries)
+	items := make([]Entry, 0, len(leaderboard))
+	for _, candidate := range leaderboard {
+		if entry, ok := entryByID[candidate.CharacterID]; ok {
+			items = append(items, entry)
+		}
+	}
+	return items
+}
+
+func knockoutEntriesForWeekLocked(dayKey string, entries []Entry, states map[string]ratingState) ([]Entry, int) {
+	leaderboard := buildRatingLeaderboard(entries, states, mainBracketSize)
+	entryByID := mapEntriesByCharacter(entries)
+	qualified := make([]Entry, 0, mainBracketSize)
+	for _, candidate := range leaderboard {
+		if entry, ok := entryByID[candidate.CharacterID]; ok {
+			qualified = append(qualified, entry)
+		}
+	}
+	return fillNPCEntries(dayKey, qualified, mainBracketSize)
 }
 
 func currentRoundMatchups(rounds []Round) []Matchup {
@@ -993,6 +1336,415 @@ func historySummaryTag(result string) string {
 	}
 }
 
+func historyDetailByLevel(detail HistoryDetail, detailLevel string) HistoryDetail {
+	if detailLevel == "" || detailLevel == "standard" {
+		copyDetail := detail
+		copyDetail.BattleLog = nil
+		return copyDetail
+	}
+	if detailLevel == "compact" {
+		return HistoryDetail{HistorySummary: detail.HistorySummary}
+	}
+	return detail
+}
+
+func weekKeyFor(now time.Time) string {
+	weekday := int(now.Weekday())
+	if weekday == 0 {
+		weekday = 7
+	}
+	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).AddDate(0, 0, -(weekday - 1))
+	return start.Format("2006-01-02")
+}
+
+func isRatingWeekday(now time.Time) bool {
+	switch now.Weekday() {
+	case time.Monday, time.Tuesday, time.Wednesday, time.Thursday, time.Friday:
+		return true
+	default:
+		return false
+	}
+}
+
+func isSunday(now time.Time) bool {
+	return now.Weekday() == time.Sunday
+}
+
+func newRatingState(dayKey string) ratingState {
+	return ratingState{
+		Rating:                     1000,
+		FreeAttemptsRemaining:      freeRatingChallengesPerDay,
+		PurchasedAttemptsBought:    0,
+		PurchasedAttemptsRemaining: 0,
+		PurchasePriceStep:          0,
+		DayKey:                     dayKey,
+	}
+}
+
+func purchasePriceForStep(step int) int {
+	if step < 0 {
+		step = 0
+	}
+	return basePurchasePriceGold + step*step*15 + step*20
+}
+
+func remainingPurchasedAttempts(state ratingState) int {
+	return state.PurchasedAttemptsRemaining
+}
+
+func mapEntriesByCharacter(entries []Entry) map[string]Entry {
+	items := make(map[string]Entry, len(entries))
+	for _, entry := range entries {
+		items[entry.CharacterID] = entry
+	}
+	return items
+}
+
+func (s *Service) ensureWeekStatesLocked(weekKey string, entries []Entry) {
+	if _, ok := s.ratingByWeek[weekKey]; !ok {
+		s.ratingByWeek[weekKey] = make(map[string]ratingState)
+	}
+	dayKey := dayKeyFor(s.clock())
+	for _, entry := range entries {
+		state, ok := s.ratingByWeek[weekKey][entry.CharacterID]
+		if !ok {
+			s.ratingByWeek[weekKey][entry.CharacterID] = newRatingState(dayKey)
+			continue
+		}
+		if state.DayKey != dayKey {
+			state.DayKey = dayKey
+			state.FreeAttemptsRemaining = freeRatingChallengesPerDay
+			state.PurchasedAttemptsBought = 0
+			state.PurchasedAttemptsRemaining = 0
+			state.PurchasePriceStep = 0
+			s.ratingByWeek[weekKey][entry.CharacterID] = state
+		}
+	}
+}
+
+func buildRatingLeaderboard(entries []Entry, states map[string]ratingState, limit int) []RatingCandidate {
+	items := make([]RatingCandidate, 0, len(entries))
+	for _, entry := range entries {
+		state, ok := states[entry.CharacterID]
+		if !ok {
+			continue
+		}
+		items = append(items, ratingCandidateFromEntry(entry, state.Rating))
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].Rating != items[j].Rating {
+			return items[i].Rating > items[j].Rating
+		}
+		if items[i].PanelPowerScore != items[j].PanelPowerScore {
+			return items[i].PanelPowerScore > items[j].PanelPowerScore
+		}
+		return items[i].CharacterID < items[j].CharacterID
+	})
+	if limit > 0 && len(items) > limit {
+		return items[:limit]
+	}
+	return items
+}
+
+func buildRatingCandidates(entries []Entry, states map[string]ratingState, characterID, weekKey, dayKey string, limit int) []RatingCandidate {
+	self, ok := states[characterID]
+	if !ok {
+		return nil
+	}
+	items := make([]RatingCandidate, 0, len(entries))
+	for _, entry := range entries {
+		if entry.CharacterID == characterID {
+			continue
+		}
+		state, ok := states[entry.CharacterID]
+		if !ok {
+			continue
+		}
+		candidate := ratingCandidateFromEntry(entry, state.Rating)
+		items = append(items, candidate)
+	}
+	sort.Slice(items, func(i, j int) bool {
+		leftGap := absInt(items[i].Rating - self.Rating)
+		rightGap := absInt(items[j].Rating - self.Rating)
+		if leftGap != rightGap {
+			return leftGap < rightGap
+		}
+		return items[i].CharacterID < items[j].CharacterID
+	})
+	if len(items) > 15 {
+		items = items[:15]
+	}
+	shuffled := shuffleRatingCandidates(seedForKey(weekKey, "cand-"+characterID+"-"+dayKey), items)
+	if limit > 0 && len(shuffled) > limit {
+		return shuffled[:limit]
+	}
+	return shuffled
+}
+
+func shuffleRatingCandidates(seed int64, items []RatingCandidate) []RatingCandidate {
+	cloned := append([]RatingCandidate(nil), items...)
+	rng := rand.New(rand.NewSource(seed))
+	rng.Shuffle(len(cloned), func(i, j int) {
+		cloned[i], cloned[j] = cloned[j], cloned[i]
+	})
+	return cloned
+}
+
+func ratingCandidateFromEntry(entry Entry, rating int) RatingCandidate {
+	return RatingCandidate{
+		CharacterID:     entry.CharacterID,
+		CharacterName:   entry.CharacterName,
+		Class:           entry.Class,
+		WeaponStyle:     entry.WeaponStyle,
+		Rank:            entry.Rank,
+		Rating:          rating,
+		PanelPowerScore: entry.PanelPowerScore,
+		EquipmentScore:  entry.EquipmentScore,
+		IsNPC:           entry.IsNPC,
+	}
+}
+
+func candidateIDSet(items []RatingCandidate) map[string]bool {
+	set := make(map[string]bool, len(items))
+	for _, item := range items {
+		set[item.CharacterID] = true
+	}
+	return set
+}
+
+func ratingDeltaForWin(challenger, target Entry) int {
+	diff := target.PanelPowerScore - challenger.PanelPowerScore
+	switch {
+	case diff >= 900:
+		return 30
+	case diff >= 450:
+		return 25
+	case diff >= 150:
+		return 21
+	case diff > -150:
+		return 18
+	case diff > -450:
+		return 15
+	default:
+		return 12
+	}
+}
+
+func buildRatingHistoryDetails(weekKey string, challenger, target Entry, matchID, reportID string, result combat.BattleResult, outcome string, delta int, now time.Time) (HistoryDetail, HistoryDetail) {
+	report, log := buildRatingBattleReport(challenger, target, result, outcome, delta)
+	timestamp := now.Format(time.RFC3339)
+	challengerSummary := HistorySummary{
+		MatchID:        matchID,
+		BattleReportID: reportID,
+		TournamentID:   "arena_week_" + weekKey,
+		DayKey:         weekKey,
+		Stage:          "rating",
+		RoundNumber:    0,
+		RoundName:      "Rating Challenge",
+		Result:         outcome,
+		SummaryTag:     "rating_duel",
+		StartedAt:      timestamp,
+		ResolvedAt:     timestamp,
+		Opponent:       historyOpponentFromEntry(&target),
+	}
+	targetResult := "stable"
+	targetDelta := 0
+	if outcome == "win" {
+		targetResult = "loss"
+		targetDelta = -delta
+	}
+	targetReport := cloneMap(report)
+	targetReport["rating_delta"] = targetDelta
+	targetSummary := HistorySummary{
+		MatchID:        matchID,
+		BattleReportID: reportID,
+		TournamentID:   "arena_week_" + weekKey,
+		DayKey:         weekKey,
+		Stage:          "rating",
+		RoundNumber:    0,
+		RoundName:      "Rating Defense",
+		Result:         targetResult,
+		SummaryTag:     "rating_duel",
+		StartedAt:      timestamp,
+		ResolvedAt:     timestamp,
+		Opponent:       historyOpponentFromEntry(&challenger),
+	}
+	return HistoryDetail{HistorySummary: challengerSummary, BattleReport: report, BattleLog: log},
+		HistoryDetail{HistorySummary: targetSummary, BattleReport: targetReport, BattleLog: log}
+}
+
+func buildRatingBattleReport(challenger, target Entry, result combat.BattleResult, outcome string, delta int) (map[string]any, []map[string]any) {
+	report := map[string]any{
+		"outcome":          outcome,
+		"rating_delta":     delta,
+		"challenger":       challenger.CharacterName,
+		"defender":         target.CharacterName,
+		"challenger_power": challenger.PanelPowerScore,
+		"defender_power":   target.PanelPowerScore,
+		"summary_tag":      "rating_duel",
+	}
+	if outcome != "win" {
+		report["rating_delta"] = 0
+	}
+	return report, result.Log
+}
+
+func cloneMap(input map[string]any) map[string]any {
+	if input == nil {
+		return nil
+	}
+	out := make(map[string]any, len(input))
+	for k, v := range input {
+		out[k] = v
+	}
+	return out
+}
+
+func prependHistoryDetail(items []HistoryDetail, item HistoryDetail) []HistoryDetail {
+	result := make([]HistoryDetail, 0, len(items)+1)
+	result = append(result, item)
+	return append(result, items...)
+}
+
+func nextChallengeSuffix(now time.Time) string {
+	return now.Format("150405")
+}
+
+func (s *Service) finalizeTitlesIfNeededLocked(weekKey string, entries []Entry) {
+	now := s.clock()
+	if !isSunday(now) || s.titlesFinalized[weekKey] {
+		return
+	}
+	s.ensureWeekStatesLocked(weekKey, entries)
+	saturday := saturdayReferenceTimeForWeek(weekKey, now.Location())
+	dayKey := dayKeyFor(saturday)
+	qualified, _ := knockoutEntriesForWeekLocked(dayKey, entries, s.ratingByWeek[weekKey])
+	snapshot := buildTournamentSnapshot(dayKey, saturday, qualified)
+	titleViews := buildTitleViewsFromSnapshot(weekKey, snapshot)
+	if len(titleViews) == 0 {
+		return
+	}
+	grantedAt := now.Format(time.RFC3339)
+	expiresAt := now.Add(7 * 24 * time.Hour).Format(time.RFC3339)
+	for characterID, view := range titleViews {
+		view.GrantedAt = grantedAt
+		view.ExpiresAt = expiresAt
+		s.activeTitles[characterID] = titleState{View: view}
+	}
+	s.titlesFinalized[weekKey] = true
+}
+
+func saturdayReferenceTimeForWeek(weekKey string, loc *time.Location) time.Time {
+	start, err := time.ParseInLocation("2006-01-02", weekKey, loc)
+	if err != nil {
+		return time.Now().In(loc)
+	}
+	return start.AddDate(0, 0, 5).Add(23*time.Hour + 59*time.Minute)
+}
+
+func buildTitleViewsFromSnapshot(weekKey string, snapshot tournamentSnapshot) map[string]ArenaTitleView {
+	views := make(map[string]ArenaTitleView)
+	for _, round := range snapshot.rounds {
+		for _, match := range round.Matchups {
+			if match.Status != "resolved" {
+				continue
+			}
+			loser := loserEntry(match)
+			switch round.EntrantCount {
+			case 32:
+				if loser != nil {
+					views[loser.CharacterID] = newArenaTitleView(weekKey, "arena_top_32", "Arena Top 32", titleBonusSnapshot("top_32"))
+				}
+			case 16:
+				if loser != nil {
+					views[loser.CharacterID] = newArenaTitleView(weekKey, "arena_top_16", "Arena Top 16", titleBonusSnapshot("top_16"))
+				}
+			case 8:
+				if loser != nil {
+					views[loser.CharacterID] = newArenaTitleView(weekKey, "arena_top_8", "Arena Top 8", titleBonusSnapshot("top_8"))
+				}
+			case 4:
+				if loser != nil {
+					views[loser.CharacterID] = newArenaTitleView(weekKey, "arena_top_4", "Arena Top 4", titleBonusSnapshot("top_4"))
+				}
+			case 2:
+				if loser != nil {
+					views[loser.CharacterID] = newArenaTitleView(weekKey, "arena_runner_up", "Arena Runner-up", titleBonusSnapshot("runner_up"))
+				}
+				if match.WinnerEntry != nil {
+					views[match.WinnerEntry.CharacterID] = newArenaTitleView(weekKey, "arena_champion", "Arena Champion", titleBonusSnapshot("champion"))
+				}
+			}
+		}
+	}
+	return views
+}
+
+func newArenaTitleView(weekKey, titleKey, titleLabel string, bonus map[string]any) ArenaTitleView {
+	return ArenaTitleView{
+		TitleKey:      titleKey,
+		TitleLabel:    titleLabel,
+		SourceWeekKey: weekKey,
+		BonusSnapshot: bonus,
+	}
+}
+
+func loserEntry(match Matchup) *Entry {
+	if match.WinnerEntry == nil {
+		return nil
+	}
+	if match.LeftEntry != nil && match.LeftEntry.CharacterID != match.WinnerEntry.CharacterID {
+		return match.LeftEntry
+	}
+	if match.RightEntry != nil && match.RightEntry.CharacterID != match.WinnerEntry.CharacterID {
+		return match.RightEntry
+	}
+	return nil
+}
+
+func titleBonusSnapshot(tier string) map[string]any {
+	switch tier {
+	case "champion":
+		return map[string]any{"max_hp": 0.09, "physical_attack": 0.09, "magic_attack": 0.09, "physical_defense": 0.09, "magic_defense": 0.09, "healing_power": 0.09, "speed": 0.04, "crit_rate": 0.025, "crit_damage": 0.04, "block_rate": 0.016, "precision": 0.016, "evasion_rate": 0.016, "physical_mastery": 0.04, "magic_mastery": 0.04}
+	case "runner_up":
+		return map[string]any{"max_hp": 0.065, "physical_attack": 0.065, "magic_attack": 0.065, "physical_defense": 0.065, "magic_defense": 0.065, "healing_power": 0.065, "speed": 0.03, "crit_rate": 0.018, "crit_damage": 0.03, "block_rate": 0.012, "precision": 0.012, "evasion_rate": 0.012, "physical_mastery": 0.03, "magic_mastery": 0.03}
+	case "top_4":
+		return map[string]any{"max_hp": 0.05, "physical_attack": 0.05, "magic_attack": 0.05, "physical_defense": 0.05, "magic_defense": 0.05, "healing_power": 0.05, "speed": 0.025, "crit_rate": 0.014, "crit_damage": 0.025, "block_rate": 0.01, "precision": 0.01, "evasion_rate": 0.01, "physical_mastery": 0.025, "magic_mastery": 0.025}
+	case "top_8":
+		return map[string]any{"max_hp": 0.04, "physical_attack": 0.04, "magic_attack": 0.04, "physical_defense": 0.04, "magic_defense": 0.04, "healing_power": 0.04, "speed": 0.02, "crit_rate": 0.011, "crit_damage": 0.02, "block_rate": 0.008, "precision": 0.008, "evasion_rate": 0.008, "physical_mastery": 0.02, "magic_mastery": 0.02}
+	case "top_16":
+		return map[string]any{"max_hp": 0.03, "physical_attack": 0.03, "magic_attack": 0.03, "physical_defense": 0.03, "magic_defense": 0.03, "healing_power": 0.03, "speed": 0.015, "crit_rate": 0.008, "crit_damage": 0.015, "block_rate": 0.006, "precision": 0.006, "evasion_rate": 0.006, "physical_mastery": 0.015, "magic_mastery": 0.015}
+	default:
+		return map[string]any{"max_hp": 0.02, "physical_attack": 0.02, "magic_attack": 0.02, "physical_defense": 0.02, "magic_defense": 0.02, "healing_power": 0.02, "speed": 0.01, "crit_rate": 0.005, "crit_damage": 0.01, "block_rate": 0.004, "precision": 0.004, "evasion_rate": 0.004, "physical_mastery": 0.01, "magic_mastery": 0.01}
+	}
+}
+
+func absInt(v int) int {
+	if v < 0 {
+		return -v
+	}
+	return v
+}
+
+func buildWeeklyRatingSummary(entries []Entry, states map[string]ratingState) map[string]any {
+	if len(states) == 0 {
+		return map[string]any{}
+	}
+	leaderboard := buildRatingLeaderboard(entries, states, 8)
+	highest := 0
+	lowest := 0
+	if len(leaderboard) > 0 {
+		highest = leaderboard[0].Rating
+		lowest = leaderboard[len(leaderboard)-1].Rating
+	}
+	return map[string]any{
+		"active_count":   len(leaderboard),
+		"highest_rating": highest,
+		"lowest_rating":  lowest,
+		"featured":       leaderboard,
+	}
+}
+
 func historyResultForMatch(match Matchup, characterID string) string {
 	if match.ByeEntry != nil && match.ByeEntry.CharacterID == characterID {
 		return "bye"
@@ -1041,6 +1793,39 @@ func historyOpponentFromEntry(entry *Entry) *HistoryOpponent {
 		PanelPowerScore: entry.PanelPowerScore,
 		IsNPC:           entry.IsNPC,
 	}
+}
+
+func detailEntryFromReport(report map[string]any, role string) *Entry {
+	if report == nil {
+		return nil
+	}
+
+	var nameKey string
+	switch role {
+	case "challenger":
+		nameKey = "challenger"
+	case "opponent":
+		nameKey = "defender"
+	case "winner":
+		outcome, _ := report["outcome"].(string)
+		switch outcome {
+		case "win":
+			nameKey = "challenger"
+		case "loss":
+			nameKey = "defender"
+		default:
+			return nil
+		}
+	default:
+		return nil
+	}
+
+	name, _ := report[nameKey].(string)
+	if name == "" {
+		return nil
+	}
+
+	return &Entry{CharacterName: name}
 }
 
 func (s *Service) buildHistoryLocked(characterID string) []HistorySummary {

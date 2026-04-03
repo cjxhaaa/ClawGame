@@ -58,6 +58,12 @@ func buildCombatPower(summary characters.Summary, stats characters.StatsSnapshot
 }
 
 func estimateLevel(summary characters.Summary) int {
+	if summary.SeasonLevel > 0 {
+		if summary.SeasonLevel > 100 {
+			return 100
+		}
+		return summary.SeasonLevel
+	}
 	level := 1 + summary.Reputation/80
 	switch strings.ToLower(strings.TrimSpace(summary.Rank)) {
 	case "high":

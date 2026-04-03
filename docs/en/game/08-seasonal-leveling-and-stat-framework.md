@@ -22,6 +22,7 @@ The project now has two progression axes with different jobs:
 - `Season level`:
   - driven by seasonal XP
   - controls the character's fixed level-based combat stats for the current season
+  - also gates the profession-route choice at level `10`
 
 Rules:
 
@@ -82,6 +83,12 @@ Milestone target for active bots:
 
 This curve intentionally front-loads early progress so new bots enter the world quickly, then slows enough in the middle to keep routing decisions meaningful.
 
+Career-shift expectation:
+
+- most stable bots should reach level `10` around day `2-3`
+- the civilian phase is therefore short, but long enough to create a readable onboarding and unlock window
+- profession choice should happen before the bot meaningfully enters the hard dungeon and gear-farming stage
+
 ### 9.5 XP Source Budget
 
 The exact content hooks can evolve, but the XP budget should roughly follow this table:
@@ -123,7 +130,8 @@ This produces two clear phases:
 For implementation, character numbers should be divided into four layers:
 
 1. `Base template stats`
-   - defined by class and weapon style
+   - defined by career stage before level `10`
+   - defined by chosen profession route after level `10`
 2. `Level growth stats`
    - gained from season level
 3. `Equipment stats`
@@ -187,32 +195,70 @@ The first implementation can ship with the first seven stats only:
 
 The last three can be introduced when the equipment and status systems need more depth.
 
-### 9.9 Base Stat Templates
+### 9.9 Civilian Template and Early Growth
 
-The current project already has per-build base stats. The seasonal system should continue that pattern.
+All characters begin the season as civilians and use one shared early template before promotion.
 
-Suggested base templates at season level `1`:
+Suggested civilian base template at level `1`:
 
-| Class | Weapon Style | HP | P.Atk | M.Atk | P.Def | M.Def | Speed | Heal |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Warrior | Sword and Shield | 132 | 24 | 6 | 18 | 10 | 10 | 4 |
-| Warrior | Great Axe | 120 | 30 | 4 | 14 | 8 | 11 | 3 |
-| Mage | Staff | 92 | 12 | 34 | 9 | 18 | 16 | 8 |
-| Mage | Spellbook | 88 | 10 | 36 | 8 | 16 | 15 | 10 |
-| Priest | Scepter | 104 | 10 | 26 | 11 | 17 | 14 | 20 |
-| Priest | Holy Tome | 98 | 8 | 22 | 10 | 20 | 13 | 24 |
+| Stage | HP | P.Atk | M.Atk | P.Def | M.Def | Speed | Heal |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Civilian | 96 | 14 | 14 | 10 | 10 | 12 | 6 |
 
-### 9.10 Level Growth by Class
+Suggested civilian growth from level `2` to `9`:
 
-Every level from `2` to `100` grants fixed class-based growth.
+| Stage | HP | P.Atk | M.Atk | P.Def | M.Def | Speed | Heal |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Civilian | +5 | +0.55 | +0.55 | +0.40 | +0.40 | +0.07 | +0.12 |
+
+Design intent:
+
+- civilians should feel viable in the early world without already revealing the final class identity
+- the civilian template should be stable enough for quests, travel, and novice combat
+- it should not outscale the promoted routes once level `10+` progression begins
+
+### 9.10 Promotion at Level 10
+
+When a character reaches level `10`, it chooses exactly one profession route at the Adventurers Guild.
+
+Promotion rules:
+
+- the chosen route sets the character's class identity for equipment and class-skill access
+- the game grants one route-aligned starter weapon at promotion time
+- the promotion also rebases the character to the route's intended level-10 baseline
+- after promotion, later stat growth follows the chosen route rather than the civilian template
+
+Suggested route baselines at level `10`:
+
+| Class | Route | Recommended starter weapon | HP | P.Atk | M.Atk | P.Def | M.Def | Speed | Heal |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Warrior | `tank` | `sword_shield` | 180 | 34 | 8 | 26 | 16 | 11 | 4 |
+| Warrior | `physical_burst` | `great_axe` | 168 | 42 | 6 | 20 | 13 | 12 | 3 |
+| Warrior | `magic_burst` | `sword_shield` | 164 | 28 | 26 | 19 | 18 | 11 | 5 |
+| Mage | `single_burst` | `spellbook` | 128 | 12 | 48 | 11 | 21 | 17 | 11 |
+| Mage | `aoe_burst` | `staff` | 132 | 13 | 46 | 12 | 22 | 16 | 9 |
+| Mage | `control` | `spellbook` | 136 | 11 | 41 | 13 | 23 | 18 | 10 |
+| Priest | `healing_support` | `holy_tome` | 150 | 10 | 31 | 14 | 24 | 14 | 30 |
+| Priest | `curse` | `scepter` | 148 | 12 | 36 | 14 | 22 | 15 | 19 |
+| Priest | `summon` | `holy_tome` | 152 | 11 | 33 | 15 | 23 | 14 | 24 |
+
+### 9.11 Level Growth by Profession Route
+
+Every level from `11` to `100` grants fixed route-based growth.
 
 Growth per level:
 
-| Class | HP | P.Atk | M.Atk | P.Def | M.Def | Speed | Heal |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| Warrior | +8 | +1.2 | +0.2 | +0.9 | +0.5 | +0.08 | +0.05 |
-| Mage | +5 | +0.2 | +1.35 | +0.35 | +0.8 | +0.10 | +0.18 |
-| Priest | +6 | +0.25 | +0.95 | +0.45 | +0.9 | +0.09 | +0.70 |
+| Class | Route | HP | P.Atk | M.Atk | P.Def | M.Def | Speed | Heal |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Warrior | `tank` | +8.2 | +1.00 | +0.20 | +0.95 | +0.55 | +0.07 | +0.05 |
+| Warrior | `physical_burst` | +8.0 | +1.32 | +0.12 | +0.72 | +0.42 | +0.08 | +0.03 |
+| Warrior | `magic_burst` | +7.4 | +0.75 | +0.78 | +0.68 | +0.62 | +0.08 | +0.08 |
+| Mage | `single_burst` | +5.1 | +0.18 | +1.42 | +0.32 | +0.72 | +0.10 | +0.16 |
+| Mage | `aoe_burst` | +5.3 | +0.16 | +1.30 | +0.35 | +0.80 | +0.09 | +0.18 |
+| Mage | `control` | +5.4 | +0.10 | +1.16 | +0.40 | +0.86 | +0.11 | +0.16 |
+| Priest | `healing_support` | +6.2 | +0.18 | +0.86 | +0.42 | +0.96 | +0.08 | +0.80 |
+| Priest | `curse` | +6.0 | +0.25 | +1.02 | +0.45 | +0.86 | +0.09 | +0.46 |
+| Priest | `summon` | +6.1 | +0.22 | +0.92 | +0.50 | +0.91 | +0.08 | +0.58 |
 
 Rounding rule:
 

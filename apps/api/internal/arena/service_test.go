@@ -2,6 +2,7 @@ package arena
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -48,7 +49,7 @@ func TestGetCurrentPadsNPCsTo64(t *testing.T) {
 		"char_3": {CharacterID: "char_3", CharacterName: "KiroNode", Class: "mage", WeaponStyle: "spellbook", Rank: "high", PanelPowerScore: 9800, EquipmentScore: 380, SignedUpAt: now.Add(-1 * time.Minute).Format(time.RFC3339)},
 	}
 
-	view := svc.GetCurrent(world.ArenaStatus{Code: "in_progress"})
+	view := svc.GetCurrent(world.ArenaStatus{Code: "knockout_in_progress"}, sortedEntries(svc.entriesByDay[dayKey]))
 	if view.QualifiedCount != 64 {
 		t.Fatalf("expected 64-player main field, got %d", view.QualifiedCount)
 	}
@@ -63,16 +64,15 @@ func TestGetCurrentPadsNPCsTo64(t *testing.T) {
 	}
 }
 
-func TestQualifierRoundReducesFieldTo64(t *testing.T) {
+func TestSaturdayKnockoutUsesTop64Seeds(t *testing.T) {
 	svc := NewService()
-	now := time.Date(2026, time.April, 1, 9, 12, 0, 0, time.FixedZone("CST", 8*60*60))
+	now := time.Date(2026, time.April, 11, 9, 12, 0, 0, time.FixedZone("CST", 8*60*60))
 	svc.clock = func() time.Time { return now }
 
-	dayKey := dayKeyFor(now)
-	entries := make(map[string]Entry)
+	entries := make([]Entry, 0, 1000)
 	for i := 0; i < 1000; i++ {
 		id := fmt.Sprintf("char_%03d", i+1)
-		entries[id] = Entry{
+		entry := Entry{
 			CharacterID:     id,
 			CharacterName:   fmt.Sprintf("Bot %03d", i+1),
 			Class:           npcClassFor(i),
@@ -82,30 +82,32 @@ func TestQualifierRoundReducesFieldTo64(t *testing.T) {
 			EquipmentScore:  320 + (i % 20),
 			SignedUpAt:      now.Add(-time.Duration(i) * time.Second).Format(time.RFC3339),
 		}
+		entries = append(entries, entry)
 	}
-	svc.entriesByDay[dayKey] = entries
+	weekKey := weekKeyFor(now)
+	svc.ensureWeekStatesLocked(weekKey, entries)
+	for i, entry := range entries {
+		svc.ratingByWeek[weekKey][entry.CharacterID] = ratingState{
+			Rating:                2000 - i,
+			FreeAttemptsRemaining: 3,
+			DayKey:                dayKeyFor(now),
+		}
+	}
 
-	view := svc.GetCurrent(world.ArenaStatus{Code: "in_progress"})
-	if len(view.QualifierRounds) < 2 {
-		t.Fatalf("expected multiple qualifier rounds for a large signup pool, got %d", len(view.QualifierRounds))
+	view := svc.GetCurrent(world.ArenaStatus{Code: "knockout_in_progress"}, entries)
+	if len(view.QualifierRounds) != 0 {
+		t.Fatalf("expected seeded weekly knockout without qualifier rounds, got %d", len(view.QualifierRounds))
 	}
 	if view.QualifiedCount != 64 {
-		t.Fatalf("expected qualifier stage to produce 64 qualifiers, got %d", view.QualifiedCount)
+		t.Fatalf("expected weekly knockout to produce 64 qualifiers, got %d", view.QualifiedCount)
 	}
-	firstRoundEntrants := 0
-	for _, match := range view.QualifierRounds[0].Matchups {
-		if match.ByeEntry != nil {
-			firstRoundEntrants++
-		}
-		if match.LeftEntry != nil {
-			firstRoundEntrants++
-		}
-		if match.RightEntry != nil {
-			firstRoundEntrants++
-		}
+	if len(view.Rounds) == 0 || view.Rounds[0].EntrantCount != 64 {
+		t.Fatalf("expected main bracket to start at 64 entrants, got %#v", view.Rounds)
 	}
-	if firstRoundEntrants != 1000 {
-		t.Fatalf("expected first qualifier round to cover all 1000 entrants, got %d", firstRoundEntrants)
+	for _, entry := range view.FeaturedEntries {
+		if strings.TrimSpace(entry.CharacterID) == "" {
+			t.Fatal("expected featured seeded entrants to have character ids")
+		}
 	}
 }
 
@@ -120,7 +122,7 @@ func TestChampionAvailableAfterFinalWindow(t *testing.T) {
 		"char_2": {CharacterID: "char_2", CharacterName: "LyraLoop", Class: "priest", WeaponStyle: "holy_tome", Rank: "high", PanelPowerScore: 9900, EquipmentScore: 410, SignedUpAt: now.Add(-4 * time.Minute).Format(time.RFC3339)},
 	}
 
-	view := svc.GetCurrent(world.ArenaStatus{Code: "results_live"})
+	view := svc.GetCurrent(world.ArenaStatus{Code: "knockout_results_live"}, sortedEntries(svc.entriesByDay[dayKey]))
 	if view.Champion == nil {
 		t.Fatal("expected champion to be available after the final window")
 	}
@@ -187,5 +189,114 @@ func TestListEntriesPaginatesSortedField(t *testing.T) {
 	page2 := svc.ListEntries(EntryListFilters{Cursor: page1[len(page1)-1].CharacterID, Limit: 2})
 	if len(page2) != 1 || page2[0].CharacterID != "char_3" {
 		t.Fatalf("expected remaining entry on second page, got %#v", page2)
+	}
+}
+
+func TestRatingBoardAndChallengeFlow(t *testing.T) {
+	svc := NewService()
+	now := time.Date(2026, time.April, 6, 10, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	svc.clock = func() time.Time { return now }
+
+	entries := []Entry{
+		{CharacterID: "char_1", CharacterName: "NovaScript", Class: "warrior", WeaponStyle: "great_axe", Rank: "mid", PanelPowerScore: 6800, EquipmentScore: 340},
+		{CharacterID: "char_2", CharacterName: "LyraLoop", Class: "priest", WeaponStyle: "holy_tome", Rank: "mid", PanelPowerScore: 7000, EquipmentScore: 345},
+		{CharacterID: "char_3", CharacterName: "KiroNode", Class: "mage", WeaponStyle: "spellbook", Rank: "mid", PanelPowerScore: 6600, EquipmentScore: 330},
+		{CharacterID: "char_4", CharacterName: "RuneFork", Class: "warrior", WeaponStyle: "great_axe", Rank: "mid", PanelPowerScore: 6400, EquipmentScore: 320},
+		{CharacterID: "char_5", CharacterName: "VelaByte", Class: "mage", WeaponStyle: "spellbook", Rank: "mid", PanelPowerScore: 7200, EquipmentScore: 350},
+		{CharacterID: "char_6", CharacterName: "PatchLeaf", Class: "priest", WeaponStyle: "holy_tome", Rank: "mid", PanelPowerScore: 6900, EquipmentScore: 338},
+	}
+
+	board, err := svc.GetRatingBoard("char_1", entries)
+	if err != nil {
+		t.Fatalf("expected rating board to load, got %v", err)
+	}
+	if board.Rating != 1000 {
+		t.Fatalf("expected starting rating 1000, got %d", board.Rating)
+	}
+	if board.FreeAttemptsRemaining != 3 {
+		t.Fatalf("expected 3 free attempts, got %d", board.FreeAttemptsRemaining)
+	}
+	if len(board.Candidates) == 0 {
+		t.Fatal("expected nearby rating candidates")
+	}
+
+	targetID := board.Candidates[0].CharacterID
+	result, err := svc.ResolveRatingChallenge("char_1", targetID, entries)
+	if err != nil {
+		t.Fatalf("expected rating challenge to resolve, got %v", err)
+	}
+	if result.MatchID == "" {
+		t.Fatal("expected rating challenge match id")
+	}
+	if result.Result == "win" && result.RatingDelta <= 0 {
+		t.Fatalf("expected positive rating delta on win, got %d", result.RatingDelta)
+	}
+
+	updatedBoard, err := svc.GetRatingBoard("char_1", entries)
+	if err != nil {
+		t.Fatalf("expected updated rating board to load, got %v", err)
+	}
+	if updatedBoard.FreeAttemptsRemaining != 2 {
+		t.Fatalf("expected one free attempt consumed, got %d", updatedBoard.FreeAttemptsRemaining)
+	}
+
+	history := svc.ListHistory("char_1", HistoryFilters{Limit: 10})
+	found := false
+	for _, item := range history {
+		if item.Stage == "rating" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected rating challenge to appear in arena history")
+	}
+}
+
+func TestSundayFinalizesWeeklyArenaTitlesForOneWeek(t *testing.T) {
+	svc := NewService()
+	now := time.Date(2026, time.April, 12, 10, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	svc.clock = func() time.Time { return now }
+
+	entries := make([]Entry, 0, 40)
+	for i := 0; i < 40; i++ {
+		entries = append(entries, Entry{
+			CharacterID:     fmt.Sprintf("char_%02d", i+1),
+			CharacterName:   fmt.Sprintf("Bot %02d", i+1),
+			Class:           npcClassFor(i),
+			WeaponStyle:     npcWeaponFor(i),
+			Rank:            "mid",
+			PanelPowerScore: 7000 - i*10,
+			EquipmentScore:  330,
+		})
+	}
+
+	board, err := svc.GetRatingBoard("char_01", entries)
+	if err != nil {
+		t.Fatalf("expected rating board to load, got %v", err)
+	}
+	if board.WeekKey == "" {
+		t.Fatal("expected week key")
+	}
+
+	svc.ratingByWeek[board.WeekKey]["char_01"] = ratingState{Rating: 1320, FreeAttemptsRemaining: 3, DayKey: dayKeyFor(now)}
+	svc.ratingByWeek[board.WeekKey]["char_02"] = ratingState{Rating: 1280, FreeAttemptsRemaining: 3, DayKey: dayKeyFor(now)}
+	for i := 2; i < len(entries); i++ {
+		svc.ratingByWeek[board.WeekKey][entries[i].CharacterID] = ratingState{Rating: 1200 - i, FreeAttemptsRemaining: 3, DayKey: dayKeyFor(now)}
+	}
+
+	title, found := svc.GetArenaTitle("char_01", entries)
+	if !found {
+		t.Fatal("expected title to be granted on Sunday finalization")
+	}
+	if title.TitleKey != "arena_champion" {
+		t.Fatalf("expected champion title, got %q", title.TitleKey)
+	}
+	expiresAt, err := time.Parse(time.RFC3339, title.ExpiresAt)
+	if err != nil {
+		t.Fatalf("expected valid expires_at, got %v", err)
+	}
+	if hours := expiresAt.Sub(now).Hours(); hours < 24*6.5 || hours > 24*7.5 {
+		t.Fatalf("expected one-week duration, got %.2f hours", hours)
 	}
 }

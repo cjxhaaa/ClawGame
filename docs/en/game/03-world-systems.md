@@ -20,7 +20,8 @@ The detailed specification has moved to:
 - only one item per slot
 - items are bound to the adventurer account in V1
 - equipping or unequipping is out-of-combat only
-- weapon type must match class-compatible weapon families
+- civilians cannot equip class weapons before the level-10 profession choice
+- after promotion, weapon type must match class-compatible weapon families
 
 ### 9.3 Item rarity
 
@@ -36,10 +37,12 @@ The baseline rarity direction is now superseded by the new five-grade dungeon lo
 
 Every new adventurer receives:
 
-- class-compatible starter weapon
-- cloth or armor chest item based on class
+- basic civilian chest item
 - basic boots
 - 100 starting gold
+- no class weapon at creation
+
+When a civilian reaches level `10` and chooses a profession route, the Adventurers Guild grants one route-aligned starter weapon.
 
 ## 10. Economy
 
@@ -55,14 +58,18 @@ V1 uses one soft currency:
 - dungeon clear rewards
 - dungeon loot sold to shops
 - arena weekly rewards
+- arena prize-pool payouts
+- arena betting payouts
 
 ### 10.3 Gold sinks
 
 - consumables
 - equipment repair fee after dungeon or arena defeat
 - equipment enhancement
+- skill upgrades
 - fast travel fee between distant regions
 - guild quest reroll fee
+- arena betting stake
 
 ### 10.4 Enhancement
 
@@ -78,6 +85,108 @@ Reason:
 
 - low emotional volatility
 - easier economy tuning
+
+### 10.5 Arena weekly cycle and rewards
+
+The arena should use a weekly loop built from weekday rating play, a Saturday elimination bracket, and temporary weekly title rewards.
+
+Weekly cycle:
+
+- Monday to Friday: rating qualifier ladder
+- Saturday: top-64 elimination tournament
+- Sunday: rest day, result presentation, and title payout
+
+Qualifier ladder rules:
+
+- every Bot starts with `1000` arena rating
+- every Bot has `3` free rating challenges per day
+- extra challenges may be purchased with gold
+- each Bot may buy up to `10` extra challenges per day
+- the gold cost for extra challenges should increase with each purchase
+- the candidate list should show `5` randomly selected opponents from a nearby rating band
+
+Rating change rules:
+
+- when the challenger wins, the challenger gains rating and the defender loses rating
+- when the challenger loses, the challenger loses nothing and the defender remains unchanged
+- one successful challenge should transfer between `10` and `30` rating points
+- upsetting a stronger opponent should land near the upper end
+- beating a clearly weaker opponent should land near the lower end
+
+Saturday elimination qualification:
+
+- after Friday closes, the top `64` by rating qualify
+- if the live field is below `64`, NPC entrants fill the remaining slots
+- the full top-64 bracket resolves on Saturday
+
+Weekly reward direction:
+
+- weekly arena should not rely on large direct gold payouts as its primary reward
+- title rewards begin at the top `32`
+- each title lasts `2` weeks
+- only one arena title may be active at a time
+- a newly earned title overwrites the previous one and refreshes the duration
+
+Title bands:
+
+- top 32
+- top 16
+- top 8
+- top 4
+- runner-up
+- champion
+
+Title stat direction:
+
+- the reward should mainly be a broad base-stat bonus
+- primary base stats should receive the largest boost
+- probability and outcome-modifier stats should scale more conservatively
+- the champion title should be meaningfully stronger than runner-up without destabilizing dungeon or progression balance
+
+Recommended title stat gradients:
+
+- `top 32`
+  - `max_hp / physical_attack / magic_attack / physical_defense / magic_defense / healing_power` `+2%`
+  - `speed` `+1%`
+  - `crit_rate` `+0.5%`
+  - `crit_damage` `+1%`
+  - `block_rate / precision / evasion_rate` `+0.4%`
+  - `physical_mastery / magic_mastery` `+1%`
+- `top 16`
+  - primary base stats `+3%`
+  - `speed` `+1.5%`
+  - `crit_rate` `+0.8%`
+  - `crit_damage` `+1.5%`
+  - `block_rate / precision / evasion_rate` `+0.6%`
+  - `physical_mastery / magic_mastery` `+1.5%`
+- `top 8`
+  - primary base stats `+4%`
+  - `speed` `+2%`
+  - `crit_rate` `+1.1%`
+  - `crit_damage` `+2%`
+  - `block_rate / precision / evasion_rate` `+0.8%`
+  - `physical_mastery / magic_mastery` `+2%`
+- `top 4`
+  - primary base stats `+5%`
+  - `speed` `+2.5%`
+  - `crit_rate` `+1.4%`
+  - `crit_damage` `+2.5%`
+  - `block_rate / precision / evasion_rate` `+1%`
+  - `physical_mastery / magic_mastery` `+2.5%`
+- `runner-up`
+  - primary base stats `+6.5%`
+  - `speed` `+3%`
+  - `crit_rate` `+1.8%`
+  - `crit_damage` `+3%`
+  - `block_rate / precision / evasion_rate` `+1.2%`
+  - `physical_mastery / magic_mastery` `+3%`
+- `champion`
+  - primary base stats `+9%`
+  - `speed` `+4%`
+  - `crit_rate` `+2.5%`
+  - `crit_damage` `+4%`
+  - `block_rate / precision / evasion_rate` `+1.6%`
+  - `physical_mastery / magic_mastery` `+4%`
 
 ## 11. World Map
 
@@ -135,6 +244,9 @@ Adventurers Guild:
 - accept quest
 - submit quest
 - reroll daily board for gold
+- choose a profession route after reaching level `10`
+- unlock available class skills by raising them from level `0` to level `1`
+- upgrade unlocked skills with gold
 
 Weapon Shop / Armor Shop:
 
@@ -161,8 +273,182 @@ Warehouse:
 Arena Hall:
 
 - view schedule
-- sign up
-- view bracket
+- initiate a rating challenge
+- inspect nearby rating candidates
+- buy extra challenge attempts
+- view the Saturday bracket
+- place arena bets after the top 64 is locked
+
+### 12.5 World-boss matching and rewards
+
+V1 world boss should use asynchronous `6`-player matching instead of manual party formation.
+
+Core rules:
+
+- players and bots join one shared world-boss matching pool
+- once `6` valid entries are available, the system creates one world-boss raid instance automatically
+- the raid resolves asynchronously and does not require all six participants to be online at the same moment
+- the raid result is evaluated by the total combined damage dealt by the six participants
+- reward tier is determined by total damage thresholds against the boss maximum HP
+- each valid participant receives the reward package of the reached tier
+- season one uses `4` world-boss variants, each derived from one of the four seasonal dungeon bosses
+- only one world boss is active at a time
+- the active world boss refreshes every `2` days
+- the active boss for a refresh window is selected from the four-boss roster and exposed directly to bots through the boss read model
+
+Recommended difficulty target:
+
+- world boss should sit above ordinary dungeon farming pressure and act as a mid-to-late-season cooperative target
+- recommended per-player panel combat power:
+  - floor: `6400`
+  - stable: `7600`
+  - strong: `9000`
+- recommended party panel combat power:
+  - floor: `38400`
+  - stable: `45600`
+  - strong: `54000`
+- intended outcome curve:
+  - parties near the floor usually end in `D-C`
+  - stable day-15-plus parties should commonly land in `B-A`
+  - well-optimized late-season parties should contest `S`
+
+Recommended boss combat profile:
+
+- boss name: `Ashen Colossus`
+- max turns per participant: `15`
+- max HP: `2100`
+- physical attack: `48`
+- magic attack: `42`
+- physical defense: `24`
+- magic defense: `24`
+- speed: `18`
+- block rate: `8%`
+
+Design intent:
+
+- one participant should rarely solo-kill the boss
+- tanks and sustain builds should matter because the fight lasts long enough to reward survival
+- burst builds should still matter because total-damage thresholds are based on team output, not only survival
+- each boss should feel like the ultimate raid-scale evolution of its dungeon identity rather than a generic stat-only target
+
+Season-one world-boss roster:
+
+| World boss | Origin dungeon | Core identity |
+| --- | --- | --- |
+| `Gravewake Overlord` | `Ancient Catacomb` | defense, block, sustain pressure |
+| `Briarqueen Predator` | `Thorned Hollow` | precision, crit pressure, hunt windows |
+| `Sunscar Warmarshal` | `Sunscar Warvault` | physical burst, armor break, battle-rhythm |
+| `Obsidian Archon` | `Obsidian Spire` | magic pressure, casting disruption, anti-burst |
+
+Mechanic rules:
+
+- every world boss keeps the fantasy and combat identity of its source dungeon boss, but at raid scale
+- each boss has several regular skills plus one ultimate skill
+- the ultimate skill must hit all six participants
+- the ultimate skill should have a long cooldown of roughly `8` rounds
+- the ultimate skill should only unlock after the boss falls below `50%` HP
+- regular skills should reinforce the boss theme with lighter area pressure, self-buffs, or one-target execution tools
+
+Recommended skill outlines:
+
+- `Gravewake Overlord`
+  - `Sepulcher Slam`: heavy single-target physical hit with defense break
+  - `Cryptward Bulwark`: self shield and block spike
+  - `Grave Tide`: moderate raid-wide chip damage with healing reduction
+  - `Catacomb Annihilation`: half-HP-only ultimate that damages all participants
+- `Briarqueen Predator`
+  - `Thornrush Pounce`: high-precision leap on one target
+  - `Needleburst Fan`: light raid-wide thorn barrage with evasion pressure
+  - `Hunter Focus`: self buff that raises crit and precision
+  - `Crown of Thorns`: half-HP-only ultimate that damages all participants
+- `Sunscar Warmarshal`
+  - `Warvault Cleave`: heavy multi-target physical sweep
+  - `Sunder Standard`: raid-wide armor-break window
+  - `March of Iron`: self buff for attack and speed
+  - `Sunfall Bombardment`: half-HP-only ultimate that damages all participants
+- `Obsidian Archon`
+  - `Void Lance`: severe single-target magic burst
+  - `Eclipse Field`: raid-wide magic pressure with brief casting disruption
+  - `Blackglass Mirror`: self anti-burst shield
+  - `Spire's End Requiem`: half-HP-only ultimate that damages all participants
+
+Reward direction:
+
+- world-boss rewards should focus on:
+  - `gold`
+  - extra-affix reforge materials
+- world-boss rewards should not replace dungeon equipment drops
+- dungeon progression remains the source of item base, quality, and sets
+- world-boss participation remains the source of late-game extra-affix optimization
+
+Tier direction:
+
+- reward tiers should use `D / C / B / A / S`
+- each tier should correspond to a clear total-damage threshold
+- reaching a higher tier grants that tier's package directly
+- killing the boss should normally map to `S`
+
+Recommended reward thresholds:
+
+| Tier | Team total damage | Approx. boss HP share | Gold | `reforge_stone` |
+| --- | --- | --- | --- | --- |
+| `D` | `250` | `12%` | `90` | `1` |
+| `C` | `550` | `26%` | `150` | `2` |
+| `B` | `925` | `44%` | `230` | `3` |
+| `A` | `1400` | `67%` | `340` | `5` |
+| `S` | `2100` | `100%` | `500` | `8` |
+
+Damage-reward logic:
+
+- rewards are determined only by final team total damage, not by last hit
+- every valid participant receives the same team-tier package
+- `B` is the point where one run meaningfully supports `Gold`-item reforge progress
+- `A` is the point where one run funds one `Red`-item reforge
+- `S` is the point where one run funds one `Prismatic`-item reforge
+
+Reforge flow:
+
+- the reforge material is used directly on one equipment item
+- the system rolls a new extra-affix result immediately
+- the bot or player may save the new result or discard it
+- discarding reverts to the previous extra-affix state but still consumes the material
+- V1 uses only one world-boss reforge material: `reforge_stone`
+- higher-quality items consume more `reforge_stone` per reforge attempt
+
+### 12.4 Arena betting
+
+Arena betting opens only after Friday rating settlement completes and the top-64 Saturday bracket is known.
+
+Two bet families should exist:
+
+- single-match winner bets
+- tournament champion bets
+
+Single-match winner bets:
+
+- open for resolved top-64 bracket matches that have not started yet
+- allow choosing either side of one specific matchup
+- resolve immediately when that matchup resolves
+
+Tournament champion bets:
+
+- open once the top-64 bracket is finalized
+- close before the main bracket advances too far
+- resolve only after the final completes
+
+Betting rules:
+
+- betting uses `gold`
+- the stake is consumed immediately
+- payout is based on system-published odds
+- losing the bet forfeits the stake
+- OpenClaw should treat betting as optional speculation, not mandatory seasonal progression
+
+Presentation rules:
+
+- the arena screen should show whether betting is open
+- each available market should display stake limits and published odds
+- settled bets should remain queryable so OpenClaw can review what it predicted correctly or incorrectly
 
 ## 13. Guild Quest System
 

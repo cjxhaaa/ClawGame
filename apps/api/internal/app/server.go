@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"slices"
 	"strconv"
@@ -22,6 +23,7 @@ import (
 	"clawgame/apps/api/internal/platform/store"
 	"clawgame/apps/api/internal/quests"
 	"clawgame/apps/api/internal/world"
+	"clawgame/apps/api/internal/worldboss"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -35,6 +37,7 @@ type Server struct {
 	inventoryService *inventory.Service
 	questService     *quests.Service
 	worldService     *world.Service
+	worldBossService *worldboss.Service
 }
 
 var requestCounter uint64
@@ -48,6 +51,7 @@ func NewServer(cfg config.API) *Server {
 	inventoryService := inventory.NewService()
 	questService := quests.NewService()
 	worldService := world.NewService()
+	worldBossService := worldboss.NewService()
 
 	if strings.TrimSpace(cfg.DatabaseURL) != "" {
 		postgresStore, err := store.NewPostgresStore(cfg.DatabaseURL)
@@ -236,23 +240,17 @@ func NewServer(cfg config.API) *Server {
 			}
 
 			var request struct {
-				Name        string `json:"name"`
-				Class       string `json:"class"`
-				WeaponStyle string `json:"weapon_style"`
+				Name string `json:"name"`
 			}
 			if !decodeJSONBody(w, r, &request) {
 				return
 			}
 
-			state, err := characterService.CreateCharacter(account, request.Name, request.Class, request.WeaponStyle, worldService)
+			state, err := characterService.CreateCharacter(account, request.Name, "", "", worldService)
 			if err != nil {
 				switch {
 				case errors.Is(err, characters.ErrCharacterAlreadyExists):
 					writeError(w, r, http.StatusConflict, "CHARACTER_ALREADY_EXISTS", "account already owns a character")
-				case errors.Is(err, characters.ErrCharacterInvalidClass):
-					writeError(w, r, http.StatusBadRequest, "CHARACTER_INVALID_CLASS", "class is not supported")
-				case errors.Is(err, characters.ErrCharacterInvalidWeapon):
-					writeError(w, r, http.StatusBadRequest, "CHARACTER_INVALID_WEAPON_STYLE", "weapon style is incompatible with class")
 				case errors.Is(err, characters.ErrCharacterNameTaken):
 					writeError(w, r, http.StatusConflict, "CHARACTER_NAME_TAKEN", "character name is already in use")
 				case errors.Is(err, characters.ErrCharacterInvalidName):
@@ -264,7 +262,137 @@ func NewServer(cfg config.API) *Server {
 			}
 
 			questService.EnsureDailyQuestBoard(state.Character)
-			state, err = buildCharacterState(account, characterService, inventoryService, questService, dungeonService, worldService)
+			state, err = buildCharacterState(account, characterService, inventoryService, questService, dungeonService, arenaService, worldService)
+			if err != nil {
+				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to load character state")
+				return
+			}
+
+			writeEnvelope(w, r, http.StatusOK, state)
+		})
+
+		r.Get("/me/skills", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+
+			skillsState, err := characterService.SkillsState(account)
+			if err != nil {
+				if errors.Is(err, characters.ErrCharacterNotFound) {
+					writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before requesting skills")
+					return
+				}
+				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to load skills")
+				return
+			}
+
+			writeEnvelope(w, r, http.StatusOK, skillsState)
+		})
+
+		r.Post("/me/skills/{skillId}/upgrade", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+
+			skillsState, character, err := characterService.UpgradeSkill(account, chi.URLParam(r, "skillId"))
+			if err != nil {
+				switch {
+				case errors.Is(err, characters.ErrCharacterNotFound):
+					writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before upgrading skills")
+				case errors.Is(err, characters.ErrSkillNotFound):
+					writeError(w, r, http.StatusNotFound, "SKILL_NOT_FOUND", "skill does not exist")
+				case errors.Is(err, characters.ErrSkillLocked):
+					writeError(w, r, http.StatusBadRequest, "SKILL_LOCKED", "skill is not available to the current character")
+				case errors.Is(err, characters.ErrSkillMaxLevel):
+					writeError(w, r, http.StatusBadRequest, "SKILL_MAX_LEVEL", "skill is already at max level")
+				case errors.Is(err, characters.ErrGoldInsufficient):
+					writeError(w, r, http.StatusBadRequest, "GOLD_INSUFFICIENT", "character does not have enough gold to upgrade this skill")
+				default:
+					writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to upgrade skill")
+				}
+				return
+			}
+
+			writeEnvelope(w, r, http.StatusOK, map[string]any{
+				"character": character,
+				"skills":    skillsState,
+			})
+		})
+
+		r.Post("/me/skills/loadout", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+
+			var request struct {
+				SkillIDs []string `json:"skill_ids"`
+			}
+			if !decodeJSONBody(w, r, &request) {
+				return
+			}
+
+			skillsState, err := characterService.SetSkillLoadout(account, request.SkillIDs)
+			if err != nil {
+				switch {
+				case errors.Is(err, characters.ErrCharacterNotFound):
+					writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before configuring skills")
+				case errors.Is(err, characters.ErrSkillLocked):
+					writeError(w, r, http.StatusBadRequest, "SKILL_LOCKED", "loadout contains locked or unavailable skills")
+				case errors.Is(err, characters.ErrSkillInvalidLoadout):
+					writeError(w, r, http.StatusBadRequest, "SKILL_LOADOUT_INVALID", "loadout must contain up to four unique unlocked skills")
+				default:
+					writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to update skill loadout")
+				}
+				return
+			}
+
+			writeEnvelope(w, r, http.StatusOK, skillsState)
+		})
+
+		r.Post("/me/profession-route", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+
+			var request struct {
+				RouteID string `json:"route_id"`
+			}
+			if !decodeJSONBody(w, r, &request) {
+				return
+			}
+
+			state, err := characterService.ChooseProfessionRoute(account, request.RouteID, worldService)
+			if err != nil {
+				switch {
+				case errors.Is(err, characters.ErrCharacterNotFound):
+					writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character first")
+				case errors.Is(err, characters.ErrCharacterInvalidRoute):
+					writeError(w, r, http.StatusBadRequest, "CHARACTER_INVALID_ROUTE", "profession route is not supported")
+				case errors.Is(err, characters.ErrCharacterRouteLocked):
+					writeError(w, r, http.StatusBadRequest, "CHARACTER_ROUTE_LOCKED", "profession route is unavailable for the current character state")
+				default:
+					writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to choose profession route")
+				}
+				return
+			}
+
+			if catalogID := inventory.ProfessionStarterCatalogID(state.Character.ProfessionRoute); catalogID != "" {
+				if _, item, grantErr := inventoryService.GrantItemFromCatalog(state.Character, catalogID); grantErr != nil && !errors.Is(grantErr, inventory.ErrCatalogNotFound) {
+					writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to grant profession starter weapon")
+					return
+				} else if grantErr == nil && item.ItemID != "" {
+					if _, equipErr := inventoryService.EquipItem(state.Character, item.ItemID); equipErr != nil {
+						writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to equip profession starter weapon")
+						return
+					}
+				}
+			}
+
+			state, err = buildCharacterState(account, characterService, inventoryService, questService, dungeonService, arenaService, worldService)
 			if err != nil {
 				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to load character state")
 				return
@@ -300,7 +428,7 @@ func NewServer(cfg config.API) *Server {
 			}
 			_ = state
 
-			state, err = buildCharacterState(account, characterService, inventoryService, questService, dungeonService, worldService)
+			state, err = buildCharacterState(account, characterService, inventoryService, questService, dungeonService, arenaService, worldService)
 			if err != nil {
 				if errors.Is(err, characters.ErrCharacterNotFound) {
 					writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before requesting full state")
@@ -336,7 +464,7 @@ func NewServer(cfg config.API) *Server {
 				return
 			}
 
-			state, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, worldService)
+			state, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, arenaService, worldService)
 			if err != nil {
 				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to load planner state")
 				return
@@ -628,7 +756,7 @@ func NewServer(cfg config.API) *Server {
 				})
 			}
 
-			state, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, worldService)
+			state, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, arenaService, worldService)
 			if err != nil {
 				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to load updated state after travel")
 				return
@@ -833,7 +961,7 @@ func NewServer(cfg config.API) *Server {
 				return
 			}
 
-			result, err := resolveFieldEncounter(account, request.Approach, characterService, inventoryService, questService, dungeonService, worldService)
+			result, err := resolveFieldEncounter(account, request.Approach, characterService, inventoryService, questService, dungeonService, arenaService, worldService)
 			if err != nil {
 				switch {
 				case errors.Is(err, characters.ErrCharacterNotFound):
@@ -882,7 +1010,7 @@ func NewServer(cfg config.API) *Server {
 				return
 			}
 
-			state, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, worldService)
+			state, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, arenaService, worldService)
 			if err != nil {
 				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to load updated state after quest submission")
 				return
@@ -960,6 +1088,212 @@ func NewServer(cfg config.API) *Server {
 			}
 
 			writeEnvelope(w, r, http.StatusOK, inventoryService.GetInventory(character))
+		})
+
+		r.Get("/world-boss/current", func(w http.ResponseWriter, r *http.Request) {
+			if _, ok := requireAccount(w, r, authService); !ok {
+				return
+			}
+			writeEnvelope(w, r, http.StatusOK, worldBossService.CurrentBoss())
+		})
+
+		r.Get("/world-boss/queue-status", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+			character, exists := characterService.GetCharacterByAccount(account)
+			if !exists {
+				writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before requesting world boss queue status")
+				return
+			}
+			writeEnvelope(w, r, http.StatusOK, worldBossService.QueueStatus(character.CharacterID))
+		})
+
+		r.Post("/world-boss/queue", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+			character, exists := characterService.GetCharacterByAccount(account)
+			if !exists {
+				writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before joining world boss queue")
+				return
+			}
+
+			join := worldBossService.JoinQueue(character.CharacterID, character.Name)
+			if len(join.MatchedCharacterIDs) > 0 {
+				participants := make([]worldboss.ParticipantSnapshot, 0, len(join.MatchedCharacterIDs))
+				for _, characterID := range join.MatchedCharacterIDs {
+					summary, baseStats, skills, found := characterService.GetCharacterByID(characterID)
+					if !found {
+						continue
+					}
+					derivedStats := inventoryService.DeriveStats(summary, baseStats)
+					player := dungeons.BuildPlayerCombatant(summary, derivedStats, skills)
+					inv := inventoryService.GetInventory(summary)
+					power, _ := buildCombatPower(summary, derivedStats, inv, dungeonService)
+					participants = append(participants, worldboss.ParticipantSnapshot{
+						Character: summary,
+						Power:     power.PanelPowerScore,
+						Player:    player,
+					})
+				}
+				if len(participants) == worldBossService.CurrentBoss().RequiredPartySize {
+					raid := worldBossService.ResolveMatchedRaid(participants)
+					join.ResolvedRaid = &raid
+					for _, member := range raid.Members {
+						if _, err := characterService.GrantGold(member.CharacterID, raid.RewardPackage.RewardGold); err == nil {
+							_, _ = characterService.GrantMaterials(member.CharacterID, raid.RewardPackage.MaterialDrops)
+						}
+						_ = characterService.AppendEvents(member.CharacterID, world.WorldEvent{
+							EventID:          requestID(r),
+							EventType:        "world_boss.reward_granted",
+							Visibility:       "public",
+							ActorCharacterID: member.CharacterID,
+							ActorName:        member.Name,
+							RegionID:         "main_city",
+							Summary:          fmt.Sprintf("%s earned %s-tier world boss rewards.", member.Name, raid.RewardTier),
+							Payload: map[string]any{
+								"raid_id":      raid.RaidID,
+								"reward_tier":  raid.RewardTier,
+								"damage_dealt": member.DamageDealt,
+							},
+							OccurredAt: time.Now().Format(time.RFC3339),
+						})
+					}
+					join.Status = worldBossService.QueueStatus(character.CharacterID)
+				}
+			}
+
+			writeEnvelope(w, r, http.StatusOK, join)
+		})
+
+		r.Get("/world-boss/raids/{raidId}", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+			character, exists := characterService.GetCharacterByAccount(account)
+			if !exists {
+				writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before requesting world boss raid detail")
+				return
+			}
+			raid, found := worldBossService.GetRaid(character.CharacterID, chi.URLParam(r, "raidId"))
+			if !found {
+				writeError(w, r, http.StatusNotFound, "WORLD_BOSS_RAID_NOT_FOUND", "world boss raid does not exist")
+				return
+			}
+			writeEnvelope(w, r, http.StatusOK, raid)
+		})
+
+		r.Post("/items/{itemId}/reforge", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+			character, exists := characterService.GetCharacterByAccount(account)
+			if !exists {
+				writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before reforging items")
+				return
+			}
+			itemBefore, reforgeStoneCost, err := inventoryService.GetReforgeCost(character, chi.URLParam(r, "itemId"))
+			if err != nil {
+				switch {
+				case errors.Is(err, inventory.ErrItemNotOwned):
+					writeError(w, r, http.StatusNotFound, "ITEM_NOT_OWNED", "item does not belong to character")
+				case errors.Is(err, inventory.ErrItemNotReforgeable):
+					writeError(w, r, http.StatusBadRequest, "ITEM_NOT_REFORGEABLE", "item does not support extra-affix reforge")
+				default:
+					writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to validate reforge target")
+				}
+				return
+			}
+			if _, err := characterService.SpendMaterials(character.CharacterID, []map[string]any{{"material_key": inventory.ReforgeMaterialKey, "quantity": reforgeStoneCost}}); err != nil {
+				if errors.Is(err, characters.ErrMaterialsInsufficient) {
+					writeError(w, r, http.StatusBadRequest, "MATERIALS_INSUFFICIENT", "character does not have enough reforge material")
+					return
+				}
+				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to spend reforge material")
+				return
+			}
+			view, item, err := inventoryService.ReforgeItem(character, chi.URLParam(r, "itemId"))
+			if err != nil {
+				switch {
+				case errors.Is(err, inventory.ErrItemNotOwned):
+					writeError(w, r, http.StatusNotFound, "ITEM_NOT_OWNED", "item does not belong to character")
+				case errors.Is(err, inventory.ErrItemNotReforgeable):
+					writeError(w, r, http.StatusBadRequest, "ITEM_NOT_REFORGEABLE", "item does not support extra-affix reforge")
+				default:
+					writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to roll reforge result")
+				}
+				return
+			}
+			writeEnvelope(w, r, http.StatusOK, map[string]any{
+				"item_before": itemBefore,
+				"item":        item,
+				"inventory":   view,
+				"reforge_cost": map[string]any{
+					"material_key": inventory.ReforgeMaterialKey,
+					"quantity":     reforgeStoneCost,
+				},
+			})
+		})
+
+		r.Post("/items/{itemId}/reforge/save", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+			character, exists := characterService.GetCharacterByAccount(account)
+			if !exists {
+				writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before saving reforge results")
+				return
+			}
+			view, item, err := inventoryService.SaveReforge(character, chi.URLParam(r, "itemId"))
+			if err != nil {
+				switch {
+				case errors.Is(err, inventory.ErrItemNotOwned):
+					writeError(w, r, http.StatusNotFound, "ITEM_NOT_OWNED", "item does not belong to character")
+				case errors.Is(err, inventory.ErrReforgeNotPending):
+					writeError(w, r, http.StatusBadRequest, "REFORGE_NOT_PENDING", "item has no pending reforge result")
+				default:
+					writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to save reforge result")
+				}
+				return
+			}
+			writeEnvelope(w, r, http.StatusOK, map[string]any{
+				"item":      item,
+				"inventory": view,
+			})
+		})
+
+		r.Post("/items/{itemId}/reforge/discard", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+			character, exists := characterService.GetCharacterByAccount(account)
+			if !exists {
+				writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before discarding reforge results")
+				return
+			}
+			view, item, err := inventoryService.DiscardReforge(character, chi.URLParam(r, "itemId"))
+			if err != nil {
+				switch {
+				case errors.Is(err, inventory.ErrItemNotOwned):
+					writeError(w, r, http.StatusNotFound, "ITEM_NOT_OWNED", "item does not belong to character")
+				case errors.Is(err, inventory.ErrReforgeNotPending):
+					writeError(w, r, http.StatusBadRequest, "REFORGE_NOT_PENDING", "item has no pending reforge result")
+				default:
+					writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to discard reforge result")
+				}
+				return
+			}
+			writeEnvelope(w, r, http.StatusOK, map[string]any{
+				"item":      item,
+				"inventory": view,
+			})
 		})
 
 		r.Post("/me/equipment/equip", func(w http.ResponseWriter, r *http.Request) {
@@ -1069,6 +1403,38 @@ func NewServer(cfg config.API) *Server {
 			})
 		})
 
+		r.Get("/buildings/{buildingId}/skills", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+
+			building, _, found := findBuilding(worldService, chi.URLParam(r, "buildingId"))
+			if !found {
+				writeError(w, r, http.StatusNotFound, "BUILDING_NOT_FOUND", "building does not exist")
+				return
+			}
+			if building.Type != "guild" {
+				writeError(w, r, http.StatusBadRequest, "INVALID_ACTION_STATE", "skills are only available at the Adventurers Guild")
+				return
+			}
+
+			skillsState, err := characterService.SkillsState(account)
+			if err != nil {
+				if errors.Is(err, characters.ErrCharacterNotFound) {
+					writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before requesting skills")
+					return
+				}
+				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to load guild skills")
+				return
+			}
+
+			writeEnvelope(w, r, http.StatusOK, map[string]any{
+				"building_id": building.ID,
+				"skills":      skillsState,
+			})
+		})
+
 		r.Get("/buildings/{buildingId}/shop-inventory", func(w http.ResponseWriter, r *http.Request) {
 			account, ok := requireAccount(w, r, authService)
 			if !ok {
@@ -1095,25 +1461,109 @@ func NewServer(cfg config.API) *Server {
 		})
 
 		r.Post("/buildings/{buildingId}/heal", func(w http.ResponseWriter, r *http.Request) {
-			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, dungeonService, "heal")
+			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, dungeonService, arenaService, "heal")
 		})
 		r.Post("/buildings/{buildingId}/cleanse", func(w http.ResponseWriter, r *http.Request) {
-			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, dungeonService, "cleanse")
+			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, dungeonService, arenaService, "cleanse")
 		})
 		r.Post("/buildings/{buildingId}/enhance", func(w http.ResponseWriter, r *http.Request) {
-			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, dungeonService, "enhance")
+			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, dungeonService, arenaService, "enhance")
 		})
 		r.Post("/buildings/{buildingId}/salvage", func(w http.ResponseWriter, r *http.Request) {
-			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, dungeonService, "salvage")
+			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, dungeonService, arenaService, "salvage")
 		})
 		r.Post("/buildings/{buildingId}/repair", func(w http.ResponseWriter, r *http.Request) {
-			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, dungeonService, "repair")
+			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, dungeonService, arenaService, "repair")
 		})
 		r.Post("/buildings/{buildingId}/purchase", func(w http.ResponseWriter, r *http.Request) {
-			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, dungeonService, "purchase")
+			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, dungeonService, arenaService, "purchase")
 		})
 		r.Post("/buildings/{buildingId}/sell", func(w http.ResponseWriter, r *http.Request) {
-			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, dungeonService, "sell")
+			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, dungeonService, arenaService, "sell")
+		})
+		r.Post("/buildings/{buildingId}/skills/{skillId}/upgrade", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+
+			building, _, found := findBuilding(worldService, chi.URLParam(r, "buildingId"))
+			if !found {
+				writeError(w, r, http.StatusNotFound, "BUILDING_NOT_FOUND", "building does not exist")
+				return
+			}
+			if building.Type != "guild" {
+				writeError(w, r, http.StatusBadRequest, "INVALID_ACTION_STATE", "skill upgrades are only available at the Adventurers Guild")
+				return
+			}
+
+			skillsState, character, err := characterService.UpgradeSkill(account, chi.URLParam(r, "skillId"))
+			if err != nil {
+				switch {
+				case errors.Is(err, characters.ErrCharacterNotFound):
+					writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before upgrading skills")
+				case errors.Is(err, characters.ErrSkillNotFound):
+					writeError(w, r, http.StatusNotFound, "SKILL_NOT_FOUND", "skill does not exist")
+				case errors.Is(err, characters.ErrSkillLocked):
+					writeError(w, r, http.StatusBadRequest, "SKILL_LOCKED", "skill is not available to the current character")
+				case errors.Is(err, characters.ErrSkillMaxLevel):
+					writeError(w, r, http.StatusBadRequest, "SKILL_MAX_LEVEL", "skill is already at max level")
+				case errors.Is(err, characters.ErrGoldInsufficient):
+					writeError(w, r, http.StatusBadRequest, "GOLD_INSUFFICIENT", "character does not have enough gold to upgrade this skill")
+				default:
+					writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to upgrade guild skill")
+				}
+				return
+			}
+
+			writeEnvelope(w, r, http.StatusOK, map[string]any{
+				"building_id": building.ID,
+				"character":   character,
+				"skills":      skillsState,
+			})
+		})
+		r.Post("/buildings/{buildingId}/skill-loadout", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+
+			building, _, found := findBuilding(worldService, chi.URLParam(r, "buildingId"))
+			if !found {
+				writeError(w, r, http.StatusNotFound, "BUILDING_NOT_FOUND", "building does not exist")
+				return
+			}
+			if building.Type != "guild" {
+				writeError(w, r, http.StatusBadRequest, "INVALID_ACTION_STATE", "skill loadouts are only available at the Adventurers Guild")
+				return
+			}
+
+			var request struct {
+				SkillIDs []string `json:"skill_ids"`
+			}
+			if !decodeJSONBody(w, r, &request) {
+				return
+			}
+
+			skillsState, err := characterService.SetSkillLoadout(account, request.SkillIDs)
+			if err != nil {
+				switch {
+				case errors.Is(err, characters.ErrCharacterNotFound):
+					writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before configuring skills")
+				case errors.Is(err, characters.ErrSkillLocked):
+					writeError(w, r, http.StatusBadRequest, "SKILL_LOCKED", "loadout contains locked or unavailable skills")
+				case errors.Is(err, characters.ErrSkillInvalidLoadout):
+					writeError(w, r, http.StatusBadRequest, "SKILL_LOADOUT_INVALID", "loadout must contain up to four unique unlocked skills")
+				default:
+					writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to update guild skill loadout")
+				}
+				return
+			}
+
+			writeEnvelope(w, r, http.StatusOK, map[string]any{
+				"building_id": building.ID,
+				"skills":      skillsState,
+			})
 		})
 
 		r.Post("/arena/signup", func(w http.ResponseWriter, r *http.Request) {
@@ -1127,7 +1577,7 @@ func NewServer(cfg config.API) *Server {
 				return
 			}
 
-			state, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, worldService)
+			state, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, arenaService, worldService)
 			if err != nil {
 				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to build character state before arena signup")
 				return
@@ -1170,8 +1620,110 @@ func NewServer(cfg config.API) *Server {
 			})
 		})
 
+		r.Get("/arena/rating-board", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+			character, exists := characterService.GetCharacterByAccount(account)
+			if !exists {
+				writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before viewing arena rating board")
+				return
+			}
+			entries := buildArenaRuntimeEntries(characterService, inventoryService, arenaService, dungeonService)
+			view, err := arenaService.GetRatingBoard(character.CharacterID, entries)
+			if err != nil {
+				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to load arena rating board")
+				return
+			}
+			writeEnvelope(w, r, http.StatusOK, view)
+		})
+
+		r.Post("/arena/rating-challenges/purchase", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+			character, exists := characterService.GetCharacterByAccount(account)
+			if !exists {
+				writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before purchasing arena challenges")
+				return
+			}
+			price, _, err := arenaService.PurchaseRatingChallenge(character.CharacterID)
+			if err != nil {
+				switch {
+				case errors.Is(err, arena.ErrChallengeWindow):
+					writeError(w, r, http.StatusBadRequest, "ARENA_RATING_CLOSED", "arena rating challenges are only available Monday through Friday")
+				case errors.Is(err, arena.ErrPurchaseCapReached):
+					writeError(w, r, http.StatusBadRequest, "ARENA_PURCHASE_CAP_REACHED", "daily arena challenge purchase cap has been reached")
+				default:
+					writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to quote arena challenge purchase")
+				}
+				return
+			}
+			summary, err := characterService.SpendGold(character.CharacterID, price)
+			if err != nil {
+				if errors.Is(err, characters.ErrGoldInsufficient) {
+					writeError(w, r, http.StatusBadRequest, "GOLD_INSUFFICIENT", "character does not have enough gold to buy another arena challenge")
+					return
+				}
+				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to spend gold for arena challenge purchase")
+				return
+			}
+			if err := arenaService.ConfirmPurchasedRatingChallenge(character.CharacterID); err != nil {
+				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to grant purchased arena challenge")
+				return
+			}
+			entries := buildArenaRuntimeEntries(characterService, inventoryService, arenaService, dungeonService)
+			view, err := arenaService.GetRatingBoard(character.CharacterID, entries)
+			if err != nil {
+				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to reload arena rating board")
+				return
+			}
+			writeEnvelope(w, r, http.StatusOK, map[string]any{
+				"price_gold": price,
+				"character":  summary,
+				"board":      view,
+			})
+		})
+
+		r.Post("/arena/rating-challenges", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+			character, exists := characterService.GetCharacterByAccount(account)
+			if !exists {
+				writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before starting arena challenges")
+				return
+			}
+			var request struct {
+				TargetCharacterID string `json:"target_character_id"`
+			}
+			if !decodeJSONBody(w, r, &request) {
+				return
+			}
+			entries := buildArenaRuntimeEntries(characterService, inventoryService, arenaService, dungeonService)
+			result, err := arenaService.ResolveRatingChallenge(character.CharacterID, strings.TrimSpace(request.TargetCharacterID), entries)
+			if err != nil {
+				switch {
+				case errors.Is(err, arena.ErrChallengeWindow):
+					writeError(w, r, http.StatusBadRequest, "ARENA_RATING_CLOSED", "arena rating challenges are only available Monday through Friday")
+				case errors.Is(err, arena.ErrNoChallengeAttempts):
+					writeError(w, r, http.StatusBadRequest, "ARENA_NO_ATTEMPTS", "no arena challenge attempts remain today")
+				case errors.Is(err, arena.ErrInvalidChallengeTarget):
+					writeError(w, r, http.StatusBadRequest, "ARENA_INVALID_TARGET", "target is not in the current challenge candidate pool")
+				default:
+					writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to resolve arena rating challenge")
+				}
+				return
+			}
+			writeEnvelope(w, r, http.StatusOK, result)
+		})
+
 		r.Get("/arena/current", func(w http.ResponseWriter, r *http.Request) {
-			writeEnvelope(w, r, http.StatusOK, arenaService.GetCurrent(worldService.CurrentArenaStatus(worldService.CurrentTime())))
+			entries := buildArenaRuntimeEntries(characterService, inventoryService, arenaService, dungeonService)
+			writeEnvelope(w, r, http.StatusOK, arenaService.GetCurrent(worldService.CurrentArenaStatus(worldService.CurrentTime()), entries))
 		})
 
 		r.Get("/arena/entries", func(w http.ResponseWriter, r *http.Request) {
@@ -1276,6 +1828,23 @@ func NewServer(cfg config.API) *Server {
 			writeEnvelope(w, r, http.StatusOK, detail)
 		})
 
+		r.Get("/me/arena-title", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+			character, exists := characterService.GetCharacterByAccount(account)
+			if !exists {
+				writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before viewing arena title")
+				return
+			}
+			entries := buildArenaRuntimeEntries(characterService, inventoryService, arenaService, dungeonService)
+			title, found := arenaService.GetArenaTitle(character.CharacterID, entries)
+			writeEnvelope(w, r, http.StatusOK, map[string]any{
+				"title": foundIfAnyTitle(found, title),
+			})
+		})
+
 		r.Get("/arena/duel", func(w http.ResponseWriter, r *http.Request) {
 			charAID := strings.TrimSpace(r.URL.Query().Get("char_a_id"))
 			charBID := strings.TrimSpace(r.URL.Query().Get("char_b_id"))
@@ -1342,12 +1911,12 @@ func NewServer(cfg config.API) *Server {
 				return
 			}
 
-			state, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, worldService)
+			state, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, arenaService, worldService)
 			if err != nil {
 				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to build character state before dungeon entry")
 				return
 			}
-			player := dungeons.BuildPlayerCombatant(state.Character, state.Stats)
+			player := dungeons.BuildPlayerCombatant(state.Character, state.Stats, state.Skills)
 
 			run, err := dungeonService.EnterDungeon(character, limits, player, chi.URLParam(r, "dungeonId"), difficulty, request.PotionLoadout, potionBag)
 			if err != nil {
@@ -1803,6 +2372,7 @@ func NewServer(cfg config.API) *Server {
 		inventoryService: inventoryService,
 		questService:     questService,
 		worldService:     worldService,
+		worldBossService: worldBossService,
 		httpServer: &http.Server{
 			Addr:              cfg.Addr(),
 			Handler:           router,
@@ -1916,13 +2486,19 @@ func requireAccount(w http.ResponseWriter, r *http.Request, authService *auth.Se
 	return account, true
 }
 
-func buildCharacterState(account auth.Account, characterService *characters.Service, inventoryService *inventory.Service, questService *quests.Service, dungeonService *dungeons.Service, worldService *world.Service) (characters.StateView, error) {
+func buildCharacterState(account auth.Account, characterService *characters.Service, inventoryService *inventory.Service, questService *quests.Service, dungeonService *dungeons.Service, arenaService *arena.Service, worldService *world.Service) (characters.StateView, error) {
 	state, err := characterService.GetState(account, worldService)
 	if err != nil {
 		return characters.StateView{}, err
 	}
 
 	state.Stats = inventoryService.DeriveStats(state.Character, state.Stats)
+	if arenaService != nil {
+		titleEntries := buildArenaBaseEntries(characterService, inventoryService, dungeonService)
+		if title, found := arenaService.GetArenaTitle(state.Character.CharacterID, titleEntries); found {
+			state.Stats = applyArenaTitleBonusSnapshot(state.Stats, title.BonusSnapshot)
+		}
+	}
 	inventoryView := inventoryService.GetInventory(state.Character)
 	state.CombatPower, _ = buildCombatPower(state.Character, state.Stats, inventoryView, dungeonService)
 	state.SlotEnhancements = inventoryService.ListSlotEnhancements(state.Character)
@@ -2322,6 +2898,102 @@ func buildDungeonPreparationEntry(character characters.Summary, definition dunge
 		"suggested_preparation_steps":   steps,
 		"available_gold":                character.Gold,
 	}
+}
+
+func buildArenaBaseEntries(characterService *characters.Service, inventoryService *inventory.Service, dungeonService *dungeons.Service) []arena.Entry {
+	snapshot := characterService.SnapshotRuntime()
+	entries := make([]arena.Entry, 0, len(snapshot.Characters))
+	for _, summary := range snapshot.Characters {
+		_, baseStats, _, _, ok := characterService.GetRuntimeDetailByCharacterID(summary.CharacterID)
+		if !ok {
+			continue
+		}
+		inv := inventoryService.GetInventory(summary)
+		stats := inventoryService.DeriveStats(summary, baseStats)
+		combatPower, _ := buildCombatPower(summary, stats, inv, dungeonService)
+		entries = append(entries, arena.Entry{
+			CharacterID:     summary.CharacterID,
+			CharacterName:   summary.Name,
+			Class:           summary.Class,
+			WeaponStyle:     summary.WeaponStyle,
+			Rank:            summary.Rank,
+			PanelPowerScore: combatPower.PanelPowerScore,
+			EquipmentScore:  inv.EquipmentScore,
+			IsNPC:           strings.HasPrefix(summary.CharacterID, "npc_"),
+		})
+	}
+	return entries
+}
+
+func buildArenaRuntimeEntries(characterService *characters.Service, inventoryService *inventory.Service, arenaService *arena.Service, dungeonService *dungeons.Service) []arena.Entry {
+	baseEntries := buildArenaBaseEntries(characterService, inventoryService, dungeonService)
+	if arenaService == nil {
+		return baseEntries
+	}
+
+	snapshot := characterService.SnapshotRuntime()
+	entries := make([]arena.Entry, 0, len(snapshot.Characters))
+	for _, summary := range snapshot.Characters {
+		_, baseStats, _, _, ok := characterService.GetRuntimeDetailByCharacterID(summary.CharacterID)
+		if !ok {
+			continue
+		}
+		inv := inventoryService.GetInventory(summary)
+		stats := inventoryService.DeriveStats(summary, baseStats)
+		if title, found := arenaService.GetArenaTitle(summary.CharacterID, baseEntries); found {
+			stats = applyArenaTitleBonusSnapshot(stats, title.BonusSnapshot)
+		}
+		combatPower, _ := buildCombatPower(summary, stats, inv, dungeonService)
+		entries = append(entries, arena.Entry{
+			CharacterID:     summary.CharacterID,
+			CharacterName:   summary.Name,
+			Class:           summary.Class,
+			WeaponStyle:     summary.WeaponStyle,
+			Rank:            summary.Rank,
+			PanelPowerScore: combatPower.PanelPowerScore,
+			EquipmentScore:  inv.EquipmentScore,
+			IsNPC:           strings.HasPrefix(summary.CharacterID, "npc_"),
+		})
+	}
+	return entries
+}
+
+func applyArenaTitleBonusSnapshot(stats characters.StatsSnapshot, bonus map[string]any) characters.StatsSnapshot {
+	applyInt := func(current int, key string) int {
+		if raw, ok := bonus[key].(float64); ok && raw > 0 {
+			return int(math.Round(float64(current) * (1 + raw)))
+		}
+		return current
+	}
+	applyFloat := func(current float64, key string) float64 {
+		if raw, ok := bonus[key].(float64); ok && raw > 0 {
+			return current * (1 + raw)
+		}
+		return current
+	}
+
+	stats.MaxHP = applyInt(stats.MaxHP, "max_hp")
+	stats.PhysicalAttack = applyInt(stats.PhysicalAttack, "physical_attack")
+	stats.MagicAttack = applyInt(stats.MagicAttack, "magic_attack")
+	stats.PhysicalDefense = applyInt(stats.PhysicalDefense, "physical_defense")
+	stats.MagicDefense = applyInt(stats.MagicDefense, "magic_defense")
+	stats.Speed = applyInt(stats.Speed, "speed")
+	stats.HealingPower = applyInt(stats.HealingPower, "healing_power")
+	stats.CritRate = applyFloat(stats.CritRate, "crit_rate")
+	stats.CritDamage = applyFloat(stats.CritDamage, "crit_damage")
+	stats.BlockRate = applyFloat(stats.BlockRate, "block_rate")
+	stats.Precision = applyFloat(stats.Precision, "precision")
+	stats.EvasionRate = applyFloat(stats.EvasionRate, "evasion_rate")
+	stats.PhysicalMastery = applyFloat(stats.PhysicalMastery, "physical_mastery")
+	stats.MagicMastery = applyFloat(stats.MagicMastery, "magic_mastery")
+	return stats
+}
+
+func foundIfAnyTitle(found bool, title arena.ArenaTitleView) any {
+	if !found {
+		return nil
+	}
+	return title
 }
 
 func heuristicRecommendedPanelPower(definition dungeons.DefinitionView) int {
@@ -2777,7 +3449,7 @@ func findBuilding(worldService *world.Service, buildingID string) (world.Buildin
 	return world.Building{}, world.RegionDetail{}, false
 }
 
-func handleBuildingAction(w http.ResponseWriter, r *http.Request, authService *auth.Service, worldService *world.Service, characterService *characters.Service, inventoryService *inventory.Service, questService *quests.Service, dungeonService *dungeons.Service, actionName string) {
+func handleBuildingAction(w http.ResponseWriter, r *http.Request, authService *auth.Service, worldService *world.Service, characterService *characters.Service, inventoryService *inventory.Service, questService *quests.Service, dungeonService *dungeons.Service, arenaService *arena.Service, actionName string) {
 	account, ok := requireAccount(w, r, authService)
 	if !ok {
 		return
@@ -3038,7 +3710,7 @@ func handleBuildingAction(w http.ResponseWriter, r *http.Request, authService *a
 		})
 	}
 
-	state, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, worldService)
+	state, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, arenaService, worldService)
 	if err != nil {
 		writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to load updated character state")
 		return
@@ -3125,7 +3797,7 @@ func activityTypeFromRegion(regionID string) string {
 	return "field"
 }
 
-func resolveFieldEncounter(account auth.Account, approach string, characterService *characters.Service, inventoryService *inventory.Service, questService *quests.Service, dungeonService *dungeons.Service, worldService *world.Service) (map[string]any, error) {
+func resolveFieldEncounter(account auth.Account, approach string, characterService *characters.Service, inventoryService *inventory.Service, questService *quests.Service, dungeonService *dungeons.Service, arenaService *arena.Service, worldService *world.Service) (map[string]any, error) {
 	character, limits, err := currentCharacterWithLimits(account, characterService, worldService)
 	if err != nil {
 		return nil, err
@@ -3212,7 +3884,7 @@ func resolveFieldEncounter(account auth.Account, approach string, characterServi
 		})
 	}
 
-	state, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, worldService)
+	state, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, arenaService, worldService)
 	if err != nil {
 		return nil, err
 	}
@@ -3267,7 +3939,7 @@ func executeAction(account auth.Account, actionType string, actionArgs map[strin
 			})
 		}
 
-		state, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, worldService)
+		state, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, arenaService, worldService)
 		if err != nil {
 			return nil, err
 		}
@@ -3284,13 +3956,13 @@ func executeAction(account auth.Account, actionType string, actionArgs map[strin
 		}, nil
 	case "resolve_field_encounter":
 		approach, _ := actionArgs["approach"].(string)
-		return resolveFieldEncounter(account, approach, characterService, inventoryService, questService, dungeonService, worldService)
+		return resolveFieldEncounter(account, approach, characterService, inventoryService, questService, dungeonService, arenaService, worldService)
 	case "resolve_field_encounter:hunt":
-		return resolveFieldEncounter(account, "hunt", characterService, inventoryService, questService, dungeonService, worldService)
+		return resolveFieldEncounter(account, "hunt", characterService, inventoryService, questService, dungeonService, arenaService, worldService)
 	case "resolve_field_encounter:gather":
-		return resolveFieldEncounter(account, "gather", characterService, inventoryService, questService, dungeonService, worldService)
+		return resolveFieldEncounter(account, "gather", characterService, inventoryService, questService, dungeonService, arenaService, worldService)
 	case "resolve_field_encounter:curio":
-		return resolveFieldEncounter(account, "curio", characterService, inventoryService, questService, dungeonService, worldService)
+		return resolveFieldEncounter(account, "curio", characterService, inventoryService, questService, dungeonService, arenaService, worldService)
 	case "accept_quest":
 		questID, _ := actionArgs["quest_id"].(string)
 		character, limits, err := currentCharacterWithLimits(account, characterService, worldService)
@@ -3341,7 +4013,7 @@ func executeAction(account auth.Account, actionType string, actionArgs map[strin
 		if _, _, _, _, err := characterService.ApplyQuestSubmission(character.CharacterID, quest); err != nil {
 			return nil, err
 		}
-		state, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, worldService)
+		state, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, arenaService, worldService)
 		if err != nil {
 			return nil, err
 		}
@@ -3453,11 +4125,11 @@ func executeAction(account auth.Account, actionType string, actionArgs map[strin
 		if err != nil {
 			return nil, dungeons.ErrDungeonPotionLoadoutInvalid
 		}
-		state, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, worldService)
+		state, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, arenaService, worldService)
 		if err != nil {
 			return nil, err
 		}
-		player := dungeons.BuildPlayerCombatant(state.Character, state.Stats)
+		player := dungeons.BuildPlayerCombatant(state.Character, state.Stats, state.Skills)
 		run, err := dungeonService.EnterDungeon(character, limits, player, dungeonID, difficulty, potionLoadout, potionBag)
 		if err != nil {
 			return nil, err
@@ -3516,7 +4188,7 @@ func executeAction(account auth.Account, actionType string, actionArgs map[strin
 			})
 		}
 
-		updatedState, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, worldService)
+		updatedState, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, arenaService, worldService)
 		if err != nil {
 			return nil, err
 		}
@@ -3553,7 +4225,7 @@ func executeAction(account auth.Account, actionType string, actionArgs map[strin
 			return nil, err
 		}
 
-		state, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, worldService)
+		state, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, arenaService, worldService)
 		if err != nil {
 			return nil, err
 		}
@@ -3641,7 +4313,7 @@ func executeAction(account auth.Account, actionType string, actionArgs map[strin
 			return nil, characters.ErrCharacterNotFound
 		}
 
-		state, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, worldService)
+		state, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, arenaService, worldService)
 		if err != nil {
 			return nil, err
 		}

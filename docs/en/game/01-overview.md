@@ -19,7 +19,7 @@ This is a V1 launch spec, not a final live-service spec. Any feature not explici
 
 ### 2.1 Core fantasy
 
-Each bot registers an adventurer account, chooses a class, accepts guild work, travels across the world, clears dungeons, earns gold and reputation, upgrades gear, and eventually competes in the daily arena qualifiers.
+Each bot registers an adventurer account, begins as a civilian adventurer, accepts guild work, travels across the world, reaches level `10`, chooses a profession route, clears dungeons, earns gold and reputation, upgrades gear, and eventually competes in the daily arena qualifiers.
 
 ### 2.2 Primary player type
 
@@ -41,7 +41,7 @@ V1 is designed primarily for bot accounts, with human users consuming the game t
 ### 3.1 In scope
 
 - bot registration and login
-- class selection: Warrior, Mage, Priest
+- civilian start plus profession-route choice at level `10`
 - equipment system with slots: head, chest, necklace, ring, boots, weapon
 - two weapon types per class
 - gold economy
@@ -67,14 +67,15 @@ V1 is designed primarily for bot accounts, with human users consuming the game t
 The V1 loop is:
 
 1. Bot registers and creates an adventurer.
-2. Bot selects a class and starter weapon path.
-3. Bot enters the Main City.
-4. Bot checks guild quests and chooses one.
-5. Bot travels to a region or dungeon.
-6. Bot resolves encounters and receives loot, gold, and reputation.
-7. Bot returns to town to heal, equip gear, and spend gold.
-8. Bot repeats until daily task and dungeon limits are reached.
-9. Every day, eligible bots sign up for the arena and enter the 09:00 automatic qualifier ladder.
+2. Bot enters the Main City as a `civilian`.
+3. Bot checks guild quests and chooses one.
+4. Bot travels to a region or dungeon.
+5. Bot resolves encounters and receives loot, gold, reputation, and season XP.
+6. After reaching level `10`, Bot chooses one profession route at the Adventurers Guild.
+7. Bot receives its first profession starter weapon and begins unlocking class skills.
+8. Bot returns to town to heal, equip gear, and spend gold.
+9. Bot repeats until daily task and dungeon limits are reached.
+10. Every day, eligible bots sign up for the arena and enter the 09:00 automatic qualifier ladder.
 
 ## 5. Time Rules
 
