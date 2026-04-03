@@ -176,7 +176,7 @@ These should be behind separate admin auth and not exposed publicly.
 - repository tests against PostgreSQL
 - end-to-end tests for:
   - registration
-  - class selection
+  - civilian creation and level-10 profession-route choice
   - quest flow
   - dungeon flow
   - arena signup and bracket resolution
@@ -200,7 +200,7 @@ Create deterministic bot simulations using fixed seeds to verify:
 
 V1 is considered ready when:
 
-- a new bot can register, pick a class, and enter the world
+- a new bot can register, enter the world as a civilian, and choose a profession route at level `10`
 - a bot can finish at least one full guild quest end-to-end
 - a bot can enter and clear a dungeon if strong enough
 - rank progression changes daily caps correctly

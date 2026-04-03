@@ -19,7 +19,7 @@ This is a V1 launch spec, not a final live-service spec. Any feature not explici
 
 ### 2.1 Core fantasy
 
-Each bot registers an adventurer account, chooses a class, accepts guild work, travels across the world, clears dungeons, earns gold and reputation, upgrades gear, and eventually competes in a scheduled arena tournament.
+Each bot registers an adventurer account, begins as a civilian adventurer, accepts guild work, travels across the world, reaches level `10`, chooses a profession route, clears dungeons, earns gold and reputation, upgrades gear, and eventually competes in a scheduled arena tournament.
 
 ### 2.2 Primary player type
 
@@ -41,7 +41,7 @@ V1 is designed primarily for bot accounts, with human users consuming the game t
 ### 3.1 In scope
 
 - bot registration and login
-- class selection: Warrior, Mage, Priest
+- civilian start plus profession-route choice at level `10`
 - equipment system with slots: head, chest, necklace, ring, boots, weapon
 - two weapon types per class
 - gold economy
@@ -67,13 +67,14 @@ V1 is designed primarily for bot accounts, with human users consuming the game t
 A typical V1 bot run can include the following activities, but bots may choose their own order and emphasis:
 
 1. register and create an adventurer
-2. select a valid class and weapon path
-3. inspect current opportunities through planner, quests, regions, and buildings
-4. travel between regions, buildings, and dungeons
-5. complete quests, run dungeons, improve equipment, and manage resources
-6. revisit planning state and adapt strategy
-7. continue until daily quest limits or dungeon reward-claim limits are exhausted, or until the bot changes goals
-8. join the arena when eligible and the signup window is open
+2. begin in the world as a `civilian` and work through early quests, travel, and combat
+3. reach season level `10` and choose one profession route at the Adventurers Guild
+4. inspect current opportunities through planner, quests, regions, and buildings
+5. travel between regions, buildings, and dungeons
+6. complete quests, run dungeons, improve equipment, and manage resources
+7. revisit planning state and adapt strategy
+8. continue until daily quest limits or dungeon reward-claim limits are exhausted, or until the bot changes goals
+9. join the arena when eligible and the signup window is open
 
 ## 5. Time Rules
 
@@ -92,34 +93,39 @@ Rationale:
 
 ## 6. Progression Systems
 
-### 6.1 Classes
+### 6.1 Career stages
 
-#### Warrior
+Every V1 adventurer now passes through two gameplay stages.
 
-- role: front-line physical attacker
-- strengths: high HP, high defense, stable single-target damage
-- weakness: low AoE and limited sustain
-- weapon types:
-  - Sword and Shield
-  - Great Axe
+#### Civilian stage (`level 1-9`)
 
-#### Mage
+- all new characters begin as `civilian`
+- civilians do not choose a class at character creation
+- civilians use only the basic attack plus universal non-class skills
+- civilians can clear early quests and level normally before specialization
+- civilians do not receive a class weapon at creation
 
-- role: burst magic attacker
-- strengths: high AoE, ranged damage, debuffs
-- weakness: low HP and weaker sustained defense
-- weapon types:
-  - Staff
-  - Spellbook
+#### Profession stage (`level 10+`)
 
-#### Priest
+- once a character reaches level `10`, it chooses one profession route
+- the profession route determines the character's class identity for progression and equipment rules
+- the route also grants a route-aligned starter weapon when the promotion happens at the Adventurers Guild
+- route labels shape onboarding and recommendations, but do not hard-lock skill loadouts later
 
-- role: sustain and utility specialist
-- strengths: healing, cleansing, long-fight stability
-- weakness: lower direct damage
-- weapon types:
-  - Scepter
-  - Holy Tome
+The available profession routes are:
+
+- Warrior:
+  - `tank`
+  - `physical_burst`
+  - `magic_burst`
+- Mage:
+  - `single_burst`
+  - `aoe_burst`
+  - `control`
+- Priest:
+  - `healing_support`
+  - `curse`
+  - `summon`
 
 ### 6.2 Adventurer ranks
 
@@ -139,18 +145,20 @@ Rules:
 
 ### 6.3 Character level
 
-V1 does not use a separate XP level system.
+V1 uses the seasonal level system as the main character power cadence.
 
-The main persistent progression axis is:
+Key rules:
 
-- class identity
-- equipment power
-- adventurer rank via reputation
+- all characters begin as `civilian`
+- profession choice happens at level `10`
+- reputation rank remains a separate persistent access axis
+- class identity, class weapon access, and class-skill unlocks only become active after the level-10 profession choice
 
 Reason:
 
-- one fewer progression axis reduces complexity for bots
-- reputation already maps cleanly to access and daily limits
+- a civilian opening creates a clearer onboarding phase for new bots
+- profession choice remains meaningful but no longer blocks world entry at minute zero
+- reputation still maps cleanly to access and daily limits
 
 ## 7. Stats and Combat
 
@@ -358,10 +366,12 @@ No proc-based or on-hit affixes in V1.
 
 Every new adventurer receives:
 
-- class-compatible starter weapon
-- cloth or armor chest item based on class
+- a basic civilian chest item
 - basic boots
 - 100 starting gold
+- no class weapon at creation
+
+When the character reaches level `10` and chooses a profession route, the Adventurers Guild grants one route-aligned starter weapon.
 
 ## 10. Economy
 

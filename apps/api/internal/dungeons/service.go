@@ -147,7 +147,7 @@ func RankAllows(currentRank, requiredRank string) bool {
 	return rankAllows(currentRank, requiredRank)
 }
 
-func BuildPlayerCombatant(character characters.Summary, stats characters.StatsSnapshot) combat.Combatant {
+func BuildPlayerCombatant(character characters.Summary, stats characters.StatsSnapshot, skills characters.SkillsStateView) combat.Combatant {
 	return combat.Combatant{
 		EntityID:        character.CharacterID,
 		Name:            character.Name,
@@ -169,6 +169,169 @@ func BuildPlayerCombatant(character characters.Summary, stats characters.StatsSn
 		PhysicalMastery: stats.PhysicalMastery,
 		MagicMastery:    stats.MagicMastery,
 		CurrentHP:       maxInt(1, stats.MaxHP),
+		EquippedSkills:  buildEquippedSkills(skills),
+		SkillCooldowns:  map[string]int{},
+		BasicSkillID:    skills.BasicAttack.SkillID,
+	}
+}
+
+func buildEquippedSkills(skills characters.SkillsStateView) []combat.SkillAction {
+	levelByID := make(map[string]int, len(skills.Universal)+len(skills.ClassSkills))
+	for _, skill := range skills.Universal {
+		levelByID[skill.SkillID] = skill.Level
+	}
+	for _, skill := range skills.ClassSkills {
+		levelByID[skill.SkillID] = skill.Level
+	}
+
+	items := make([]combat.SkillAction, 0, len(skills.ActiveLoadout))
+	for _, skillID := range skills.ActiveLoadout {
+		items = append(items, skillActionForID(skillID, levelByID[skillID]))
+	}
+	return items
+}
+
+func skillActionForID(skillID string, level int) combat.SkillAction {
+	switch skillID {
+	case "Quickstep":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "buff", Tier: "normal", CooldownRounds: 1, BuffFamily: "spd", BuffValue: 0.12, Level: level}
+	case "Pocket Sand":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "physical", Tier: "normal", CooldownRounds: 1, PowerScale: 0.92, DebuffFamily: "weaken", DebuffValue: 0.10, Level: level}
+	case "Emergency Roll":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "buff", Tier: "advanced", CooldownRounds: 2, BuffFamily: "def", BuffValue: 0.16, ShieldScale: 0.08, Level: level}
+	case "Signal Flare":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "debuff", Tier: "advanced", CooldownRounds: 2, TargetPattern: "target_3", DebuffFamily: "vulnerable", DebuffValue: 0.12, Level: level}
+	case "Field Tonic":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "heal", Tier: "advanced", CooldownRounds: 2, HealScale: 0.85, RegenScale: 0.04, Level: level}
+	case "Tripwire Kit":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "physical", Tier: "ultimate", CooldownRounds: 3, PowerScale: 1.18, DebuffFamily: "slow", DebuffValue: 0.18, Level: level}
+	case "Guard Stance":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "buff", Tier: "normal", CooldownRounds: 1, BuffFamily: "def", BuffValue: 0.16, ShieldScale: 0.10, Level: level}
+	case "War Cry":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "buff", Tier: "normal", CooldownRounds: 1, BuffFamily: "atk", BuffValue: 0.14, Level: level}
+	case "Intercept":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", Tier: "advanced", CooldownRounds: 2, PowerScale: 1.02, DebuffFamily: "weaken", DebuffValue: 0.10, Level: level}
+	case "Shield Bash":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "physical", Tier: "normal", CooldownRounds: 1, PowerScale: 1.04, DebuffFamily: "slow", DebuffValue: 0.12, Level: level}
+	case "Fortified Slash":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "physical", Tier: "advanced", CooldownRounds: 2, PowerScale: 1.12, BuffFamily: "def", BuffValue: 0.10, Level: level}
+	case "Bulwark Field":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "buff", Tier: "advanced", CooldownRounds: 2, BuffFamily: "def", BuffValue: 0.18, ShieldScale: 0.14, Level: level}
+	case "Linebreaker":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "physical", Tier: "ultimate", CooldownRounds: 3, TargetPattern: "target_3", PowerScale: 1.32, DebuffFamily: "shred", DebuffValue: 0.16, Level: level}
+	case "Cleave":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "physical", Tier: "normal", CooldownRounds: 1, TargetPattern: "target_3", PowerScale: 1.10, Level: level}
+	case "Blood Roar":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "buff", Tier: "advanced", CooldownRounds: 2, BuffFamily: "atk", BuffValue: 0.18, Level: level}
+	case "Execution Rush":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "physical", Tier: "advanced", CooldownRounds: 2, PowerScale: 1.36, Level: level}
+	case "Rending Arc":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "physical", Tier: "ultimate", CooldownRounds: 3, TargetPattern: "target_3", PowerScale: 1.42, DebuffFamily: "weaken", DebuffValue: 0.12, Level: level}
+	case "Runic Brand":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "magic", Tier: "normal", CooldownRounds: 1, PowerScale: 1.08, DebuffFamily: "vulnerable", DebuffValue: 0.10, Level: level}
+	case "Arcsteel Surge":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "magic", Tier: "advanced", CooldownRounds: 2, PowerScale: 1.22, BuffFamily: "atk", BuffValue: 0.10, Level: level}
+	case "Spellrend Wave":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "magic", Tier: "advanced", CooldownRounds: 2, TargetPattern: "target_3", PowerScale: 1.18, DebuffFamily: "shred", DebuffValue: 0.14, Level: level}
+	case "Astral Breaker":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "magic", Tier: "ultimate", CooldownRounds: 3, PowerScale: 1.48, Level: level}
+	case "Arc Veil":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "buff", Tier: "normal", CooldownRounds: 1, BuffFamily: "def", BuffValue: 0.14, ShieldScale: 0.08, Level: level}
+	case "Focus Pulse":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "buff", Tier: "normal", CooldownRounds: 1, BuffFamily: "atk", BuffValue: 0.14, Level: level}
+	case "Disrupt Ray":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "magic", Tier: "advanced", CooldownRounds: 2, PowerScale: 1.06, DebuffFamily: "slow", DebuffValue: 0.12, Level: level}
+	case "Hex Mark":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "debuff", Tier: "normal", CooldownRounds: 1, DebuffFamily: "vulnerable", DebuffValue: 0.14, Level: level}
+	case "Seal Fracture":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "magic", Tier: "advanced", CooldownRounds: 2, PowerScale: 1.16, DebuffFamily: "shred", DebuffValue: 0.14, Level: level}
+	case "Detonate Sigil":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "magic", Tier: "advanced", CooldownRounds: 2, PowerScale: 1.34, Level: level}
+	case "Star Pierce":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "magic", Tier: "ultimate", CooldownRounds: 3, PowerScale: 1.52, Level: level}
+	case "Flame Burst":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "magic", Tier: "normal", CooldownRounds: 1, TargetPattern: "target_3", PowerScale: 1.10, Level: level}
+	case "Meteor Shard":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "magic", Tier: "advanced", CooldownRounds: 2, PowerScale: 1.28, Level: level}
+	case "Chain Script":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "magic", Tier: "advanced", CooldownRounds: 2, TargetPattern: "target_3", PowerScale: 1.20, DebuffFamily: "vulnerable", DebuffValue: 0.10, Level: level}
+	case "Ember Field":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "magic", Tier: "ultimate", CooldownRounds: 3, TargetPattern: "all_enemies", PowerScale: 1.38, DebuffFamily: "weaken", DebuffValue: 0.10, Level: level}
+	case "Frost Bind":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "magic", Tier: "normal", CooldownRounds: 1, PowerScale: 1.02, DebuffFamily: "slow", DebuffValue: 0.16, Level: level}
+	case "Gravity Knot":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "debuff", Tier: "advanced", CooldownRounds: 2, TargetPattern: "target_3", DebuffFamily: "slow", DebuffValue: 0.22, Level: level}
+	case "Silencing Prism":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "debuff", Tier: "advanced", CooldownRounds: 2, TargetPattern: "target_2", SilenceRounds: 2, Level: level}
+	case "Time Lock":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "debuff", Tier: "ultimate", CooldownRounds: 3, TargetPattern: "target_2", DebuffFamily: "slow", DebuffValue: 0.24, SilenceRounds: 1, Level: level}
+	case "Restore":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "heal", Tier: "normal", CooldownRounds: 1, HealScale: 1.02, Level: level}
+	case "Sanctuary Mark":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "buff", Tier: "normal", CooldownRounds: 1, BuffFamily: "def", BuffValue: 0.14, ShieldScale: 0.10, Level: level}
+	case "Purge":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "heal", Tier: "advanced", CooldownRounds: 2, HealScale: 0.84, Level: level}
+	case "Grace Field":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "buff", Tier: "normal", CooldownRounds: 1, RegenScale: 0.05, BuffFamily: "def", BuffValue: 0.08, Level: level}
+	case "Purifying Wave":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "heal", Tier: "advanced", CooldownRounds: 2, HealScale: 1.08, Level: level}
+	case "Prayer of Renewal":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "heal", Tier: "advanced", CooldownRounds: 2, HealScale: 1.20, RegenScale: 0.04, Level: level}
+	case "Bless Armor":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "buff", Tier: "ultimate", CooldownRounds: 3, BuffFamily: "def", BuffValue: 0.20, ShieldScale: 0.16, Level: level}
+	case "Judged Weakness":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "magic", Tier: "normal", CooldownRounds: 1, PowerScale: 1.04, DebuffFamily: "weaken", DebuffValue: 0.12, Level: level}
+	case "Seal of Silence":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "debuff", Tier: "advanced", CooldownRounds: 2, SilenceRounds: 2, Level: level}
+	case "Wither Prayer":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "debuff", Tier: "advanced", CooldownRounds: 2, DebuffFamily: "vulnerable", DebuffValue: 0.14, Level: level}
+	case "Judgment":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "magic", Tier: "ultimate", CooldownRounds: 3, PowerScale: 1.46, Level: level}
+	case "Sanctified Blow":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "magic", Tier: "normal", CooldownRounds: 1, PowerScale: 1.00, HealScale: 0.28, Level: level}
+	case "Lantern Servitor":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "summon", Tier: "advanced", CooldownRounds: 2, SummonTurns: 3, SummonMend: 0.22, Level: level}
+	case "Censer Guardian":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "summon", Tier: "advanced", CooldownRounds: 2, SummonTurns: 3, SummonStrike: 0.68, ShieldScale: 0.08, Level: level}
+	case "Choir Invocation":
+		return combat.SkillAction{SkillID: skillID, ActionKind: "summon", Tier: "ultimate", CooldownRounds: 3, SummonTurns: 4, SummonStrike: 0.78, SummonMend: 0.18, Level: level}
+	default:
+		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "", Tier: tierForSkill(skillID), CooldownRounds: cooldownForSkill(skillID), PowerScale: powerForSkill(skillID), Level: level}
+	}
+}
+
+func tierForSkill(skillID string) string {
+	switch skillID {
+	case "Shield Bash", "Cleave", "Runic Brand", "Hex Mark", "Flame Burst", "Frost Bind", "Judged Weakness", "Sanctified Blow":
+		return "normal"
+	case "Fortified Slash", "Blood Roar", "Execution Rush", "Arcsteel Surge", "Spellrend Wave", "Seal Fracture", "Detonate Sigil", "Meteor Shard", "Chain Script", "Gravity Knot", "Silencing Prism", "Wither Prayer", "Seal of Silence", "Lantern Servitor", "Censer Guardian":
+		return "advanced"
+	case "Linebreaker", "Rending Arc", "Astral Breaker", "Star Pierce", "Ember Field", "Time Lock", "Judgment", "Choir Invocation":
+		return "ultimate"
+	default:
+		return "advanced"
+	}
+}
+
+func cooldownForSkill(skillID string) int {
+	switch tierForSkill(skillID) {
+	case "normal":
+		return 1
+	case "ultimate":
+		return 3
+	default:
+		return 2
+	}
+}
+
+func powerForSkill(skillID string) float64 {
+	switch tierForSkill(skillID) {
+	case "normal":
+		return 1.08
+	case "ultimate":
+		return 1.48
+	default:
+		return 1.26
 	}
 }
 
@@ -264,6 +427,8 @@ func (s *Service) EnterDungeon(character characters.Summary, _ characters.DailyL
 			"final_result":        runStatus,
 			"ended_in_room_index": battleResult.EndedInRoomIndex,
 			"difficulty":          difficulty,
+			"basic_attack_skill":  player.BasicSkillID,
+			"equipped_skills":     append([]combat.SkillAction(nil), player.EquippedSkills...),
 		},
 		StagedMaterialDrops:  stagedMaterialDrops,
 		PendingRatingRewards: pendingRatingRewards,
@@ -524,7 +689,7 @@ func simulateDungeonRun(player combat.Combatant, def DefinitionView, difficulty,
 
 	for roomIndex := 1; roomIndex <= def.RoomCount; roomIndex++ {
 		composition := buildRoomComposition(def.DungeonID, difficulty, roomIndex, def.BossRoomIndex)
-		enemy := buildRoomEnemyCombatant(def, difficulty, roomIndex, composition)
+		enemies := buildRoomEnemyCombatants(def, difficulty, roomIndex, composition)
 		isBoss := composition.hasBoss(def.BossRoomIndex, roomIndex)
 		log = append(log, map[string]any{
 			"step":       "room_composition",
@@ -535,28 +700,28 @@ func simulateDungeonRun(player combat.Combatant, def DefinitionView, difficulty,
 			"message":    "room enemy composition prepared",
 		})
 
-		result := combat.SimulateBattle(combat.BattleConfig{
-			BattleType:     "dungeon_wave",
-			RunID:          runID,
-			RoomIndex:      roomIndex,
-			IsBossRoom:     isBoss,
-			SideA:          player,
-			SideB:          enemy,
-			RunPotionUsedA: runPotionUsed,
+		result := combat.SimulateSkirmish(combat.SkirmishConfig{
+			BattleType:    "dungeon_wave",
+			RunID:         runID,
+			RoomIndex:     roomIndex,
+			IsBossRoom:    isBoss,
+			Player:        player,
+			Enemies:       enemies,
+			RunPotionUsed: runPotionUsed,
 		})
 
 		log = append(log, result.Log...)
 		if len(log) > 120 {
 			log = log[len(log)-120:]
 		}
-		runPotionUsed += result.PotionsConsumedA
+		runPotionUsed += result.PotionsConsumed
 
-		if !result.SideAWon {
+		if !result.PlayerWon {
 			return simulatedRunResult{
 				Cleared:            false,
-				PlayerSurvived:     result.SideAFinalHP > 0,
+				PlayerSurvived:     result.PlayerFinalHP > 0,
 				StartHP:            startHP,
-				RemainingHP:        maxInt(0, result.SideAFinalHP),
+				RemainingHP:        maxInt(0, result.PlayerFinalHP),
 				CurrentRoomIndex:   roomIndex,
 				HighestRoomCleared: roomIndex - 1,
 				EndedInRoomIndex:   roomIndex,
@@ -565,7 +730,7 @@ func simulateDungeonRun(player combat.Combatant, def DefinitionView, difficulty,
 		}
 
 		// HP carries over to the next room.
-		player.CurrentHP = result.SideAFinalHP
+		player.CurrentHP = result.PlayerFinalHP
 
 		// Recovery between rooms: none for standard dungeons, 5 % max_hp for novice dungeons.
 		if roomIndex < def.RoomCount && def.IsNovice {
@@ -923,17 +1088,10 @@ type monsterBlueprint struct {
 	HealPow int
 }
 
-func buildRoomEnemyCombatant(def DefinitionView, difficulty string, roomIndex int, composition roomComposition) combat.Combatant {
+func buildRoomEnemyCombatants(def DefinitionView, difficulty string, roomIndex int, composition roomComposition) []combat.Combatant {
 	mult := difficultyMultipliers[normalizeDifficulty(difficulty)]
-	totalCount := 0
-	totalHP := 0
-	totalPhysAtk := 0
-	totalMagAtk := 0
-	totalPhysDef := 0
-	totalMagDef := 0
-	totalSpeed := 0
-	totalHeal := 0
-	hasBoss := false
+	roomScale := 0.70 + 0.05*float64(roomIndex-1)
+	enemies := make([]combat.Combatant, 0, 4)
 
 	for _, slot := range composition.slots {
 		if slot.Count <= 0 {
@@ -943,81 +1101,60 @@ func buildRoomEnemyCombatant(def DefinitionView, difficulty string, roomIndex in
 		if !ok {
 			continue
 		}
-		if strings.EqualFold(blueprint.Tier, "boss") {
-			hasBoss = true
+		for copyIndex := 0; copyIndex < slot.Count; copyIndex++ {
+			maxHP := maxInt(1, int(float64(blueprint.MaxHP)*0.26*roomScale*mult.hp))
+			physAtk := maxInt(1, int(float64(blueprint.PhysAtk)*0.22*mult.damage))
+			magAtk := maxInt(0, int(float64(blueprint.MagAtk)*0.22*mult.damage))
+			physDef := maxInt(1, int(float64(blueprint.PhysDef)*0.38*mult.defense))
+			magDef := maxInt(1, int(float64(blueprint.MagDef)*0.38*mult.defense))
+			speed := maxInt(1, int(float64(blueprint.Speed)*0.95*mult.speed))
+			heal := maxInt(0, int(float64(blueprint.HealPow)*0.40*mult.defense))
+
+			enemies = append(enemies, combat.Combatant{
+				EntityID:     fmt.Sprintf("%s_%s_room_%d_%s_%d", def.DungeonID, normalizeDifficulty(difficulty), roomIndex, slot.MonsterID, copyIndex+1),
+				Name:         blueprint.Name,
+				Team:         "b",
+				IsPlayerSide: false,
+				Role:         firstNonEmpty(slot.Role, blueprint.Role),
+				MaxHP:        maxHP,
+				PhysAtk:      physAtk,
+				MagAtk:       magAtk,
+				PhysDef:      physDef,
+				MagDef:       magDef,
+				Speed:        speed,
+				HealPow:      heal,
+				CritRate:     0,
+				CritDamage:   0,
+				BlockRate:    0,
+				Precision:    0,
+				EvasionRate:  0,
+				CurrentHP:    maxHP,
+			})
 		}
-		totalCount += slot.Count
-		totalHP += blueprint.MaxHP * slot.Count
-		totalPhysAtk += blueprint.PhysAtk * slot.Count
-		totalMagAtk += blueprint.MagAtk * slot.Count
-		totalPhysDef += blueprint.PhysDef * slot.Count
-		totalMagDef += blueprint.MagDef * slot.Count
-		totalSpeed += blueprint.Speed * slot.Count
-		totalHeal += blueprint.HealPow * slot.Count
 	}
 
-	if totalCount == 0 {
-		fallback := 40 + roomIndex*12
-		return combat.Combatant{
-			EntityID:     fmt.Sprintf("%s_room_%d", def.DungeonID, roomIndex),
-			Name:         "room_enemy",
-			Team:         "b",
-			IsPlayerSide: false,
-			MaxHP:        fallback,
-			PhysAtk:      7 + roomIndex*2,
-			PhysDef:      3 + roomIndex/2,
-			Speed:        7 + roomIndex/2,
-			CritRate:     0,
-			CritDamage:   0,
-			BlockRate:    0,
-			Precision:    0,
-			EvasionRate:  0,
-			CurrentHP:    fallback,
-		}
+	if len(enemies) > 0 {
+		return enemies
 	}
 
-	avgPhysAtk := float64(totalPhysAtk) / float64(totalCount)
-	avgMagAtk := float64(totalMagAtk) / float64(totalCount)
-	avgPhysDef := float64(totalPhysDef) / float64(totalCount)
-	avgMagDef := float64(totalMagDef) / float64(totalCount)
-	avgSpeed := float64(totalSpeed) / float64(totalCount)
-	avgHeal := float64(totalHeal) / float64(totalCount)
-
-	pressureScale := 1.0 + 0.10*float64(maxInt(0, totalCount-1))
-	roomScale := 0.70 + 0.05*float64(roomIndex-1)
-
-	maxHP := maxInt(1, int(float64(totalHP)*0.26*roomScale*mult.hp))
-	physAtk := maxInt(1, int(avgPhysAtk*0.60*pressureScale*mult.damage))
-	magAtk := maxInt(0, int(avgMagAtk*0.60*pressureScale*mult.damage))
-	physDef := maxInt(1, int(avgPhysDef*0.45*(1+0.03*float64(maxInt(0, totalCount-1)))*mult.defense))
-	magDef := maxInt(1, int(avgMagDef*0.45*(1+0.03*float64(maxInt(0, totalCount-1)))*mult.defense))
-	speed := maxInt(1, int(avgSpeed*0.95*mult.speed))
-	heal := maxInt(0, int(avgHeal*0.50*mult.defense))
-
-	name := fmt.Sprintf("room_%d_squad", roomIndex)
-	if hasBoss {
-		name = "boss_squad"
-	}
-
-	return combat.Combatant{
-		EntityID:     fmt.Sprintf("%s_%s_room_%d", def.DungeonID, normalizeDifficulty(difficulty), roomIndex),
-		Name:         name,
+	fallback := 40 + roomIndex*12
+	return []combat.Combatant{{
+		EntityID:     fmt.Sprintf("%s_room_%d", def.DungeonID, roomIndex),
+		Name:         "room_enemy",
 		Team:         "b",
 		IsPlayerSide: false,
-		MaxHP:        maxHP,
-		PhysAtk:      physAtk,
-		MagAtk:       magAtk,
-		PhysDef:      physDef,
-		MagDef:       magDef,
-		Speed:        speed,
-		HealPow:      heal,
+		Role:         "bruiser",
+		MaxHP:        fallback,
+		PhysAtk:      7 + roomIndex*2,
+		PhysDef:      3 + roomIndex/2,
+		Speed:        7 + roomIndex/2,
 		CritRate:     0,
 		CritDamage:   0,
 		BlockRate:    0,
 		Precision:    0,
 		EvasionRate:  0,
-		CurrentHP:    maxHP,
-	}
+		CurrentHP:    fallback,
+	}}
 }
 
 func buildRoomComposition(dungeonID, difficulty string, roomIndex, bossRoomIndex int) roomComposition {
@@ -1186,6 +1323,15 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func minInt(a, b int) int {

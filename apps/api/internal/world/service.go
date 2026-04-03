@@ -187,6 +187,16 @@ func (s *Service) CurrentArenaStatus(now time.Time) ArenaStatus {
 	return currentArenaStatus(now.In(s.loc))
 }
 
+func guildActions(base []string) []string {
+	items := slices.Clone(base)
+	for _, action := range []string{"view_skills", "upgrade_skill", "set_skill_loadout", "choose_profession_route"} {
+		if !slices.Contains(items, action) {
+			items = append(items, action)
+		}
+	}
+	return items
+}
+
 func (s *Service) ListRegions() []Region {
 	items := make([]Region, 0, len(seedRegions))
 	for _, region := range seedRegions {
@@ -505,75 +515,84 @@ func nextDailyReset(now time.Time) time.Time {
 }
 
 func currentArenaStatus(now time.Time) ArenaStatus {
-	hour := now.Hour()
-	minute := now.Minute()
-	stageMinute := minute - 5
-
-	if hour < 9 {
+	switch now.Weekday() {
+	case time.Monday, time.Tuesday, time.Wednesday, time.Thursday, time.Friday:
 		return ArenaStatus{
-			Code:          "signup_open",
-			Label:         "Signups Open",
-			Details:       "Eligible mid- and high-rank bots can sign up before the 09:00 qualifier cutoff.",
-			NextMilestone: "Qualifiers lock at 09:00",
+			Code:          "rating_open",
+			Label:         "Rating Season Live",
+			Details:       "Bots can make three free rating challenges each day, buy extra attempts, and climb toward Saturday's top-64 knockout.",
+			NextMilestone: "Weekly knockout seeds lock on Saturday 09:00",
 		}
-	}
-
-	if hour == 9 && minute < 5 {
+	case time.Saturday:
+		hour := now.Hour()
+		minute := now.Minute()
+		stageMinute := minute - 5
+		if hour < 9 {
+			return ArenaStatus{
+				Code:          "knockout_pending",
+				Label:         "Knockout Pending",
+				Details:       "This week's top 64 rating seeds are locked in and today's elimination bracket is about to begin.",
+				NextMilestone: "Round of 64 starts at 09:05",
+			}
+		}
+		if hour == 9 && minute < 35 {
+			roundLabel := "Round of 64"
+			nextMilestone := "Main bracket rounds continue resolving every five minutes"
+			switch {
+			case stageMinute < 5:
+				roundLabel = "Round of 64"
+				nextMilestone = "Round of 32 starts at 09:10"
+			case stageMinute < 10:
+				roundLabel = "Round of 32"
+				nextMilestone = "Round of 16 starts at 09:15"
+			case stageMinute < 15:
+				roundLabel = "Round of 16"
+				nextMilestone = "Quarterfinals start at 09:20"
+			case stageMinute < 20:
+				roundLabel = "Quarterfinals"
+				nextMilestone = "Semifinals start at 09:25"
+			case stageMinute < 25:
+				roundLabel = "Semifinals"
+				nextMilestone = "Final starts at 09:30"
+			default:
+				roundLabel = "Final"
+				nextMilestone = "Champion is declared at 09:35"
+			}
+			return ArenaStatus{
+				Code:          "knockout_in_progress",
+				Label:         "Knockout In Progress",
+				Details:       fmt.Sprintf("%s matches are auto-resolving now from this week's 64 seeded qualifiers.", roundLabel),
+				NextMilestone: nextMilestone,
+			}
+		}
 		return ArenaStatus{
-			Code:          "signup_locked",
-			Label:         "Qualifiers Locked",
-			Details:       "Signup is locked and automatic qualifier rounds are beginning from the full entrant pool.",
-			NextMilestone: "Qualifier results begin resolving now",
+			Code:          "knockout_results_live",
+			Label:         "Knockout Results Live",
+			Details:       "This week's knockout bracket is complete and title assignment will be finalized during Sunday's rest window.",
+			NextMilestone: "Titles and seasonal rest begin on Sunday",
 		}
-	}
-
-	if hour == 9 && minute < 35 {
-		roundLabel := "Main bracket rounds"
-		nextMilestone := "Arena rounds continue resolving every five minutes"
-		switch {
-		case stageMinute < 5:
-			roundLabel = "Qualifier or early main bracket rounds"
-			nextMilestone = "Arena rounds continue resolving every five minutes"
-		case stageMinute < 10:
-			roundLabel = "Round of 32"
-			nextMilestone = "Round of 16 starts at 09:15"
-		case stageMinute < 15:
-			roundLabel = "Round of 16"
-			nextMilestone = "Quarterfinals start at 09:20"
-		case stageMinute < 20:
-			roundLabel = "Quarterfinals"
-			nextMilestone = "Semifinals start at 09:25"
-		case stageMinute < 25:
-			roundLabel = "Semifinals"
-			nextMilestone = "Final starts at 09:30"
-		default:
-			roundLabel = "Final"
-			nextMilestone = "Champion is declared at 09:35"
-		}
+	default:
 		return ArenaStatus{
-			Code:          "in_progress",
-			Label:         "Bracket In Progress",
-			Details:       fmt.Sprintf("%s are auto-resolving now after the full qualifier ladder and 64-player bracket schedule.", roundLabel),
-			NextMilestone: nextMilestone,
+			Code:          "rest_day",
+			Label:         "Arena Rest Day",
+			Details:       "Arena combat is paused today while weekly titles remain active and a new rating week prepares to open on Monday.",
+			NextMilestone: "The next rating week opens on Monday 00:00",
 		}
-	}
-
-	return ArenaStatus{
-		Code:          "results_live",
-		Label:         "Results Live",
-		Details:       "Today's 64-player bracket is complete and the champion is visible on the public board.",
-		NextMilestone: "Next qualifiers lock tomorrow 09:00",
 	}
 }
 
 func arenaStatusArenaPopulation(code string) int {
 	switch code {
-	case "signup_open", "signup_locked":
-		return 12
-	case "in_progress":
+	case "rating_open":
+		return 18
+	case "knockout_pending":
 		return 64
-	case "results_live":
+	case "knockout_in_progress":
+		return 64
+	case "knockout_results_live":
 		return 1
+	case "rest_day":
+		return 0
 	default:
 		return 0
 	}
@@ -603,7 +622,7 @@ var seedRegions = []RegionDetail{
 			HostileEncounters: false,
 		},
 		Buildings: []Building{
-			{ID: "guild_main_city", Name: "Adventurers Guild", Type: "guild", Category: "functional_building", Actions: []string{"list_quests", "accept_quest", "submit_quest", "reroll_quests"}},
+			{ID: "guild_main_city", Name: "Adventurers Guild", Type: "guild", Category: "functional_building", Actions: guildActions([]string{"list_quests", "accept_quest", "submit_quest", "reroll_quests"})},
 			{ID: "equipment_shop_main_city", Name: "Equipment Shop", Type: "equipment_shop", Category: "functional_building", Actions: []string{"browse_stock", "purchase", "sell_loot"}},
 			{ID: "apothecary_main_city", Name: "Apothecary", Type: "apothecary", Category: "functional_building", Actions: []string{"purchase", "restore_hp"}},
 			{ID: "blacksmith_main_city", Name: "Blacksmith", Type: "blacksmith", Category: "functional_building", Actions: []string{"enhance_item", "salvage_item"}},
@@ -631,7 +650,7 @@ var seedRegions = []RegionDetail{
 			HostileEncounters: false,
 		},
 		Buildings: []Building{
-			{ID: "guild_outpost_village", Name: "Adventurers Guild Outpost", Type: "guild", Category: "functional_building", Actions: []string{"list_quests", "accept_quest", "submit_quest"}},
+			{ID: "guild_outpost_village", Name: "Adventurers Guild Outpost", Type: "guild", Category: "functional_building", Actions: guildActions([]string{"list_quests", "accept_quest", "submit_quest"})},
 			{ID: "equipment_shop_village", Name: "Equipment Shop", Type: "equipment_shop", Category: "functional_building", Actions: []string{"browse_stock", "purchase", "sell_loot"}},
 			{ID: "apothecary_village", Name: "Apothecary", Type: "apothecary", Category: "functional_building", Actions: []string{"purchase", "restore_hp"}},
 			{ID: "caravan_dispatch_village", Name: "Caravan Dispatch Point", Type: "caravan_dispatch", Category: "neutral_interaction_point", Actions: []string{"pick_up_supplies", "turn_in_contracts"}},

@@ -32,6 +32,7 @@ Each character equips the following slots:
 Rules:
 
 - `weapon` has class and weapon-style restrictions when equipped
+- civilians may leave the weapon slot empty until the level-10 profession choice
 - drops themselves are not class-filtered
 - all non-weapon slots are universal
 - only one item may occupy each slot
@@ -59,25 +60,395 @@ This means:
 - Sunscar Warvault is still valuable if the bot wants physical burst pressure
 - Obsidian Spire is still valuable if the bot wants spell throughput
 
+### 3.1 Localization Display Names
+
+UI should expose localized display names while preserving stable English ids and template-direction keys in data.
+
+#### Dungeon display names
+
+| English name | Chinese display name |
+| --- | --- |
+| `Ancient Catacomb` | 远古墓窟 |
+| `Thorned Hollow` | 荆棘空谷 |
+| `Sunscar Warvault` | 日痕战库 |
+| `Obsidian Spire` | 黑曜尖塔 |
+
+#### Set display names
+
+| set_id / English set name | Chinese display name |
+| --- | --- |
+| `Gravewake Bastion` | 墓醒壁垒 |
+| `Briarbound Sight` | 棘界猎眼 |
+| `Sunscar Assault` | 日蚀锋袭 |
+| `Nightglass Arcanum` | 夜镜秘典 |
+
+#### Weapon-style display names
+
+| weapon_style | Chinese display name |
+| --- | --- |
+| `sword_shield` | 剑盾 |
+| `great_axe` | 巨斧 |
+| `staff` | 法杖 |
+| `spellbook` | 咒书 |
+| `scepter` | 权杖 |
+| `holy_tome` | 圣典 |
+
+#### Template-direction display names
+
+| template direction | Chinese display name |
+| --- | --- |
+| `physical` | 物理 |
+| `magic` | 魔法 |
+| `healing` | 治疗 |
+| `universal` | 通用 |
+| `physical-guard` | 物防 |
+| `magic-guard` | 魔防 |
+| `sustain` | 续航 |
+| `caster` | 施法 |
+
 ## 4. Quality and Affix Rules
 
 The game uses five quality grades:
 
 | Quality | Color | Extra Affixes | Set Bonus | Identity |
 | --- | --- | --- | --- | --- |
-| Blue | blue | 0 | no | stable baseline drop |
-| Purple | purple | 1 | no | efficient transition piece |
-| Gold | gold | 2 | no | high-value non-set piece |
-| Red | red | 3 | yes | standard set chase piece |
+| Blue | blue | 1 | no | stable baseline drop |
+| Purple | purple | 2 | no | efficient transition piece |
+| Gold | gold | 3 | no | high-value non-set piece |
+| Red | red | 4 | yes | standard set chase piece |
 | Prismatic | rainbow | 4 | yes | premium chase piece |
 
 Rules:
 
-- blue items only have base slot stats
-- every quality step above blue adds `+1` extra affix
+- every item has fixed main affixes tied to slot identity
+- every item also rolls slot-aligned random secondary affixes
+- blue items start with `1` extra random affix
+- extra-affix count scales by quality from Blue through Prismatic
 - red and prismatic items can belong to named sets
 - all set lines support `2-piece`, `4-piece`, and `6-piece`
 - prismatic is the apex version of the same dungeon set family rather than a separate set line
+- prismatic extra affixes always roll at max value; other qualities roll within a controlled range
+
+### 4.1 Three-Layer Item Stat Structure
+
+Each item should be understood as having three stat layers:
+
+1. fixed main affixes
+2. slot-aligned random secondary affixes
+3. fully random extra affixes
+
+Design intent:
+
+- main affixes make the slot readable at a glance
+- secondary affixes preserve slot identity while still allowing meaningful variance
+- extra affixes create the long-tail chase and can break away from slot expectations
+
+Recommended V1 rule:
+
+- every item has `1` fixed main-affix package
+- every item rolls `1` random secondary affix from the slot-aligned pool
+- extra affix count depends on quality: Blue `1`, Purple `2`, Gold `3`, Red `4`, Prismatic `4`
+
+### 4.2 Fixed Main Affixes By Slot
+
+The main-affix package should be deterministic for the item template and should closely match slot identity.
+
+Recommended slot direction:
+
+- `weapon`: main offensive package, centered on `physical_attack`, `magic_attack`, or `healing_power`
+- `head`: balanced survivability package, centered on `max_hp`, `physical_defense`, `magic_defense`
+- `chest`: largest defensive package, centered on `max_hp`, `physical_defense`, `magic_defense`
+- `boots`: tempo package, centered on `speed`, `max_hp`, and one defense stat
+- `ring`: offensive specialization package, centered on `physical_attack`, `magic_attack`, or `healing_power`
+- `necklace`: sustain and utility package, centered on `max_hp`, `healing_power`, `magic_defense`, and occasional `speed`
+
+Rule:
+
+- the same template should always keep the same main-affix package
+- dungeon choice should not change the main-affix structure of a slot
+
+### 4.2.1 Fixed Main-Affix Baseline Values
+
+Because the first live season uses one shared seasonal gear band, the slot templates below should be treated as the baseline main-affix packages for that full season.
+
+Recommended main-affix templates:
+
+| Slot | Template direction | Fixed main-affix package |
+| --- | --- | --- |
+| `weapon` | physical | `+30 physical_attack` |
+| `weapon` | magic | `+30 magic_attack` |
+| `weapon` | healing | `+22 healing_power`, `+10 magic_attack` |
+| `head` | universal | `+90 max_hp`, `+7 physical_defense`, `+7 magic_defense` |
+| `chest` | universal | `+150 max_hp`, `+12 physical_defense`, `+12 magic_defense` |
+| `boots` | physical-guard | `+60 max_hp`, `+4 speed`, `+5 physical_defense` |
+| `boots` | magic-guard | `+60 max_hp`, `+4 speed`, `+5 magic_defense` |
+| `ring` | physical | `+16 physical_attack` |
+| `ring` | magic | `+16 magic_attack` |
+| `ring` | healing | `+16 healing_power` |
+| `necklace` | sustain | `+80 max_hp`, `+10 healing_power`, `+6 magic_defense` |
+| `necklace` | caster | `+72 max_hp`, `+8 magic_attack`, `+6 magic_defense`, `+2 speed` |
+
+Budget rule:
+
+- the fixed main-affix package should provide about `58%-62%` of a normal item's total non-set stat budget before enhancement
+- weapon and chest should remain the largest single-slot contributors
+- ring and necklace should stay below weapon impact even on high-roll items
+
+### 4.3 Slot-Aligned Random Secondary Affixes
+
+Secondary affixes should still lean toward what the slot is naturally good at, but they should remain random within that local identity.
+
+Recommended secondary-affix pools:
+
+| Slot | Random secondary-affix pool |
+| --- | --- |
+| `weapon` | `physical_attack`, `magic_attack`, `healing_power`, `accuracy`, `crit_chance`, `crit_damage`, `speed` |
+| `head` | `max_hp`, `physical_defense`, `magic_defense`, `speed`, `healing_power` |
+| `chest` | `max_hp`, `physical_defense`, `magic_defense`, `healing_power` |
+| `boots` | `speed`, `max_hp`, `physical_defense`, `magic_defense`, `accuracy` |
+| `ring` | `physical_attack`, `magic_attack`, `healing_power`, `accuracy`, `crit_chance`, `crit_damage`, `speed` |
+| `necklace` | `max_hp`, `healing_power`, `magic_attack`, `magic_defense`, `speed`, `accuracy` |
+
+Rules:
+
+- secondary affixes are where slot identity remains visible after the fixed main-affix package
+- this layer should feel more coherent than the fully random extra-affix layer
+
+### 4.3.1 Random Secondary-Affix Value Ranges
+
+Each item rolls exactly one random secondary affix from its slot-aligned pool.
+
+Recommended secondary-affix ranges:
+
+| Slot | Secondary affix | Recommended range |
+| --- | --- | --- |
+| `weapon` | `physical_attack` | `+8 to +12` |
+| `weapon` | `magic_attack` | `+8 to +12` |
+| `weapon` | `healing_power` | `+8 to +12` |
+| `weapon` | `accuracy` | `+4% to +7%` |
+| `weapon` | `crit_chance` | `+2.0% to +3.2%` |
+| `weapon` | `crit_damage` | `+4.0% to +6.5%` |
+| `weapon` | `speed` | `+1 to +2` |
+| `head` | `max_hp` | `+35 to +55` |
+| `head` | `physical_defense` | `+3 to +5` |
+| `head` | `magic_defense` | `+3 to +5` |
+| `head` | `speed` | `+1` |
+| `head` | `healing_power` | `+4 to +7` |
+| `chest` | `max_hp` | `+50 to +80` |
+| `chest` | `physical_defense` | `+4 to +6` |
+| `chest` | `magic_defense` | `+4 to +6` |
+| `chest` | `healing_power` | `+5 to +8` |
+| `boots` | `speed` | `+2 to +4` |
+| `boots` | `max_hp` | `+30 to +50` |
+| `boots` | `physical_defense` | `+3 to +5` |
+| `boots` | `magic_defense` | `+3 to +5` |
+| `boots` | `accuracy` | `+3% to +6%` |
+| `ring` | `physical_attack` | `+6 to +10` |
+| `ring` | `magic_attack` | `+6 to +10` |
+| `ring` | `healing_power` | `+6 to +10` |
+| `ring` | `accuracy` | `+4% to +7%` |
+| `ring` | `crit_chance` | `+2.0% to +3.5%` |
+| `ring` | `crit_damage` | `+5.0% to +8.0%` |
+| `ring` | `speed` | `+1 to +2` |
+| `necklace` | `max_hp` | `+30 to +50` |
+| `necklace` | `healing_power` | `+6 to +10` |
+| `necklace` | `magic_attack` | `+6 to +10` |
+| `necklace` | `magic_defense` | `+3 to +5` |
+| `necklace` | `speed` | `+1 to +2` |
+| `necklace` | `accuracy` | `+3% to +6%` |
+
+Budget rule:
+
+- the random secondary affix should contribute about `16%-20%` of a normal item's total non-set stat budget before enhancement
+- even a high-roll secondary affix should not outweigh the slot's fixed main-affix package
+
+### 4.4 Global Extra-Affix Pool
+
+Extra affixes should come from one shared global pool to preserve openness and chase value.
+
+Recommended global extra-affix pool:
+
+- `max_hp`
+- `physical_attack`
+- `magic_attack`
+- `physical_defense`
+- `magic_defense`
+- `speed`
+- `healing_power`
+- `accuracy`
+- `crit_chance`
+- `crit_damage`
+
+Design rule:
+
+- do not hard-code affix validity by class
+- the same affix can be stronger or weaker depending on the build, and that is an intended part of the sandbox
+- bots should evaluate affixes by current build goals rather than by static "invalid stat" labels
+
+Rules:
+
+- all equipment slots roll extra affixes from the same global affix pool
+- slot identity is expressed through the main-affix and secondary-affix layers, not through extra-affix restrictions
+- a single item should not roll the exact same affix twice in V1
+- slots may roll both flat-value and percent-value variants later, but the first live version should keep naming and evaluation unified at the system layer
+
+Implication:
+
+- a defensive chest may still roll offensive extra affixes
+- an offensive ring may still roll survivability extra affixes
+- this randomness is intentional and helps preserve long-tail chase value across the full season
+
+### 4.5 Quality Gates For Affixes
+
+The first live season should keep affix complexity layered by quality.
+
+Recommended gates:
+
+| Quality | Allowed affix scope |
+| --- | --- |
+| Blue | fixed main affixes + 1 slot-aligned random secondary affix + 1 extra affix from the shared global pool |
+| Purple | Blue structure + 2 extra affixes from the shared global pool with a stronger roll range |
+| Gold | Blue structure + 3 extra affixes from the shared global pool; may start rolling `accuracy`, `crit_chance`, `crit_damage` |
+| Red | Blue structure + 4 extra affixes from the full shared global pool |
+| Prismatic | Blue structure + 4 extra affixes from the full shared global pool, all at max roll value |
+
+V1 extension rule:
+
+- niche affixes such as `boss_damage`, `guard_power`, `defense_ignore`, or `skill_effect` should remain optional future additions rather than part of the first mandatory launch pool
+- if such affixes are introduced later, prefer gating them to `Gold` and above, or even `Red` and above, to keep early gear legible
+
+Roll-value rule:
+
+- Blue, Purple, Gold, and Red extra affixes should roll within a predefined min-max range
+- Prismatic extra affixes should always use the maximum value of that range
+- this keeps prismatic clearly aspirational without increasing the affix-count ceiling beyond `4`
+
+### 4.6 Extra-Affix Roll Ranges
+
+V1 should keep roll ranges readable and narrow enough that item quality matters more than lottery variance.
+
+Recommended roll-position ranges:
+
+| Quality | Roll position within affix range |
+| --- | --- |
+| Blue | `70%-82%` |
+| Purple | `78%-88%` |
+| Gold | `84%-93%` |
+| Red | `90%-97%` |
+| Prismatic | `100%` |
+
+Interpretation:
+
+- each extra affix has its own stat-specific min and max value
+- the quality determines where inside that min-max band the roll can land
+- prismatic always lands on the max value for every extra affix
+
+Recommended examples for percentage-style extra affixes:
+
+| Affix | Full range | Blue | Purple | Gold | Red | Prismatic |
+| --- | --- | --- | --- | --- | --- | --- |
+| `max_hp%` | `3.0%-6.0%` | `4.0%-4.4%` | `4.3%-4.6%` | `4.5%-4.8%` | `4.7%-4.8%` | `6.0%` |
+| `physical_attack%` | `2.5%-4.5%` | `3.9%-4.1%` | `4.1%-4.3%` | `4.2%-4.4%` | `4.3%-4.4%` | `4.5%` |
+| `magic_attack%` | `2.5%-4.5%` | `3.9%-4.1%` | `4.1%-4.3%` | `4.2%-4.4%` | `4.3%-4.4%` | `4.5%` |
+| `speed%` | `1.5%-3.0%` | `2.6%-2.7%` | `2.7%-2.8%` | `2.8%-2.9%` | `2.8%-3.0%` | `3.0%` |
+| `crit_chance%` | `1.5%-3.5%` | `2.9%-3.1%` | `3.0%-3.2%` | `3.2%-3.4%` | `3.3%-3.4%` | `3.5%` |
+| `crit_damage%` | `3.0%-7.0%` | `5.8%-6.3%` | `6.1%-6.5%` | `6.4%-6.7%` | `6.6%-6.9%` | `7.0%` |
+
+Recommended examples for flat-value extra affixes:
+
+| Affix | Full range | Blue | Purple | Gold | Red | Prismatic |
+| --- | --- | --- | --- | --- | --- | --- |
+| `max_hp` | `50-110` | `92-99` | `96-103` | `100-106` | `104-108` | `110` |
+| `physical_attack` | `6-16` | `13-14` | `13-14` | `14-15` | `15` | `16` |
+| `magic_attack` | `6-16` | `13-14` | `13-14` | `14-15` | `15` | `16` |
+| `physical_defense` | `5-12` | `10-11` | `10-11` | `10-11` | `11` | `12` |
+| `magic_defense` | `5-12` | `10-11` | `10-11` | `10-11` | `11` | `12` |
+| `healing_power` | `6-16` | `13-14` | `13-14` | `14-15` | `15` | `16` |
+
+Operational rule:
+
+- the exact min-max table should be authored per affix family in data tables, not hand-written per item template
+- if balance testing shows too much frustration, narrow the Blue-to-Red ranges before reducing affix counts
+- prismatic should remain rare because its value comes from both quality and perfect rolls
+
+Calibration note:
+
+- with the main-affix, secondary-affix, and quality-base values in this spec, a representative full Red set should stay near the `31%-33%` endgame share target
+- a representative full Prismatic set should stay near the `33%-35%` endgame share target rather than blowing past it
+### 4.7 Shared Affix Logic Across All Four Dungeons
+
+The four seasonal dungeons should not have different extra-affix bias tables.
+
+Rules:
+
+- all four dungeons use the same fixed-main-affix rules by slot
+- all four dungeons use the same slot-aligned secondary-affix rules
+- all four dungeons use the same global extra-affix pool without dungeon-specific bias
+- dungeon choice changes set family and set effects, not the affix bias on the dropped item
+- bots may still prefer one dungeon because of the set bonus, but should not expect a different affix pool there
+
+### 4.8 Extra-Affix Reforge
+
+World-boss participation introduces a dedicated reforge loop for the extra-affix layer.
+
+Core rules:
+
+- reforge materials are consumed by applying them directly to one equipment item
+- reforge only changes the extra-affix layer
+- fixed main affixes never change through reforge
+- the slot-aligned random secondary affix never changes through reforge
+- one reforge attempt always consumes the required material immediately
+- after the reroll result is generated, the bot or player may either save the new result or discard it
+- discarding the new result restores the previous extra-affix set, but the spent material is not refunded
+
+Design intent:
+
+- dungeons remain responsible for farming item base, quality, and set identity
+- world-boss participation remains responsible for late-game extra-affix optimization
+- reforge should create a meaningful keep-or-revert decision without risking permanent loss of the whole item
+
+Recommended V1 material direction:
+
+- V1 uses only one reforge material: `reforge_stone`
+- one reforge attempt rerolls all extra affixes on the chosen item once
+- V1 should not split reforge into multiple stone families yet
+
+Recommended reforge-stone cost by item quality:
+
+| Item quality | Reforge-stone cost per attempt |
+| --- | --- |
+| `Blue` | `1` |
+| `Purple` | `2` |
+| `Gold` | `3` |
+| `Red` | `5` |
+| `Prismatic` | `8` |
+
+Recommended world-boss reforge-stone rewards:
+
+| Reward tier | Total-damage threshold | Gold | `reforge_stone` |
+| --- | --- | --- | --- |
+| `D` | `>= 250 / 2100` | `90` | `1` |
+| `C` | `>= 550 / 2100` | `150` | `2` |
+| `B` | `>= 925 / 2100` | `230` | `3` |
+| `A` | `>= 1400 / 2100` | `340` | `5` |
+| `S` | `>= 2100 / 2100` | `500` | `8` |
+
+Balance intent:
+
+- `Blue` and `Purple` items should be inexpensive to iterate on
+- `Gold` items should feel like regular optimization targets once bots stabilize world-boss participation
+- `Red` items should require deliberate spending decisions
+- `Prismatic` items should remain expensive enough that perfect-endgame optimization stays slow
+
+Pending-result presentation:
+
+- before confirmation, the UI and bot read model should expose:
+  - previous extra affixes
+  - newly rolled extra affixes
+  - a save action
+  - a discard action
+- save makes the rerolled extra affixes permanent
+- discard keeps the previous extra affixes and closes the pending result
 
 ## 5. Slot Identity
 

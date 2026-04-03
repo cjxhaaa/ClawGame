@@ -13,6 +13,7 @@ import (
 
 	"clawgame/apps/api/internal/characters"
 	"clawgame/apps/api/internal/dungeons"
+	"clawgame/apps/api/internal/inventory"
 	"clawgame/apps/api/internal/platform/config"
 )
 
@@ -236,6 +237,101 @@ func TestPublicWorldStateIncludesRegionGameplay(t *testing.T) {
 	}
 }
 
+func TestArenaRatingBoardAndChallengeEndpoints(t *testing.T) {
+	server := NewServer(config.API{Port: "8080"})
+	now := time.Date(2026, time.April, 6, 10, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	server.arenaService.SetClock(func() time.Time { return now })
+	server.worldService.SetClock(func() time.Time { return now })
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "arena-a",
+		"password": "verysecure",
+	}), "", http.StatusOK, nil)
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "arena-b",
+		"password": "verysecure",
+	}), "", http.StatusOK, nil)
+
+	var loginA struct {
+		Data struct {
+			AccessToken string `json:"access_token"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "arena-a",
+		"password": "verysecure",
+	}), "", http.StatusOK, &loginA)
+
+	var loginB struct {
+		Data struct {
+			AccessToken string `json:"access_token"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "arena-b",
+		"password": "verysecure",
+	}), "", http.StatusOK, &loginB)
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
+		"name":         "ArenaAlpha",
+		"class":        "warrior",
+		"weapon_style": "great_axe",
+	}, loginA.Data.AccessToken, http.StatusOK, nil)
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
+		"name":         "ArenaBeta",
+		"class":        "mage",
+		"weapon_style": "spellbook",
+	}, loginB.Data.AccessToken, http.StatusOK, nil)
+
+	var boardResponse struct {
+		Data struct {
+			WeekKey               string `json:"week_key"`
+			FreeAttemptsRemaining int    `json:"free_attempts_remaining"`
+			Candidates            []struct {
+				CharacterID string `json:"character_id"`
+			} `json:"candidates"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/arena/rating-board", nil, loginA.Data.AccessToken, http.StatusOK, &boardResponse)
+	if boardResponse.Data.WeekKey == "" {
+		t.Fatal("expected week_key in rating board")
+	}
+	if boardResponse.Data.FreeAttemptsRemaining != 3 {
+		t.Fatalf("expected 3 free attempts, got %d", boardResponse.Data.FreeAttemptsRemaining)
+	}
+	if len(boardResponse.Data.Candidates) == 0 {
+		t.Fatal("expected at least one challenge candidate")
+	}
+
+	var challengeResponse struct {
+		Data struct {
+			Result string `json:"result"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/arena/rating-challenges", map[string]any{
+		"target_character_id": boardResponse.Data.Candidates[0].CharacterID,
+	}, loginA.Data.AccessToken, http.StatusOK, &challengeResponse)
+	if challengeResponse.Data.Result == "" {
+		t.Fatal("expected challenge result")
+	}
+
+	var purchasedResponse struct {
+		Data struct {
+			PriceGold int `json:"price_gold"`
+			Board     struct {
+				PurchasedAttemptsUsed int `json:"purchased_attempts_used"`
+			} `json:"board"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/arena/rating-challenges/purchase", map[string]any{}, loginA.Data.AccessToken, http.StatusOK, &purchasedResponse)
+	if purchasedResponse.Data.PriceGold <= 0 {
+		t.Fatalf("expected positive purchase price, got %d", purchasedResponse.Data.PriceGold)
+	}
+	if purchasedResponse.Data.Board.PurchasedAttemptsUsed != 1 {
+		t.Fatalf("expected one purchased attempt recorded, got %d", purchasedResponse.Data.Board.PurchasedAttemptsUsed)
+	}
+}
+
 func TestAuthCharacterFlow(t *testing.T) {
 	server := NewServer(config.API{Port: "8080"})
 
@@ -453,8 +549,8 @@ func TestCharacterValidationAndAuthErrors(t *testing.T) {
 		"weapon_style": "great_axe",
 	}, loginResponse.Data.AccessToken, http.StatusBadRequest, &errorResponse)
 
-	if errorResponse.Error.Code != "CHARACTER_INVALID_WEAPON_STYLE" {
-		t.Fatalf("expected CHARACTER_INVALID_WEAPON_STYLE, got %q", errorResponse.Error.Code)
+	if errorResponse.Error.Code != "INVALID_REQUEST" {
+		t.Fatalf("expected INVALID_REQUEST, got %q", errorResponse.Error.Code)
 	}
 }
 
@@ -491,6 +587,430 @@ func TestAuthChallengeRequiredAndInvalid(t *testing.T) {
 
 	if invalidResponse.Error.Code != "AUTH_CHALLENGE_INVALID" {
 		t.Fatalf("expected AUTH_CHALLENGE_INVALID, got %q", invalidResponse.Error.Code)
+	}
+}
+
+func TestCivilianUniversalSkillUpgradeAndLoadout(t *testing.T) {
+	server := NewServer(config.API{Port: "8080"})
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "skill-civilian",
+		"password": "verysecure",
+	}), "", http.StatusOK, nil)
+
+	var loginResponse struct {
+		Data struct {
+			AccessToken string `json:"access_token"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "skill-civilian",
+		"password": "verysecure",
+	}), "", http.StatusOK, &loginResponse)
+
+	var createResponse struct {
+		Data struct {
+			Character struct {
+				Class string `json:"class"`
+				Gold  int    `json:"gold"`
+			} `json:"character"`
+			Skills struct {
+				BasicAttack struct {
+					SkillID string `json:"skill_id"`
+				} `json:"basic_attack"`
+				Universal []struct {
+					SkillID    string `json:"skill_id"`
+					IsUnlocked bool   `json:"is_unlocked"`
+					Level      int    `json:"level"`
+				} `json:"universal_skills"`
+			} `json:"skills"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
+		"name": "SkillStarter",
+	}, loginResponse.Data.AccessToken, http.StatusOK, &createResponse)
+	account, err := server.authService.Authenticate(loginResponse.Data.AccessToken)
+	if err != nil {
+		t.Fatalf("failed to authenticate skill test account: %v", err)
+	}
+	summary, ok := server.characterService.GetCharacterByAccount(account)
+	if !ok {
+		t.Fatal("expected civilian character to exist")
+	}
+	if _, err := server.characterService.GrantGold(summary.CharacterID, 200); err != nil {
+		t.Fatalf("failed to grant gold for civilian skill test: %v", err)
+	}
+	createResponse.Data.Character.Gold += 200
+
+	if createResponse.Data.Character.Class != "civilian" {
+		t.Fatalf("expected civilian class, got %q", createResponse.Data.Character.Class)
+	}
+	if createResponse.Data.Skills.BasicAttack.SkillID != "Strike" {
+		t.Fatalf("expected civilian basic attack Strike, got %q", createResponse.Data.Skills.BasicAttack.SkillID)
+	}
+
+	unlockedUniversal := 0
+	for _, skill := range createResponse.Data.Skills.Universal {
+		if skill.IsUnlocked || skill.Level != 0 {
+			unlockedUniversal++
+		}
+	}
+	if unlockedUniversal != 0 {
+		t.Fatalf("expected all universal skills to start locked, got %d unlocked entries", unlockedUniversal)
+	}
+
+	var upgradeResponse struct {
+		Data struct {
+			Character struct {
+				Gold int `json:"gold"`
+			} `json:"character"`
+			Skills struct {
+				Universal []struct {
+					SkillID    string `json:"skill_id"`
+					IsUnlocked bool   `json:"is_unlocked"`
+					Level      int    `json:"level"`
+				} `json:"universal_skills"`
+			} `json:"skills"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/skills/Quickstep/upgrade", nil, loginResponse.Data.AccessToken, http.StatusOK, &upgradeResponse)
+
+	if upgradeResponse.Data.Character.Gold != createResponse.Data.Character.Gold-120 {
+		t.Fatalf("expected gold to drop by 120, got %d -> %d", createResponse.Data.Character.Gold, upgradeResponse.Data.Character.Gold)
+	}
+
+	foundQuickstep := false
+	for _, skill := range upgradeResponse.Data.Skills.Universal {
+		if skill.SkillID != "Quickstep" {
+			continue
+		}
+		foundQuickstep = true
+		if !skill.IsUnlocked || skill.Level != 1 {
+			t.Fatalf("expected Quickstep unlocked at level 1, got unlocked=%v level=%d", skill.IsUnlocked, skill.Level)
+		}
+	}
+	if !foundQuickstep {
+		t.Fatal("expected Quickstep to be present in universal skill list")
+	}
+
+	var loadoutResponse struct {
+		Data struct {
+			ActiveLoadout []string `json:"active_loadout"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/skills/loadout", map[string]any{
+		"skill_ids": []string{"Quickstep"},
+	}, loginResponse.Data.AccessToken, http.StatusOK, &loadoutResponse)
+
+	if len(loadoutResponse.Data.ActiveLoadout) != 1 || loadoutResponse.Data.ActiveLoadout[0] != "Quickstep" {
+		t.Fatalf("expected Quickstep loadout, got %#v", loadoutResponse.Data.ActiveLoadout)
+	}
+}
+
+func TestGuildSkillUpgradeForProfessionCharacter(t *testing.T) {
+	server := NewServer(config.API{Port: "8080"})
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "skill-guild",
+		"password": "verysecure",
+	}), "", http.StatusOK, nil)
+
+	var loginResponse struct {
+		Data struct {
+			AccessToken string `json:"access_token"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "skill-guild",
+		"password": "verysecure",
+	}), "", http.StatusOK, &loginResponse)
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
+		"name":         "GuildCaster",
+		"class":        "mage",
+		"weapon_style": "staff",
+	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+	account, err := server.authService.Authenticate(loginResponse.Data.AccessToken)
+	if err != nil {
+		t.Fatalf("failed to authenticate guild skill test account: %v", err)
+	}
+	summary, ok := server.characterService.GetCharacterByAccount(account)
+	if !ok {
+		t.Fatal("expected guild skill character to exist")
+	}
+	if _, err := server.characterService.GrantGold(summary.CharacterID, 200); err != nil {
+		t.Fatalf("failed to grant gold for guild skill test: %v", err)
+	}
+
+	var guildSkills struct {
+		Data struct {
+			BuildingID string `json:"building_id"`
+			Skills     struct {
+				ClassSkills []struct {
+					SkillID    string `json:"skill_id"`
+					IsUnlocked bool   `json:"is_unlocked"`
+					Level      int    `json:"level"`
+				} `json:"class_skills"`
+			} `json:"skills"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/buildings/guild_main_city/skills", nil, loginResponse.Data.AccessToken, http.StatusOK, &guildSkills)
+
+	if guildSkills.Data.BuildingID != "guild_main_city" {
+		t.Fatalf("expected guild_main_city, got %q", guildSkills.Data.BuildingID)
+	}
+
+	foundFlameBurst := false
+	for _, skill := range guildSkills.Data.Skills.ClassSkills {
+		if skill.SkillID != "Flame Burst" {
+			continue
+		}
+		foundFlameBurst = true
+		if skill.IsUnlocked || skill.Level != 0 {
+			t.Fatalf("expected Flame Burst locked at level 0 before upgrade, got unlocked=%v level=%d", skill.IsUnlocked, skill.Level)
+		}
+	}
+	if !foundFlameBurst {
+		t.Fatal("expected Flame Burst in mage class skill list")
+	}
+
+	var upgradeResponse struct {
+		Data struct {
+			BuildingID string `json:"building_id"`
+			Skills     struct {
+				ClassSkills []struct {
+					SkillID    string `json:"skill_id"`
+					IsUnlocked bool   `json:"is_unlocked"`
+					Level      int    `json:"level"`
+				} `json:"class_skills"`
+			} `json:"skills"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/buildings/guild_main_city/skills/Flame%20Burst/upgrade", nil, loginResponse.Data.AccessToken, http.StatusOK, &upgradeResponse)
+
+	upgraded := false
+	for _, skill := range upgradeResponse.Data.Skills.ClassSkills {
+		if skill.SkillID != "Flame Burst" {
+			continue
+		}
+		upgraded = true
+		if !skill.IsUnlocked || skill.Level != 1 {
+			t.Fatalf("expected Flame Burst unlocked at level 1, got unlocked=%v level=%d", skill.IsUnlocked, skill.Level)
+		}
+	}
+	if !upgraded {
+		t.Fatal("expected upgraded Flame Burst in guild response")
+	}
+
+	var loadoutResponse struct {
+		Data struct {
+			Skills struct {
+				ActiveLoadout []string `json:"active_loadout"`
+			} `json:"skills"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/buildings/guild_main_city/skill-loadout", map[string]any{
+		"skill_ids": []string{"Flame Burst"},
+	}, loginResponse.Data.AccessToken, http.StatusOK, &loadoutResponse)
+
+	if len(loadoutResponse.Data.Skills.ActiveLoadout) != 1 || loadoutResponse.Data.Skills.ActiveLoadout[0] != "Flame Burst" {
+		t.Fatalf("expected Flame Burst guild loadout, got %#v", loadoutResponse.Data.Skills.ActiveLoadout)
+	}
+}
+
+func TestWorldBossQueueAndReforgeFlow(t *testing.T) {
+	server := NewServer(config.API{Port: "8080"})
+
+	type accountFixture struct {
+		token       string
+		characterID string
+	}
+	fixtures := make([]accountFixture, 0, 6)
+
+	for i := 0; i < 6; i++ {
+		botName := "boss-bot-" + strconv.Itoa(i)
+		charName := "BossRunner" + strconv.Itoa(i)
+		doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
+			"bot_name": botName,
+			"password": "verysecure",
+		}), "", http.StatusOK, nil)
+
+		var loginResponse struct {
+			Data struct {
+				AccessToken string `json:"access_token"`
+			} `json:"data"`
+		}
+		doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
+			"bot_name": botName,
+			"password": "verysecure",
+		}), "", http.StatusOK, &loginResponse)
+
+		var createResponse struct {
+			Data struct {
+				Character struct {
+					CharacterID string `json:"character_id"`
+				} `json:"character"`
+			} `json:"data"`
+		}
+		doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
+			"name": charName,
+		}, loginResponse.Data.AccessToken, http.StatusOK, &createResponse)
+
+		fixtures = append(fixtures, accountFixture{
+			token:       loginResponse.Data.AccessToken,
+			characterID: createResponse.Data.Character.CharacterID,
+		})
+	}
+
+	var queueResponse struct {
+		Data struct {
+			Status struct {
+				CurrentQueuedCount int    `json:"current_queued_count"`
+				LastRaidID         string `json:"last_raid_id"`
+			} `json:"status"`
+			ResolvedRaid *struct {
+				RaidID      string `json:"raid_id"`
+				RewardTier  string `json:"reward_tier"`
+				TotalDamage int    `json:"total_damage"`
+				Members     []struct {
+					CharacterID string `json:"character_id"`
+					DamageDealt int    `json:"damage_dealt"`
+				} `json:"members"`
+			} `json:"resolved_raid"`
+		} `json:"data"`
+	}
+	for i, fx := range fixtures {
+		target := &queueResponse
+		if i < len(fixtures)-1 {
+			var ignored map[string]any
+			doJSONRequest(t, server, http.MethodPost, "/api/v1/world-boss/queue", nil, fx.token, http.StatusOK, &ignored)
+			continue
+		}
+		doJSONRequest(t, server, http.MethodPost, "/api/v1/world-boss/queue", nil, fx.token, http.StatusOK, target)
+	}
+
+	if queueResponse.Data.ResolvedRaid == nil {
+		t.Fatal("expected sixth world boss queue join to resolve a raid")
+	}
+	if queueResponse.Data.ResolvedRaid.RaidID == "" {
+		t.Fatal("expected resolved raid id")
+	}
+	if queueResponse.Data.ResolvedRaid.RewardTier == "" {
+		t.Fatal("expected resolved raid reward tier")
+	}
+	if len(queueResponse.Data.ResolvedRaid.Members) != 6 {
+		t.Fatalf("expected 6 raid members, got %d", len(queueResponse.Data.ResolvedRaid.Members))
+	}
+
+	firstAccount, err := server.authService.Authenticate(fixtures[0].token)
+	if err != nil {
+		t.Fatalf("failed to authenticate first account: %v", err)
+	}
+	firstCharacter, ok := server.characterService.GetCharacterByAccount(firstAccount)
+	if !ok {
+		t.Fatal("expected first character to exist")
+	}
+	if _, _, err := server.inventoryService.GrantItemFromCatalog(firstCharacter, "gravewake_vestment_red"); err != nil {
+		t.Fatalf("failed to grant reforge item: %v", err)
+	}
+
+	var inventoryResponse struct {
+		Data struct {
+			Inventory []struct {
+				ItemID       string `json:"item_id"`
+				CatalogID    string `json:"catalog_id"`
+				ExtraAffixes []struct {
+					AffixKey string `json:"affix_key"`
+					Value    int    `json:"value"`
+				} `json:"extra_affixes"`
+			} `json:"inventory"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/inventory", nil, fixtures[0].token, http.StatusOK, &inventoryResponse)
+
+	var targetItemID string
+	var originalAffixCount int
+	for _, item := range inventoryResponse.Data.Inventory {
+		if item.CatalogID == "gravewake_vestment_red" {
+			targetItemID = item.ItemID
+			originalAffixCount = len(item.ExtraAffixes)
+			break
+		}
+	}
+	if targetItemID == "" {
+		t.Fatal("expected granted red item in inventory")
+	}
+	if originalAffixCount != 4 {
+		t.Fatalf("expected red item to have 4 extra affixes, got %d", originalAffixCount)
+	}
+
+	var stateResponse struct {
+		Data struct {
+			Materials []struct {
+				MaterialKey string `json:"material_key"`
+				Quantity    int    `json:"quantity"`
+			} `json:"materials"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/state", nil, fixtures[0].token, http.StatusOK, &stateResponse)
+	foundStone := false
+	totalStones := 0
+	for _, material := range stateResponse.Data.Materials {
+		if material.MaterialKey == inventory.ReforgeMaterialKey && material.Quantity > 0 {
+			foundStone = true
+			totalStones = material.Quantity
+			break
+		}
+	}
+	if !foundStone {
+		t.Fatal("expected world boss reward to grant reforge stone")
+	}
+	if totalStones < 5 {
+		if _, err := server.characterService.GrantMaterials(firstCharacter.CharacterID, []map[string]any{{
+			"material_key": inventory.ReforgeMaterialKey,
+			"quantity":     5 - totalStones,
+		}}); err != nil {
+			t.Fatalf("top up reforge stones for red-item test: %v", err)
+		}
+	}
+
+	var reforgeResponse struct {
+		Data struct {
+			ReforgeCost struct {
+				MaterialKey string `json:"material_key"`
+				Quantity    int    `json:"quantity"`
+			} `json:"reforge_cost"`
+			Item struct {
+				ItemID         string `json:"item_id"`
+				PendingReforge struct {
+					AttemptID        string `json:"attempt_id"`
+					MaterialKey      string `json:"material_key"`
+					MaterialQuantity int    `json:"material_quantity"`
+				} `json:"pending_reforge"`
+			} `json:"item"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/items/"+targetItemID+"/reforge", nil, fixtures[0].token, http.StatusOK, &reforgeResponse)
+	if reforgeResponse.Data.Item.PendingReforge.AttemptID == "" {
+		t.Fatal("expected pending reforge result after using reforge stone")
+	}
+	if reforgeResponse.Data.ReforgeCost.MaterialKey != inventory.ReforgeMaterialKey || reforgeResponse.Data.ReforgeCost.Quantity != 5 {
+		t.Fatalf("expected red item reforge cost to be 5 stones, got %#v", reforgeResponse.Data.ReforgeCost)
+	}
+	if reforgeResponse.Data.Item.PendingReforge.MaterialQuantity != 5 {
+		t.Fatalf("expected pending reforge to record 5-stone cost, got %d", reforgeResponse.Data.Item.PendingReforge.MaterialQuantity)
+	}
+
+	var discardResponse struct {
+		Data struct {
+			Item struct {
+				PendingReforge any `json:"pending_reforge"`
+			} `json:"item"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/items/"+targetItemID+"/reforge/discard", nil, fixtures[0].token, http.StatusOK, &discardResponse)
+	if discardResponse.Data.Item.PendingReforge != nil {
+		t.Fatal("expected discard to clear pending reforge result")
 	}
 }
 
@@ -3706,7 +4226,7 @@ func TestBuildingActionsApplyEconomyEffects(t *testing.T) {
 	}
 }
 
-func TestArenaSignupUsesPanelPowerScore(t *testing.T) {
+func TestArenaRatingBoardUsesPanelPowerScore(t *testing.T) {
 	server := NewServer(config.API{Port: "8080"})
 	loc, err := time.LoadLocation("Asia/Shanghai")
 	if err != nil {
@@ -3762,25 +4282,30 @@ func TestArenaSignupUsesPanelPowerScore(t *testing.T) {
 	}
 	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/state", nil, loginResponse.Data.AccessToken, http.StatusOK, &stateResponse)
 
-	var signupResponse struct {
+	var boardResponse struct {
 		Data struct {
-			SignedUp bool `json:"signed_up"`
-			Entry    struct {
+			CharacterID string `json:"character_id"`
+			Rating      int    `json:"rating"`
+			Candidates  []struct {
 				CharacterID     string `json:"character_id"`
 				PanelPowerScore int    `json:"panel_power_score"`
 				EquipmentScore  int    `json:"equipment_score"`
-			} `json:"entry"`
+			} `json:"candidates"`
+			Leaderboard []struct {
+				CharacterID string `json:"character_id"`
+				Rating      int    `json:"rating"`
+			} `json:"leaderboard"`
 		} `json:"data"`
 	}
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/arena/signup", nil, loginResponse.Data.AccessToken, http.StatusOK, &signupResponse)
-	if !signupResponse.Data.SignedUp {
-		t.Fatal("expected arena signup success")
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/arena/rating-board", nil, loginResponse.Data.AccessToken, http.StatusOK, &boardResponse)
+	if boardResponse.Data.CharacterID == "" {
+		t.Fatal("expected rating board character id")
 	}
-	if signupResponse.Data.Entry.PanelPowerScore != stateResponse.Data.CombatPower.PanelPowerScore {
-		t.Fatalf("expected signup entry panel_power_score %d, got %d", stateResponse.Data.CombatPower.PanelPowerScore, signupResponse.Data.Entry.PanelPowerScore)
+	if boardResponse.Data.Rating != 1000 {
+		t.Fatalf("expected starting rating 1000, got %d", boardResponse.Data.Rating)
 	}
-	if signupResponse.Data.Entry.EquipmentScore <= 0 {
-		t.Fatal("expected equipment_score to remain available as breakdown field")
+	if len(boardResponse.Data.Leaderboard) == 0 {
+		t.Fatal("expected rating leaderboard entries")
 	}
 
 	var currentResponse struct {
@@ -3796,7 +4321,7 @@ func TestArenaSignupUsesPanelPowerScore(t *testing.T) {
 	}
 	doJSONRequest(t, server, http.MethodGet, "/api/v1/arena/current", nil, "", http.StatusOK, &currentResponse)
 	if len(currentResponse.Data.FeaturedEntries) == 0 {
-		t.Fatal("expected arena current featured entries after signup")
+		t.Fatal("expected arena current featured entries during rating week")
 	}
 	if currentResponse.Data.HighestPower < currentResponse.Data.LowestPower {
 		t.Fatalf("expected current highest power >= lowest power, got %d < %d", currentResponse.Data.HighestPower, currentResponse.Data.LowestPower)
@@ -3806,37 +4331,6 @@ func TestArenaSignupUsesPanelPowerScore(t *testing.T) {
 	}
 	if currentResponse.Data.FeaturedEntries[0].PanelPowerScore <= 0 {
 		t.Fatal("expected arena current featured entry panel_power_score")
-	}
-
-	var entriesResponse struct {
-		Data struct {
-			Items []struct {
-				CharacterID string `json:"character_id"`
-			} `json:"items"`
-		} `json:"data"`
-	}
-	doJSONRequest(t, server, http.MethodGet, "/api/v1/arena/entries?limit=10", nil, "", http.StatusOK, &entriesResponse)
-	if len(entriesResponse.Data.Items) == 0 {
-		t.Fatal("expected arena entries page after signup")
-	}
-
-	var leaderboardResponse struct {
-		Data struct {
-			Entries []struct {
-				Score      int    `json:"score"`
-				ScoreLabel string `json:"score_label"`
-			} `json:"entries"`
-		} `json:"data"`
-	}
-	doJSONRequest(t, server, http.MethodGet, "/api/v1/arena/leaderboard", nil, "", http.StatusOK, &leaderboardResponse)
-	if len(leaderboardResponse.Data.Entries) == 0 {
-		t.Fatal("expected arena leaderboard entries")
-	}
-	if leaderboardResponse.Data.Entries[0].ScoreLabel != "panel_power_score" {
-		t.Fatalf("expected panel_power_score leaderboard label, got %q", leaderboardResponse.Data.Entries[0].ScoreLabel)
-	}
-	if leaderboardResponse.Data.Entries[0].Score <= 0 {
-		t.Fatal("expected positive arena leaderboard score")
 	}
 }
 
@@ -3887,7 +4381,42 @@ func TestArenaHistoryEndpointsExposeResolvedBattles(t *testing.T) {
 		t.Fatalf("seed arena-eligible rank: %v", err)
 	}
 
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/arena/signup", nil, loginResponse.Data.AccessToken, http.StatusOK, nil)
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "bot-arena-history-rival",
+		"password": "verysecure",
+	}), "", http.StatusOK, nil)
+
+	var rivalLogin struct {
+		Data struct {
+			AccessToken string `json:"access_token"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "bot-arena-history-rival",
+		"password": "verysecure",
+	}), "", http.StatusOK, &rivalLogin)
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
+		"name":         "ArenaHistorianRival",
+		"class":        "mage",
+		"weapon_style": "spellbook",
+	}, rivalLogin.Data.AccessToken, http.StatusOK, nil)
+
+	var boardResponse struct {
+		Data struct {
+			Candidates []struct {
+				CharacterID string `json:"character_id"`
+			} `json:"candidates"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/arena/rating-board", nil, loginResponse.Data.AccessToken, http.StatusOK, &boardResponse)
+	if len(boardResponse.Data.Candidates) == 0 {
+		t.Fatal("expected arena rating candidates")
+	}
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/arena/rating-challenges", map[string]any{
+		"target_character_id": boardResponse.Data.Candidates[0].CharacterID,
+	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
 
 	currentNow = time.Date(2026, 4, 2, 10, 0, 0, 0, loc)
 
@@ -4128,6 +4657,20 @@ func asStringValue(value any) string {
 func doJSONRequest(t *testing.T, server *Server, method, path string, body any, bearerToken string, expectedStatus int, target any) {
 	t.Helper()
 
+	legacyRouteID := ""
+	if method == http.MethodPost && path == "/api/v1/characters" && expectedStatus == http.StatusOK {
+		if payloadMap, ok := body.(map[string]any); ok {
+			className := strings.TrimSpace(asStringValue(payloadMap["class"]))
+			weaponStyle := strings.TrimSpace(asStringValue(payloadMap["weapon_style"]))
+			if routeID, ok := legacyCreateRouteID(className, weaponStyle); ok {
+				legacyRouteID = routeID
+				body = map[string]any{
+					"name": payloadMap["name"],
+				}
+			}
+		}
+	}
+
 	var payload []byte
 	var err error
 	if body != nil {
@@ -4154,6 +4697,44 @@ func doJSONRequest(t *testing.T, server *Server, method, path string, body any, 
 
 	if target != nil {
 		decodeJSON(t, recorder, target)
+	}
+
+	if legacyRouteID != "" {
+		account, err := server.authService.Authenticate(bearerToken)
+		if err != nil {
+			t.Fatalf("failed to authenticate legacy create flow in test helper: %v", err)
+		}
+		summary, ok := server.characterService.GetCharacterByAccount(account)
+		if !ok {
+			t.Fatal("expected character after creation in legacy create flow")
+		}
+		if _, err := server.characterService.GrantSeasonXP(summary.CharacterID, 5000); err != nil {
+			t.Fatalf("failed to grant season xp in legacy create flow: %v", err)
+		}
+
+		doJSONRequest(t, server, http.MethodPost, "/api/v1/me/profession-route", map[string]any{
+			"route_id": legacyRouteID,
+		}, bearerToken, http.StatusOK, nil)
+		return
+	}
+}
+
+func legacyCreateRouteID(className, weaponStyle string) (string, bool) {
+	switch {
+	case className == "warrior" && weaponStyle == "sword_shield":
+		return "tank", true
+	case className == "warrior" && weaponStyle == "great_axe":
+		return "physical_burst", true
+	case className == "mage" && weaponStyle == "staff":
+		return "aoe_burst", true
+	case className == "mage" && weaponStyle == "spellbook":
+		return "single_burst", true
+	case className == "priest" && weaponStyle == "scepter":
+		return "curse", true
+	case className == "priest" && weaponStyle == "holy_tome":
+		return "healing_support", true
+	default:
+		return "", false
 	}
 }
 

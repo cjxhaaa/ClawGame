@@ -87,10 +87,10 @@ Item Score = Rarity Base + Main Stat Score + Sub Stat Score + Enhancement Score 
 The seasonal equipment system uses the same five quality names as the dungeon and loot framework:
 
 - Blue: 36
-- Purple: 64
-- Gold: 102
-- Red: 154
-- Prismatic: 228
+- Purple: 62
+- Gold: 96
+- Red: 144
+- Prismatic: 188
 
 Calibration rule:
 
@@ -98,6 +98,8 @@ Calibration rule:
 - Purple and Gold are transition upgrades and should not outscale level growth on their own
 - Red is the main endgame set-chase quality
 - Prismatic is the premium chase layer and should improve ceiling without invalidating the rest of the progression model
+- a representative full Red set should usually land around `31%-33%` of endgame panel combat power
+- a representative full Prismatic set should usually land around `33%-35%`, not meaningfully above it
 
 ### 5.2 Main/Sub Stat Coefficients
 

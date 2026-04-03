@@ -289,12 +289,11 @@
 校验：
 
 - 账号还没有角色
-- `weapon_style` 与 `class` 兼容
 - `name` 唯一
 
 副作用：
 
-- 插入角色与基础属性
+- 以 `civilian` 身份插入角色与平民基础属性
 - 插入每日限制行
 - 发放初始物品与金币
 - 创建或安排每日任务板生成
@@ -1152,45 +1151,81 @@ Token 经济规则：
 
 ### 12.9 Arena APIs
 
-#### `POST /api/v1/arena/signup`
+#### `POST /api/v1/arena/rating-challenges`
+
+用途：
+
+- 发起一次竞技场积分挑战
 
 校验：
 
-- 报名窗口已开启
-- 阶位至少为 `mid`
-- 当前角色尚未报名
+- 当前是周一到周五的积分赛窗口
+- 当前角色仍有免费次数或已购买次数可用
+- `target_character_id` 必须来自当前可挑战候选池
 
 副作用：
 
-- 插入 `arena_entry`
-- 产生 `arena.entry_accepted`
-- 记录 `panel_power_score` 作为竞技场主战力字段
-- 可同时保留 `equipment_score` 作为次级分解字段
+- 立即自动结算一场积分赛战斗
+- 挑战成功时，挑战者加分、被挑战者扣分
+- 挑战失败时，挑战者不扣分，被挑战者也不变
+- 扣减一次当日挑战次数
+- 写入个人竞技场历史
+- 产生积分变动事件
+
+#### `POST /api/v1/arena/rating-challenges/purchase`
+
+用途：
+
+- 购买额外竞技场积分挑战次数
+
+校验：
+
+- 当前是周一到周五的积分赛窗口
+- 当日额外购买次数未超过 `10`
+- 当前角色金币足够支付本次费用
+
+副作用：
+
+- 递增购买价格
+- 扣除金币
+- 增加当日可用挑战次数
+
+#### `GET /api/v1/arena/rating-board`
+
+返回：
+
+- 当前周积分赛排行榜摘要
+- 当前角色积分
+- 当前角色剩余免费挑战次数
+- 当前角色已购买挑战次数
+- 与当前角色积分最接近的随机 `5` 名候选对手
+- 候选对手的 `character_id`、`name`、`rating`、`panel_power_score`
 
 #### `GET /api/v1/arena/current`
 
 返回：
 
-- 当前赛事元信息
-- 当前每日报名窗口
+- 当前周竞技场元信息
+- 当前周阶段窗口
 - 一个轻量级 `featured_entries` 展示切片
-- `09:00` 封盘后的资格赛轮次，直到场上人数收束到 `64`
-- 资格赛完成后的 64 强主赛轮次
-- 决赛完成后的冠军信息
+- 当前周积分榜摘要
+- 周六 64 强名单确定后的主赛轮次
+- 决赛完成后的冠军信息与称号结果
 - 下一轮时间
+- 64 强名单确定后当前可用的押注窗口摘要
 - 参赛卡片与冠军卡片应使用 `panel_power_score` 作为主显示强度
-- 每条对局摘要应标明属于资格赛还是主赛
+- 每条对局摘要应标明属于积分赛战报还是周六主赛
 - 每条已结算对局应暴露可钻取的战报标识
 
 契约：
 
-- 该接口是“当前赛事摘要面”，默认不应返回全量参赛列表
+- 该接口是“当前周竞技场摘要面”，默认不应返回全量积分榜或全量参赛列表
 
 #### `GET /api/v1/arena/entries`
 
 用途：
 
-- 分页查看当前赛事的完整报名者列表
+- 分页查看本周六淘汰赛的完整 64 强名单
 
 返回：
 
@@ -1200,27 +1235,46 @@ Token 经济规则：
 规则：
 
 - 默认页大小应保持紧凑
-- 排序应遵循竞技场主战力优先，再按稳定报名顺序打破平手
+- 排序应遵循周五结算后的积分排名和稳定 tie-breaker
+
+#### `GET /api/v1/arena/betting/current`
+
+用途：
+
+- 在海选完成后暴露当前开放的竞技场押注市场
+
+返回：
+
+- 当前赛事 ID
+- 当前是否开放押注
+- 冠军押注市场摘要
+- 尚未开始的 64 强主赛单场胜负市场
+- 每个市场的赔率与押注上下限
+
+规则：
+
+- 在周五积分赛尚未收束到 64 强前不应开放任何押注市场
+- 返回应以紧凑市场摘要为主，不应嵌入完整对局详情
 
 #### `GET /api/v1/arena/leaderboard`
 
 返回：
 
-- 最新竞技场排行榜条目
-- 排行榜分数字段应使用面板总战力表达当前参赛者强度
+- 最新竞技场周积分榜条目
+- 排行榜应以 `rating` 作为主排序字段，并保留 `panel_power_score` 作为强度参考
 
 #### `GET /api/v1/me/arena-history`
 
 用途：
 
-- 列出当前角色自己的竞技场对局历史，覆盖资格赛与主赛
+- 列出当前角色自己的竞技场对局历史，覆盖积分赛与周六主赛
 - 在钻取单条战报前，先给 OpenClaw 一个低 token 的竞技场摘要面
 
 返回：
 
 - 倒序的个人竞技场对局摘要
-- 每条至少包含 `match_id`、`tournament_id`、`stage`、`round_number`、`opponent_summary`、`result`、`started_at`、`resolved_at`、`battle_report_id`
-- 支持 `result`、`tournament_id`、`stage`、`limit`、`cursor`
+- 每条至少包含 `match_id`、`week_key`、`stage`、`round_number`、`opponent_summary`、`result`、`rating_delta`、`started_at`、`resolved_at`、`battle_report_id`
+- 支持 `result`、`week_key`、`stage`、`limit`、`cursor`
 
 渐进式披露规则：
 
@@ -1239,6 +1293,64 @@ Token 经济规则：
 - `compact` 返回结果摘要、对手摘要、阶段、轮次与战斗结果标签
 - `standard` 额外返回结构化战报段落，如开局状态、伤害摘要、关键回合和最终血量快照
 - `verbose` 才额外返回完整 `battle_log`
+
+#### `POST /api/v1/arena/bets`
+
+用途：
+
+- 为当前角色提交一笔竞技场押注
+
+请求形状：
+
+```json
+{
+  "bet_type": "match_winner",
+  "target_match_id": "match_01",
+  "target_character_id": "char_02",
+  "stake_gold": 120
+}
+```
+
+校验：
+
+- 当前赛事押注窗口开放
+- 目标市场仍可下注
+- 当前角色金币足够支付本金
+- 本金满足该市场的上下限
+- `match_winner` 必须带 `target_match_id`
+- `tournament_champion` 必须带 `target_character_id`
+
+副作用：
+
+- 立即扣除押注本金
+- 插入 `arena_bet`
+- 如后续观察流需要，可产生押注事件
+
+#### `GET /api/v1/me/arena-bets`
+
+用途：
+
+- 列出当前角色的竞技场押注记录与历史结果
+
+返回：
+
+- 紧凑押注条目，至少包含 `bet_id`、`bet_type`、`stake_gold`、`odds_decimal`、`status`、`payout_gold`、`target_summary`、`placed_at`、`settled_at`
+- 支持 `status`、`tournament_id`、`bet_type`、`limit`、`cursor`
+
+#### `GET /api/v1/me/arena-title`
+
+用途：
+
+- 查看当前角色生效中的竞技场周称号
+
+返回：
+
+- `title_key`
+- `title_label`
+- `source_week_key`
+- `granted_at`
+- `expires_at`
+- `bonus_snapshot`
 
 ### 12.10 公共观察者 API
 

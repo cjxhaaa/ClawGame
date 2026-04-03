@@ -434,10 +434,22 @@ Fields:
 - `starts_at` `timestamptz` not null
 - `qualifier_rounds_count` `int` not null default 0
 - `real_entry_count` `int` not null default 0
+- `npc_entry_count` `int` not null default 0
 - `qualified_count` `int` not null default 0
+- `base_prize_pool_gold` `int` not null default 0
+- `entrant_bonus_gold` `int` not null default 0
+- `real_entry_bonus_total_gold` `int` not null default 0
+- `npc_entry_bonus_total_gold` `int` not null default 0
+- `total_prize_pool_gold` `int` not null default 0
+- `prize_distribution_json` `jsonb` null
 - `completed_at` `timestamptz` null
 - `bracket_size` `int` not null
 - `snapshot_json` `jsonb` null
+
+Notes:
+
+- this table should later represent one weekly arena cycle rather than one daily tournament
+- `snapshot_json` should be able to hold weekday rating-board summaries, Saturday top-64 seeds, and Sunday title-payout outcomes
 
 ### 9.19 `arena_entries`
 
@@ -454,15 +466,23 @@ Fields:
 - `seed_number` `int` null
 - `panel_power_score` `int` not null
 - `equipment_score` `int` not null
+- `entrant_bonus_gold` `int` not null default 0
+- `entrant_origin` `text` not null default `'player'`
 - `signed_up_at` `timestamptz` not null
 - `eliminated_round` `int` null
 - `eliminated_stage` `text` null
 - `final_rank` `int` null
+- `prize_gold_paid` `int` not null default 0
 
 Indexes:
 
 - unique index on `(tournament_id, character_id)`
 - index on `tournament_id`
+
+Notes:
+
+- `entrant_origin` distinguishes real Bot signups from system-funded NPC filler entrants
+- every entrant snapshot keeps the fixed `entrant_bonus_gold` that was added into that tournament's prize pool
 
 ### 9.20 `arena_matches`
 
@@ -496,7 +516,86 @@ Indexes:
 - index on `(left_character_id, resolved_at)`
 - index on `(right_character_id, resolved_at)`
 
-### 9.21 `leaderboard_snapshots`
+### 9.21 `arena_bets`
+
+Purpose:
+
+- stores personal arena betting slips for match-winner and champion markets
+
+Fields:
+
+- `id` `text` primary key
+- `tournament_id` `text` not null references `arena_tournaments(id)`
+- `character_id` `text` not null references `characters(id)`
+- `bet_type` `text` not null
+- `target_match_id` `text` null references `arena_matches(id)`
+- `target_character_id` `text` null references `characters(id)`
+- `odds_decimal` `numeric(8,4)` not null
+- `stake_gold` `int` not null
+- `status` `text` not null
+- `payout_gold` `int` not null default 0
+- `placed_at` `timestamptz` not null
+- `settled_at` `timestamptz` null
+- `snapshot_json` `jsonb` null
+
+Indexes:
+
+- index on `(character_id, placed_at desc)`
+- index on `(tournament_id, bet_type, status)`
+- index on `(target_match_id)`
+
+Notes:
+
+- `bet_type` should initially support `match_winner` and `tournament_champion`
+- exactly one of `target_match_id` or `target_character_id` should be populated depending on the market type
+
+### 9.22 `arena_rating_states`
+
+Purpose:
+
+- stores each character's current weekly arena rating, remaining challenge counts, and purchase progression
+
+Fields:
+
+- `id` `text` primary key
+- `week_key` `text` not null
+- `character_id` `text` not null references `characters(id)`
+- `rating` `int` not null
+- `free_attempts_remaining` `int` not null
+- `purchased_attempts_used` `int` not null
+- `purchased_attempts_cap` `int` not null
+- `purchase_price_step` `int` not null
+- `last_challenged_at` `timestamptz` null
+- `updated_at` `timestamptz` not null
+
+Indexes:
+
+- unique index on `(week_key, character_id)`
+- index on `(week_key, rating desc)`
+
+### 9.23 `character_titles`
+
+Purpose:
+
+- stores temporary title rewards and expiration windows applied to a character
+
+Fields:
+
+- `id` `text` primary key
+- `character_id` `text` not null references `characters(id)`
+- `title_family` `text` not null
+- `title_key` `text` not null
+- `source_scope` `text` not null
+- `bonus_snapshot_json` `jsonb` not null
+- `granted_at` `timestamptz` not null
+- `expires_at` `timestamptz` not null
+
+Indexes:
+
+- index on `(character_id, title_family)`
+- index on `(expires_at)`
+
+### 9.24 `leaderboard_snapshots`
 
 Purpose:
 
@@ -514,7 +613,7 @@ Indexes:
 
 - index on `(leaderboard_type, scope_key)`
 
-### 9.22 `world_events`
+### 9.25 `world_events`
 
 Purpose:
 

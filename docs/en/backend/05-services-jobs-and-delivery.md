@@ -175,41 +175,43 @@ Responsibilities:
 
 - create upcoming tournament row with `signup_open`
 
-#### Signup close and seeding job
-
-Schedule:
-
-- every day at `09:00`
+#### Weekday rating-ladder job
 
 Responsibilities:
 
-- move tournament to `signup_closed`
-- freeze the full signed entrant pool
-- repeatedly build qualifier rounds until the live field becomes exactly 64
-- backfill with median-strength NPC entrants if real signups are below 64
-- create `arena_matches`
+- open rating challenges from Monday to Friday
+- reset each character's `3` free daily challenge attempts
+- allow purchasing up to `10` extra attempts per day
+- maintain a nearby-rating candidate pool so each character can see `5` random challengers from an adjacent band
 
-#### Round resolution job
-
-Schedule:
-
-- every 5 minutes while a tournament is `in_progress`
+#### Friday qualification lock job
 
 Responsibilities:
 
-- find `ready` matches
-- simulate combat
-- persist battle logs and compact battle reports
-- advance winners
+- freeze the weekly rating board at Friday close
+- select the top `64` into the Saturday elimination bracket
+- backfill with NPC entrants if the live field is below `64`
+- create Saturday bracket matches
+- open champion-bet and Saturday match-winner markets
+
+#### Saturday bracket-resolution job
+
+Responsibilities:
+
+- resolve the Saturday top-64 bracket rounds
+- persist battle logs and compact battle reports for every match
+- settle resolved match-winner bets
 - write per-character arena-history rows or equivalent queryable personal-history indexes
 - emit `arena.match_resolved`
 
-#### Finalization job
+#### Sunday finalization job
 
 Responsibilities:
 
 - mark final standings
-- grant rewards
+- settle champion bets
+- assign one-week arena titles for `top 32`, `top 16`, `top 8`, `top 4`, `runner-up`, and `champion`
+- overwrite the older arena title and refresh the duration when a new one is earned
 - write leaderboard snapshot
 - emit `arena.completed`
 

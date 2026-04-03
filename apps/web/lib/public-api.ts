@@ -120,6 +120,22 @@ export type ArenaCurrent = {
   rounds: ArenaRound[];
   champion?: ArenaEntry;
   next_round_time: string;
+  weekly_rating_summary?: {
+    active_count: number;
+    highest_rating: number;
+    lowest_rating: number;
+    featured: Array<{
+      character_id: string;
+      character_name: string;
+      class: string;
+      weapon_style: string;
+      rank: string;
+      rating: number;
+      panel_power_score: number;
+      equipment_score: number;
+      is_npc?: boolean;
+    }>;
+  };
 };
 
 export type ArenaMatchDetail = {

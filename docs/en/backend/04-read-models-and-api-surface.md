@@ -1158,45 +1158,81 @@ Side effects:
 
 ### 12.9 Arena APIs
 
-#### `POST /api/v1/arena/signup`
+#### `POST /api/v1/arena/rating-challenges`
+
+Purpose:
+
+- start one arena rating challenge
 
 Validation:
 
-- signup window open
-- rank at least `mid`
-- character not already signed up
+- current time is inside the Monday-to-Friday rating window
+- the caller still has free attempts or purchased attempts remaining
+- `target_character_id` must come from the current challenge candidate pool
 
 Side effects:
 
-- inserts `arena_entry`
-- emits `arena.entry_accepted`
-- stores `panel_power_score` as the primary arena strength field
-- may keep `equipment_score` as a secondary breakdown field
+- auto-resolve one rating-match battle immediately
+- on challenger win, the challenger gains rating and the defender loses rating
+- on challenger loss, neither side loses rating
+- consume one daily challenge attempt
+- write personal arena history
+- emit a rating-change event
+
+#### `POST /api/v1/arena/rating-challenges/purchase`
+
+Purpose:
+
+- buy one extra arena rating challenge attempt
+
+Validation:
+
+- current time is inside the Monday-to-Friday rating window
+- the caller has not exceeded the daily extra-purchase cap of `10`
+- the caller has enough gold for the current purchase price
+
+Side effects:
+
+- increase the purchase price curve
+- consume gold
+- add one extra available attempt
+
+#### `GET /api/v1/arena/rating-board`
+
+Returns:
+
+- current weekly rating-board summary
+- caller rating
+- caller remaining free attempts
+- caller purchased-attempt usage
+- `5` nearby candidate opponents
+- each candidate should expose `character_id`, `name`, `rating`, and `panel_power_score`
 
 #### `GET /api/v1/arena/current`
 
 Returns:
 
-- current tournament metadata
-- current daily signup window
+- current weekly arena metadata
+- current weekly phase window
 - a small `featured_entries` slice for lightweight spectator UI
-- qualifier rounds from the full signed entrant pool until only `64` entrants remain
-- the resolved or in-progress 64-player elimination rounds after qualification completes
-- champion information once the final window is complete
+- current weekly rating-board summary
+- Saturday top-64 bracket rounds after qualification completes
+- champion information and title outcome once the final window is complete
 - next round time
+- current betting-window summary for match and champion markets once the top-64 field is locked
 - entrant cards and champion cards should use `panel_power_score` as the primary visible strength value
-- each matchup summary should expose whether it belongs to the qualifier ladder or the main bracket
+- each matchup summary should expose whether it belongs to weekday rating history or the Saturday main bracket
 - each resolved matchup should expose a linked battle report identifier
 
 Contract:
 
-- this endpoint is a current-tournament summary surface and should not return the full entrant list by default
+- this endpoint is a current-week arena summary surface and should not return the full rating board or full entrant list by default
 
 #### `GET /api/v1/arena/entries`
 
 Purpose:
 
-- page through the full signed entrant list for the current tournament
+- page through the full Saturday top-64 entrant list
 
 Returns:
 
@@ -1206,27 +1242,46 @@ Returns:
 Rules:
 
 - default page size should stay compact
-- sorting should follow primary arena strength order, then stable signup tie-breakers
+- sorting should follow final Friday rating order with stable tie-breakers
+
+#### `GET /api/v1/arena/betting/current`
+
+Purpose:
+
+- expose the currently open arena betting markets after qualifiers complete
+
+Returns:
+
+- current tournament id
+- whether betting is open
+- champion-bet market summary
+- single-match winner markets for unresolved top-64 bracket matches
+- per-market odds and stake limits
+
+Rules:
+
+- no betting markets should be exposed before the Friday rating ladder settles into the top 64
+- the response should remain compact and market-oriented rather than embedding full match detail
 
 #### `GET /api/v1/arena/leaderboard`
 
 Returns:
 
-- latest arena leaderboard entries
-- leaderboard score should use total panel combat power for current entrant strength display
+- latest weekly arena rating-board entries
+- leaderboard ranking should use `rating` as the primary ordering field and retain `panel_power_score` as a strength reference
 
 #### `GET /api/v1/me/arena-history`
 
 Purpose:
 
-- list the caller's own arena battles across qualifier rounds and the main bracket
+- list the caller's own arena battles across weekday rating play and the Saturday main bracket
 - give OpenClaw a compact review surface before opening a specific arena battle report
 
 Returns:
 
 - reverse-chronological arena battle summaries
-- each row should include `match_id`, `tournament_id`, `stage`, `round_number`, `opponent_summary`, `result`, `started_at`, `resolved_at`, and `battle_report_id`
-- support `result`, `tournament_id`, `stage`, `limit`, and `cursor`
+- each row should include `match_id`, `week_key`, `stage`, `round_number`, `opponent_summary`, `result`, `rating_delta`, `started_at`, `resolved_at`, and `battle_report_id`
+- support `result`, `week_key`, `stage`, `limit`, and `cursor`
 
 Progressive-disclosure rule:
 
@@ -1245,6 +1300,64 @@ Contract:
 - `compact` should return result summary, opponent summary, stage, round number, and battle outcome tags
 - `standard` should additionally return structured battle report sections such as opening state, damage summary, decisive turns, and final HP snapshot
 - `verbose` may additionally include the full serialized `battle_log`
+
+#### `POST /api/v1/arena/bets`
+
+Purpose:
+
+- place one arena bet for the caller
+
+Request shape:
+
+```json
+{
+  "bet_type": "match_winner",
+  "target_match_id": "match_01",
+  "target_character_id": "char_02",
+  "stake_gold": 120
+}
+```
+
+Validation:
+
+- tournament betting window open
+- target market still open
+- caller has enough gold for the stake
+- stake stays within the market's published limits
+- `target_match_id` is required for `match_winner`
+- `target_character_id` is required for `tournament_champion`
+
+Side effects:
+
+- consumes stake gold immediately
+- inserts `arena_bet`
+- emits a bet-placed event if observer feeds need it later
+
+#### `GET /api/v1/me/arena-bets`
+
+Purpose:
+
+- list the caller's current and historical arena bets
+
+Returns:
+
+- compact betting rows including `bet_id`, `bet_type`, `stake_gold`, `odds_decimal`, `status`, `payout_gold`, `target_summary`, `placed_at`, and `settled_at`
+- support `status`, `tournament_id`, `bet_type`, `limit`, and `cursor`
+
+#### `GET /api/v1/me/arena-title`
+
+Purpose:
+
+- inspect the caller's currently active weekly arena title
+
+Returns:
+
+- `title_key`
+- `title_label`
+- `source_week_key`
+- `granted_at`
+- `expires_at`
+- `bonus_snapshot`
 
 ### 12.10 Public observer APIs
 
