@@ -51,6 +51,7 @@ type EquipmentItem struct {
 	Name                  string                `json:"name"`
 	Slot                  string                `json:"slot"`
 	Rarity                string                `json:"rarity"`
+	SetID                 string                `json:"set_id,omitempty"`
 	RequiredClass         string                `json:"required_class,omitempty"`
 	RequiredWeaponStyle   string                `json:"required_weapon_style,omitempty"`
 	EnhancementLevel      int                   `json:"enhancement_level"`
@@ -68,10 +69,25 @@ type InventoryView struct {
 	EquipmentScore       int                              `json:"equipment_score"`
 	Equipped             []EquipmentItem                  `json:"equipped"`
 	Inventory            []EquipmentItem                  `json:"inventory"`
+	EquippedSetBonuses   []EquippedSetBonusView           `json:"equipped_set_bonuses"`
 	Consumables          []ConsumableStack                `json:"consumables"`
 	SlotEnhancements     []characters.SlotEnhancementView `json:"slot_enhancements"`
 	UpgradeHints         []UpgradeHint                    `json:"upgrade_hints"`
 	PotionLoadoutOptions []PotionLoadoutOption            `json:"potion_loadout_options"`
+}
+
+type EquippedSetBonusView struct {
+	SetID         string                  `json:"set_id"`
+	DisplayName   string                  `json:"display_name"`
+	EquippedCount int                     `json:"equipped_count"`
+	ActiveTiers   []int                   `json:"active_tiers"`
+	Bonuses       []EquippedSetTierEffect `json:"bonuses"`
+}
+
+type EquippedSetTierEffect struct {
+	Pieces      int    `json:"pieces"`
+	Description string `json:"description"`
+	Active      bool   `json:"active"`
 }
 
 type EnhancementQuote struct {
@@ -141,6 +157,7 @@ type catalogItem struct {
 	Name                string
 	Slot                string
 	Rarity              string
+	SetID               string
 	RequiredClass       string
 	RequiredWeaponStyle string
 	Stats               map[string]int
@@ -158,7 +175,6 @@ type consumableCatalogItem struct {
 	Family        string
 	Tier          int
 	PriceGold     int
-	MinRank       string
 	EffectSummary string
 	BuildingTypes []string
 }
@@ -285,9 +301,6 @@ func (s *Service) ListShopInventory(buildingType string, character characters.Su
 		if len(entry.BuildingTypes) > 0 && !containsString(entry.BuildingTypes, buildingType) {
 			continue
 		}
-		if !rankAtLeast(character.Rank, entry.MinRank) {
-			continue
-		}
 
 		items = append(items, ShopItem{
 			CatalogID:     entry.CatalogID,
@@ -320,7 +333,7 @@ func (s *Service) PurchaseShopItem(character characters.Summary, catalogID strin
 	}
 
 	entry, ok := consumableShopCatalogByID[strings.TrimSpace(catalogID)]
-	if !ok || !rankAtLeast(character.Rank, entry.MinRank) {
+	if !ok {
 		return InventoryView{}, nil, nil, 0, ErrCatalogNotFound
 	}
 
@@ -372,9 +385,6 @@ func (s *Service) GrantItemFromCatalog(character characters.Summary, catalogID s
 	template, ok := catalogByID(strings.TrimSpace(catalogID))
 	if !ok {
 		return InventoryView{}, EquipmentItem{}, ErrCatalogNotFound
-	}
-	if !itemCompatible(character, EquipmentItem{RequiredClass: template.RequiredClass, RequiredWeaponStyle: template.RequiredWeaponStyle}) {
-		return InventoryView{}, EquipmentItem{}, ErrItemNotEquippable
 	}
 
 	reward := buildEquipmentItemFromCatalog(template, "inventory")
@@ -642,7 +652,7 @@ func (s *Service) ensureConsumablesForCharacterLocked(character characters.Summa
 		return copied
 	}
 
-	starter := starterConsumablesFor(character.Rank)
+	starter := starterConsumablesFor()
 	s.consumablesByCharacter[character.CharacterID] = starter
 
 	copied := make(map[string]int, len(starter))
@@ -702,6 +712,7 @@ func buildEquipmentItemFromCatalog(catalog catalogItem, state string) EquipmentI
 		Name:                catalog.Name,
 		Slot:                catalog.Slot,
 		Rarity:              catalog.Rarity,
+		SetID:               catalog.SetID,
 		RequiredClass:       catalog.RequiredClass,
 		RequiredWeaponStyle: catalog.RequiredWeaponStyle,
 		EnhancementLevel:    0,
@@ -869,6 +880,13 @@ func qualityRollBand(rarity string) (float64, float64) {
 	}
 }
 
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
 func reforgeStoneCost(item EquipmentItem) int {
 	switch strings.ToLower(strings.TrimSpace(item.Rarity)) {
 	case "blue":
@@ -995,10 +1013,13 @@ func buildView(character characters.Summary, items []EquipmentItem, consumables 
 		}
 	}
 
+	setBonuses := buildEquippedSetBonusViews(equipped)
+
 	return InventoryView{
 		EquipmentScore:       score,
 		Equipped:             equipped,
 		Inventory:            bag,
+		EquippedSetBonuses:   setBonuses,
 		Consumables:          buildConsumableStacks(consumables),
 		SlotEnhancements:     buildSlotEnhancementViews(slotEnhancements),
 		UpgradeHints:         buildUpgradeHints(character, equipped, bag),
@@ -1097,9 +1118,6 @@ func buildUpgradeHints(character characters.Summary, equipped []EquipmentItem, b
 func buildPotionLoadoutOptions(character characters.Summary, consumables map[string]int) []PotionLoadoutOption {
 	options := make([]PotionLoadoutOption, 0, len(consumableShopCatalog))
 	for _, entry := range consumableShopCatalog {
-		if !rankAtLeast(character.Rank, entry.MinRank) {
-			continue
-		}
 		quantity := consumables[entry.CatalogID]
 		options = append(options, PotionLoadoutOption{
 			CatalogID:     entry.CatalogID,
@@ -1164,8 +1182,8 @@ func buildConsumableStack(entry consumableCatalogItem, quantity int) ConsumableS
 	}
 }
 
-func starterConsumablesFor(rank string) map[string]int {
-	potions := combat.DefaultPotionBag(rank)
+func starterConsumablesFor() map[string]int {
+	potions := combat.DefaultPotionBag()
 	items := make(map[string]int, len(potions))
 	for _, potion := range potions {
 		quantity := potion.Quantity
@@ -1258,13 +1276,16 @@ func buildEquipmentShopItems(character characters.Summary) []ShopItem {
 
 func deriveStats(base characters.StatsSnapshot, items []EquipmentItem, slotEnhancements map[string]int) characters.StatsSnapshot {
 	derived := base
+	equipped := make([]EquipmentItem, 0, len(items))
 	for _, item := range items {
 		if item.State != "equipped" {
 			continue
 		}
+		equipped = append(equipped, item)
 		applyEquipmentStatMap(&derived, scaledBaseStats(item, slotEnhancements[item.Slot]))
 		applyPassiveAffix(&derived, item.PassiveAffix)
 	}
+	applyEquippedSetBonuses(&derived, equipped)
 	return derived
 }
 
@@ -1275,6 +1296,88 @@ func scaledBaseStats(item EquipmentItem, enhancementLevel int) map[string]float6
 		values[key] = float64(value) * multiplier
 	}
 	return values
+}
+
+func buildEquippedSetBonusViews(equipped []EquipmentItem) []EquippedSetBonusView {
+	counts := equippedSetCounts(equipped)
+	if len(counts) == 0 {
+		return []EquippedSetBonusView{}
+	}
+
+	views := make([]EquippedSetBonusView, 0, len(counts))
+	for _, setID := range orderedSetIDs() {
+		count := counts[setID]
+		if count <= 0 {
+			continue
+		}
+		def, ok := dungeonSetDefinitions[setID]
+		if !ok {
+			continue
+		}
+		activeTiers := activeSetTiers(count)
+		bonuses := make([]EquippedSetTierEffect, 0, len(def.Tiers))
+		for _, tier := range def.Tiers {
+			bonuses = append(bonuses, EquippedSetTierEffect{
+				Pieces:      tier.Pieces,
+				Description: tier.Description,
+				Active:      count >= tier.Pieces,
+			})
+		}
+		views = append(views, EquippedSetBonusView{
+			SetID:         setID,
+			DisplayName:   def.DisplayName,
+			EquippedCount: count,
+			ActiveTiers:   activeTiers,
+			Bonuses:       bonuses,
+		})
+	}
+	return views
+}
+
+func activeSetTiers(count int) []int {
+	tiers := []int{}
+	for _, pieces := range []int{2, 4, 6} {
+		if count >= pieces {
+			tiers = append(tiers, pieces)
+		}
+	}
+	return tiers
+}
+
+func equippedSetCounts(equipped []EquipmentItem) map[string]int {
+	counts := map[string]int{}
+	for _, item := range equipped {
+		setID := strings.TrimSpace(item.SetID)
+		if setID == "" {
+			continue
+		}
+		counts[setID]++
+	}
+	return counts
+}
+
+func orderedSetIDs() []string {
+	return []string{
+		"gravewake_bastion",
+		"briarbound_sight",
+		"sunscar_assault",
+		"nightglass_arcanum",
+	}
+}
+
+func applyEquippedSetBonuses(stats *characters.StatsSnapshot, equipped []EquipmentItem) {
+	for setID, count := range equippedSetCounts(equipped) {
+		def, ok := dungeonSetDefinitions[setID]
+		if !ok {
+			continue
+		}
+		for _, tier := range def.Tiers {
+			if count < tier.Pieces {
+				continue
+			}
+			applyEquipmentStatMap(stats, tier.StatSnapshot)
+		}
+	}
 }
 
 func applyPassiveAffix(stats *characters.StatsSnapshot, affix map[string]any) {
@@ -1330,6 +1433,57 @@ func applyEquipmentStatMap(stats *characters.StatsSnapshot, values map[string]fl
 			stats.MagicMastery += value / 100
 		}
 	}
+}
+
+type setTierDefinition struct {
+	Pieces       int
+	Description  string
+	StatSnapshot map[string]float64
+}
+
+type setDefinition struct {
+	SetID       string
+	DisplayName string
+	Tiers       []setTierDefinition
+}
+
+var dungeonSetDefinitions = map[string]setDefinition{
+	"gravewake_bastion": {
+		SetID:       "gravewake_bastion",
+		DisplayName: "Gravewake Bastion",
+		Tiers: []setTierDefinition{
+			{Pieces: 2, Description: "+10% max HP, +8% physical defense, +8% magic defense", StatSnapshot: map[string]float64{"max_hp": 10, "physical_defense": 8, "magic_defense": 8}},
+			{Pieces: 4, Description: "Gain additional block and sustain pressure for long room chains", StatSnapshot: map[string]float64{"block_rate": 8, "healing_power": 10}},
+			{Pieces: 6, Description: "Gain extra bulwark reserve for low-HP stabilization", StatSnapshot: map[string]float64{"max_hp": 12, "block_rate": 6}},
+		},
+	},
+	"briarbound_sight": {
+		SetID:       "briarbound_sight",
+		DisplayName: "Briarbound Sight",
+		Tiers: []setTierDefinition{
+			{Pieces: 2, Description: "+10% precision, +8% speed", StatSnapshot: map[string]float64{"precision": 10, "speed": 8}},
+			{Pieces: 4, Description: "Gain sharper critical pressure on focus-fire openings", StatSnapshot: map[string]float64{"crit_rate": 12, "crit_damage": 18}},
+			{Pieces: 6, Description: "Gain finishing power and defense-piercing hunt pressure", StatSnapshot: map[string]float64{"physical_mastery": 15, "precision": 12}},
+		},
+	},
+	"sunscar_assault": {
+		SetID:       "sunscar_assault",
+		DisplayName: "Sunscar Assault",
+		Tiers: []setTierDefinition{
+			{Pieces: 2, Description: "+12% physical attack", StatSnapshot: map[string]float64{"physical_attack": 12}},
+			{Pieces: 4, Description: "Gain stronger burst windows on opening strikes", StatSnapshot: map[string]float64{"physical_attack": 20, "speed": 8}},
+			{Pieces: 6, Description: "Gain elite-break pressure and execution tempo", StatSnapshot: map[string]float64{"physical_mastery": 18, "speed": 10}},
+		},
+	},
+	"nightglass_arcanum": {
+		SetID:       "nightglass_arcanum",
+		DisplayName: "Nightglass Arcanum",
+		Tiers: []setTierDefinition{
+			{Pieces: 2, Description: "+12% magic attack, +10% healing power", StatSnapshot: map[string]float64{"magic_attack": 12, "healing_power": 10}},
+			{Pieces: 4, Description: "Gain stronger spell chaining and echo throughput", StatSnapshot: map[string]float64{"magic_mastery": 16, "healing_power": 12}},
+			{Pieces: 6, Description: "Gain sustained casting tempo and amplified spell output", StatSnapshot: map[string]float64{"magic_attack": 20, "magic_mastery": 12, "speed": 6}},
+		},
+	},
 }
 
 func enhancementPreviewPct(level int) float64 {
@@ -1431,20 +1585,6 @@ func containsString(items []string, target string) bool {
 	return false
 }
 
-func rankAtLeast(currentRank, requiredRank string) bool {
-	order := map[string]int{
-		"low":  1,
-		"mid":  2,
-		"high": 3,
-	}
-
-	if strings.TrimSpace(requiredRank) == "" {
-		return true
-	}
-
-	return order[strings.TrimSpace(currentRank)] >= order[strings.TrimSpace(requiredRank)]
-}
-
 func (s *Service) BuildPotionLoadout(character characters.Summary, potionIDs []string) ([]combat.PotionItem, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1468,8 +1608,7 @@ func (s *Service) BuildPotionLoadout(character characters.Summary, potionIDs []s
 			return nil, ErrConsumableMissing
 		}
 		seen[potionID] = struct{}{}
-		entry, ok := consumableShopCatalogByID[potionID]
-		if !ok || !rankAtLeast(character.Rank, entry.MinRank) {
+		if _, ok := consumableShopCatalogByID[potionID]; !ok {
 			return nil, ErrConsumableMissing
 		}
 		quantity := consumables[potionID]
@@ -1531,6 +1670,7 @@ func catalogByID(catalogID string) (catalogItem, bool) {
 			Name:                entry.Name,
 			Slot:                entry.Slot,
 			Rarity:              entry.Rarity,
+			SetID:               entry.SetID,
 			RequiredClass:       entry.RequiredClass,
 			RequiredWeaponStyle: entry.RequiredWeaponStyle,
 			Stats:               copyStats(entry.Stats),
@@ -1543,6 +1683,7 @@ func catalogByID(catalogID string) (catalogItem, bool) {
 			Name:                entry.Name,
 			Slot:                entry.Slot,
 			Rarity:              entry.Rarity,
+			SetID:               entry.SetID,
 			RequiredClass:       entry.RequiredClass,
 			RequiredWeaponStyle: entry.RequiredWeaponStyle,
 			Stats:               copyStats(entry.Stats),
@@ -1555,6 +1696,7 @@ func catalogByID(catalogID string) (catalogItem, bool) {
 			Name:                entry.Name,
 			Slot:                entry.Slot,
 			Rarity:              entry.Rarity,
+			SetID:               entry.SetID,
 			RequiredClass:       entry.RequiredClass,
 			RequiredWeaponStyle: entry.RequiredWeaponStyle,
 			Stats:               copyStats(entry.Stats),
@@ -1642,133 +1784,193 @@ var starterCatalog = map[string]catalogItem{
 	},
 }
 
-var dungeonRewardCatalog = map[string]catalogItem{
-	"gravewake_marchers_blue": {
-		CatalogID: "gravewake_marchers_blue",
-		Name:      "Gravewake Marchers",
-		Slot:      "boots",
-		Rarity:    "blue",
-		Stats:     map[string]int{"speed": 4, "max_hp": 45, "physical_defense": 4},
-	},
-	"gravewake_shackles_blue": {
-		CatalogID: "gravewake_shackles_blue",
-		Name:      "Gravewake Shackles",
-		Slot:      "wrist",
-		Rarity:    "blue",
-		Stats:     map[string]int{"physical_attack": 8, "speed": 2},
-	},
-	"gravewake_seal_purple": {
-		CatalogID: "gravewake_seal_purple",
-		Name:      "Gravewake Seal",
-		Slot:      "ring",
-		Rarity:    "purple",
-		Stats:     map[string]int{"magic_attack": 10, "physical_attack": 10},
-	},
-	"gravewake_hood_purple": {
-		CatalogID: "gravewake_hood_purple",
-		Name:      "Gravewake Hood",
-		Slot:      "head",
-		Rarity:    "purple",
-		Stats:     map[string]int{"max_hp": 60, "physical_defense": 6, "magic_defense": 6},
-	},
-	"gravewake_reliquary_gold": {
-		CatalogID: "gravewake_reliquary_gold",
-		Name:      "Gravewake Reliquary",
-		Slot:      "necklace",
-		Rarity:    "gold",
-		Stats:     map[string]int{"max_hp": 45, "magic_attack": 6, "healing_power": 8},
-	},
-	"gravewake_vestment_gold": {
-		CatalogID: "gravewake_vestment_gold",
-		Name:      "Gravewake Vestment",
-		Slot:      "chest",
-		Rarity:    "gold",
-		Stats:     map[string]int{"max_hp": 90, "physical_defense": 10, "magic_defense": 10},
-	},
-	"gravewake_vestment_red": {
-		CatalogID: "gravewake_vestment_red",
-		Name:      "Gravewake Vestment",
-		Slot:      "chest",
-		Rarity:    "red",
-		Stats:     map[string]int{"max_hp": 115, "physical_defense": 13, "magic_defense": 13},
-	},
-	"gravewake_seal_red": {
-		CatalogID: "gravewake_seal_red",
-		Name:      "Gravewake Seal",
-		Slot:      "ring",
-		Rarity:    "red",
-		Stats:     map[string]int{"magic_attack": 14, "physical_attack": 14},
-	},
-	"gravewake_reliquary_prismatic": {
-		CatalogID: "gravewake_reliquary_prismatic",
-		Name:      "Gravewake Reliquary",
-		Slot:      "necklace",
-		Rarity:    "prismatic",
-		Stats:     map[string]int{"max_hp": 70, "magic_attack": 12, "healing_power": 14},
-	},
-	"dunescourge_burrowstep_blue": {
-		CatalogID: "dunescourge_burrowstep_blue",
-		Name:      "Dunescourge Burrowstep Boots",
-		Slot:      "boots",
-		Rarity:    "blue",
-		Stats:     map[string]int{"speed": 12, "max_hp": 230, "physical_defense": 18},
-	},
-	"dunescourge_coilguards_blue": {
-		CatalogID: "dunescourge_coilguards_blue",
-		Name:      "Dunescourge Coilguards",
-		Slot:      "wrist",
-		Rarity:    "blue",
-		Stats:     map[string]int{"physical_attack": 44, "speed": 11},
-	},
-	"dunescourge_fang_ring_purple": {
-		CatalogID: "dunescourge_fang_ring_purple",
-		Name:      "Dunescourge Fang Ring",
-		Slot:      "ring",
-		Rarity:    "purple",
-		Stats:     map[string]int{"physical_attack": 56, "healing_power": 42},
-	},
-	"dunescourge_crownshell_purple": {
-		CatalogID: "dunescourge_crownshell_purple",
-		Name:      "Dunescourge Crownshell",
-		Slot:      "head",
-		Rarity:    "purple",
-		Stats:     map[string]int{"max_hp": 360, "physical_defense": 30, "magic_defense": 30},
-	},
-	"dunescourge_heartspine_chain_gold": {
-		CatalogID: "dunescourge_heartspine_chain_gold",
-		Name:      "Dunescourge Heartspine Chain",
-		Slot:      "necklace",
-		Rarity:    "gold",
-		Stats:     map[string]int{"max_hp": 265, "magic_attack": 36, "healing_power": 36},
-	},
-	"dunescourge_carapace_mail_gold": {
-		CatalogID: "dunescourge_carapace_mail_gold",
-		Name:      "Dunescourge Carapace Mail",
-		Slot:      "chest",
-		Rarity:    "gold",
-		Stats:     map[string]int{"max_hp": 470, "physical_defense": 45, "magic_defense": 40},
-	},
-	"dunescourge_carapace_mail_red": {
-		CatalogID: "dunescourge_carapace_mail_red",
-		Name:      "Dunescourge Carapace Mail",
-		Slot:      "chest",
-		Rarity:    "red",
-		Stats:     map[string]int{"max_hp": 520, "physical_defense": 50, "magic_defense": 45},
-	},
-	"dunescourge_fang_ring_red": {
-		CatalogID: "dunescourge_fang_ring_red",
-		Name:      "Dunescourge Fang Ring",
-		Slot:      "ring",
-		Rarity:    "red",
-		Stats:     map[string]int{"physical_attack": 64, "healing_power": 50},
-	},
-	"dunescourge_heartspine_chain_prismatic": {
-		CatalogID: "dunescourge_heartspine_chain_prismatic",
-		Name:      "Dunescourge Heartspine Chain",
-		Slot:      "necklace",
-		Rarity:    "prismatic",
-		Stats:     map[string]int{"max_hp": 310, "magic_attack": 42, "healing_power": 42},
-	},
+var dungeonRewardCatalog = mergeCatalogMaps(
+	buildGravewakeBastionCatalog(),
+	buildBriarboundSightCatalog(),
+	buildSunscarAssaultCatalog(),
+	buildNightglassArcanumCatalog(),
+)
+
+func mergeCatalogMaps(groups ...map[string]catalogItem) map[string]catalogItem {
+	merged := map[string]catalogItem{}
+	for _, group := range groups {
+		for catalogID, item := range group {
+			merged[catalogID] = item
+		}
+	}
+	return merged
+}
+
+func mergeCatalogInto(target map[string]catalogItem, additions map[string]catalogItem) {
+	for catalogID, item := range additions {
+		target[catalogID] = item
+	}
+}
+
+func rewardCatalogItem(catalogID, name, slot, rarity, setID string, stats map[string]int) catalogItem {
+	return catalogItem{
+		CatalogID: catalogID,
+		Name:      name,
+		Slot:      slot,
+		Rarity:    rarity,
+		SetID:     setID,
+		Stats:     stats,
+	}
+}
+
+func buildSetWeaponCatalog(setID, setName, identity string) map[string]catalogItem {
+	items := map[string]catalogItem{}
+	for _, rarity := range []string{"blue", "purple", "gold", "red", "prismatic"} {
+		for _, style := range []string{"sword_shield", "great_axe", "staff", "spellbook", "scepter", "holy_tome"} {
+			catalogID, name := weaponCatalogIdentity(setID, setName, style, rarity)
+			items[catalogID] = catalogItem{
+				CatalogID:           catalogID,
+				Name:                name,
+				Slot:                "weapon",
+				Rarity:              rarity,
+				SetID:               setID,
+				RequiredWeaponStyle: style,
+				Stats:               weaponStatsFor(style, rarity, identity),
+			}
+		}
+	}
+	return items
+}
+
+func weaponCatalogIdentity(setID, setName, style, rarity string) (string, string) {
+	nameByStyle := map[string]string{
+		"sword_shield": "Blade",
+		"great_axe":    "Greataxe",
+		"staff":        "Staff",
+		"spellbook":    "Spellbook",
+		"scepter":      "Scepter",
+		"holy_tome":    "Holy Tome",
+	}
+	suffix := nameByStyle[style]
+	if suffix == "" {
+		suffix = "Weapon"
+	}
+	return fmt.Sprintf("%s_weapon_%s_%s", setID, style, rarity), fmt.Sprintf("%s %s", setName, suffix)
+}
+
+func weaponStatsFor(style, rarity, identity string) map[string]int {
+	tierScale := map[string]int{
+		"blue":      24,
+		"purple":    30,
+		"gold":      36,
+		"red":       42,
+		"prismatic": 48,
+	}
+	base := tierScale[strings.ToLower(strings.TrimSpace(rarity))]
+	if base <= 0 {
+		base = 24
+	}
+	switch style {
+	case "sword_shield":
+		return weaponIdentityStats(identity, map[string]int{"physical_attack": base, "physical_defense": maxInt(8, base/2), "max_hp": base * 5 / 2})
+	case "great_axe":
+		return weaponIdentityStats(identity, map[string]int{"physical_attack": base + 6, "crit_damage": maxInt(8, base/2), "speed": maxInt(4, base/6)})
+	case "staff":
+		return weaponIdentityStats(identity, map[string]int{"magic_attack": base + 4, "magic_defense": maxInt(8, base/2), "healing_power": maxInt(8, base/3)})
+	case "spellbook":
+		return weaponIdentityStats(identity, map[string]int{"magic_attack": base + 6, "crit_rate": maxInt(8, base/2), "speed": maxInt(4, base/6)})
+	case "scepter":
+		return weaponIdentityStats(identity, map[string]int{"healing_power": base, "magic_attack": maxInt(10, base/2), "magic_defense": maxInt(8, base/3)})
+	case "holy_tome":
+		return weaponIdentityStats(identity, map[string]int{"healing_power": base - 2, "magic_attack": maxInt(10, base/2), "max_hp": base * 2})
+	default:
+		return map[string]int{"physical_attack": base}
+	}
+}
+
+func weaponIdentityStats(identity string, stats map[string]int) map[string]int {
+	boost := func(key string, amount int) {
+		if amount == 0 {
+			return
+		}
+		stats[key] += amount
+	}
+	switch identity {
+	case "bulwark":
+		boost("max_hp", 24)
+		boost("physical_defense", 6)
+		boost("magic_defense", 6)
+	case "precision":
+		boost("precision", 12)
+		boost("crit_rate", 8)
+	case "assault":
+		boost("physical_attack", 8)
+		boost("physical_mastery", 10)
+	case "arcanum":
+		boost("magic_attack", 8)
+		boost("magic_mastery", 10)
+		boost("healing_power", 6)
+	}
+	return stats
+}
+
+func buildGravewakeBastionCatalog() map[string]catalogItem {
+	items := buildSetWeaponCatalog("gravewake_bastion", "Gravewake Bastion", "bulwark")
+	mergeCatalogInto(items, map[string]catalogItem{
+		"gravewake_bastion_boots_blue":         rewardCatalogItem("gravewake_bastion_boots_blue", "Gravewake Bastion Boots", "boots", "blue", "gravewake_bastion", map[string]int{"max_hp": 240, "physical_defense": 18, "magic_defense": 14, "speed": 10}),
+		"gravewake_bastion_helm_blue":          rewardCatalogItem("gravewake_bastion_helm_blue", "Gravewake Bastion Helm", "head", "blue", "gravewake_bastion", map[string]int{"max_hp": 280, "physical_defense": 20, "magic_defense": 20}),
+		"gravewake_bastion_ring_purple":        rewardCatalogItem("gravewake_bastion_ring_purple", "Gravewake Bastion Ring", "ring", "purple", "gravewake_bastion", map[string]int{"max_hp": 120, "physical_defense": 10, "magic_defense": 10}),
+		"gravewake_bastion_necklace_purple":    rewardCatalogItem("gravewake_bastion_necklace_purple", "Gravewake Bastion Necklace", "necklace", "purple", "gravewake_bastion", map[string]int{"max_hp": 220, "magic_defense": 18, "healing_power": 24}),
+		"gravewake_bastion_chest_gold":         rewardCatalogItem("gravewake_bastion_chest_gold", "Gravewake Bastion Chest", "chest", "gold", "gravewake_bastion", map[string]int{"max_hp": 420, "physical_defense": 36, "magic_defense": 36}),
+		"gravewake_bastion_greaves_gold":       rewardCatalogItem("gravewake_bastion_greaves_gold", "Gravewake Bastion Greaves", "boots", "gold", "gravewake_bastion", map[string]int{"max_hp": 300, "physical_defense": 24, "magic_defense": 20, "speed": 14}),
+		"gravewake_bastion_chest_red":          rewardCatalogItem("gravewake_bastion_chest_red", "Gravewake Bastion Chest", "chest", "red", "gravewake_bastion", map[string]int{"max_hp": 480, "physical_defense": 42, "magic_defense": 42}),
+		"gravewake_bastion_ring_red":           rewardCatalogItem("gravewake_bastion_ring_red", "Gravewake Bastion Ring", "ring", "red", "gravewake_bastion", map[string]int{"max_hp": 160, "physical_defense": 14, "magic_defense": 14}),
+		"gravewake_bastion_necklace_prismatic": rewardCatalogItem("gravewake_bastion_necklace_prismatic", "Gravewake Bastion Necklace", "necklace", "prismatic", "gravewake_bastion", map[string]int{"max_hp": 280, "magic_defense": 26, "healing_power": 32}),
+	})
+	return items
+}
+
+func buildBriarboundSightCatalog() map[string]catalogItem {
+	items := buildSetWeaponCatalog("briarbound_sight", "Briarbound Sight", "precision")
+	mergeCatalogInto(items, map[string]catalogItem{
+		"briarbound_sight_boots_blue":         rewardCatalogItem("briarbound_sight_boots_blue", "Briarbound Sight Boots", "boots", "blue", "briarbound_sight", map[string]int{"max_hp": 220, "speed": 14, "precision": 18}),
+		"briarbound_sight_hood_blue":          rewardCatalogItem("briarbound_sight_hood_blue", "Briarbound Sight Hood", "head", "blue", "briarbound_sight", map[string]int{"max_hp": 240, "precision": 16, "crit_rate": 10}),
+		"briarbound_sight_ring_purple":        rewardCatalogItem("briarbound_sight_ring_purple", "Briarbound Sight Ring", "ring", "purple", "briarbound_sight", map[string]int{"physical_attack": 34, "precision": 20, "crit_rate": 12}),
+		"briarbound_sight_necklace_purple":    rewardCatalogItem("briarbound_sight_necklace_purple", "Briarbound Sight Necklace", "necklace", "purple", "briarbound_sight", map[string]int{"max_hp": 180, "speed": 12, "precision": 22, "crit_damage": 18}),
+		"briarbound_sight_chest_gold":         rewardCatalogItem("briarbound_sight_chest_gold", "Briarbound Sight Chest", "chest", "gold", "briarbound_sight", map[string]int{"max_hp": 360, "physical_defense": 22, "magic_defense": 18, "precision": 24}),
+		"briarbound_sight_boots_gold":         rewardCatalogItem("briarbound_sight_boots_gold", "Briarbound Sight Boots", "boots", "gold", "briarbound_sight", map[string]int{"max_hp": 250, "speed": 18, "precision": 24, "crit_rate": 14}),
+		"briarbound_sight_chest_red":          rewardCatalogItem("briarbound_sight_chest_red", "Briarbound Sight Chest", "chest", "red", "briarbound_sight", map[string]int{"max_hp": 410, "physical_defense": 24, "magic_defense": 20, "precision": 28}),
+		"briarbound_sight_ring_red":           rewardCatalogItem("briarbound_sight_ring_red", "Briarbound Sight Ring", "ring", "red", "briarbound_sight", map[string]int{"physical_attack": 42, "precision": 24, "crit_damage": 20}),
+		"briarbound_sight_necklace_prismatic": rewardCatalogItem("briarbound_sight_necklace_prismatic", "Briarbound Sight Necklace", "necklace", "prismatic", "briarbound_sight", map[string]int{"max_hp": 220, "speed": 16, "precision": 28, "crit_rate": 18}),
+	})
+	return items
+}
+
+func buildSunscarAssaultCatalog() map[string]catalogItem {
+	items := buildSetWeaponCatalog("sunscar_assault", "Sunscar Assault", "assault")
+	mergeCatalogInto(items, map[string]catalogItem{
+		"sunscar_assault_boots_blue":         rewardCatalogItem("sunscar_assault_boots_blue", "Sunscar Assault Boots", "boots", "blue", "sunscar_assault", map[string]int{"max_hp": 230, "speed": 12, "physical_attack": 30}),
+		"sunscar_assault_helm_blue":          rewardCatalogItem("sunscar_assault_helm_blue", "Sunscar Assault Helm", "head", "blue", "sunscar_assault", map[string]int{"max_hp": 250, "physical_attack": 28, "physical_defense": 16}),
+		"sunscar_assault_ring_purple":        rewardCatalogItem("sunscar_assault_ring_purple", "Sunscar Assault Ring", "ring", "purple", "sunscar_assault", map[string]int{"physical_attack": 42, "crit_damage": 16, "speed": 8}),
+		"sunscar_assault_necklace_purple":    rewardCatalogItem("sunscar_assault_necklace_purple", "Sunscar Assault Necklace", "necklace", "purple", "sunscar_assault", map[string]int{"max_hp": 190, "physical_attack": 30, "physical_mastery": 14}),
+		"sunscar_assault_chest_gold":         rewardCatalogItem("sunscar_assault_chest_gold", "Sunscar Assault Chest", "chest", "gold", "sunscar_assault", map[string]int{"max_hp": 380, "physical_defense": 28, "magic_defense": 20, "physical_attack": 34}),
+		"sunscar_assault_boots_gold":         rewardCatalogItem("sunscar_assault_boots_gold", "Sunscar Assault Boots", "boots", "gold", "sunscar_assault", map[string]int{"max_hp": 260, "speed": 16, "physical_attack": 36}),
+		"sunscar_assault_chest_red":          rewardCatalogItem("sunscar_assault_chest_red", "Sunscar Assault Chest", "chest", "red", "sunscar_assault", map[string]int{"max_hp": 430, "physical_defense": 32, "magic_defense": 24, "physical_attack": 38}),
+		"sunscar_assault_ring_red":           rewardCatalogItem("sunscar_assault_ring_red", "Sunscar Assault Ring", "ring", "red", "sunscar_assault", map[string]int{"physical_attack": 50, "crit_damage": 22, "speed": 10}),
+		"sunscar_assault_necklace_prismatic": rewardCatalogItem("sunscar_assault_necklace_prismatic", "Sunscar Assault Necklace", "necklace", "prismatic", "sunscar_assault", map[string]int{"max_hp": 240, "physical_attack": 38, "physical_mastery": 18, "speed": 12}),
+	})
+	return items
+}
+
+func buildNightglassArcanumCatalog() map[string]catalogItem {
+	items := buildSetWeaponCatalog("nightglass_arcanum", "Nightglass Arcanum", "arcanum")
+	mergeCatalogInto(items, map[string]catalogItem{
+		"nightglass_arcanum_boots_blue":         rewardCatalogItem("nightglass_arcanum_boots_blue", "Nightglass Arcanum Boots", "boots", "blue", "nightglass_arcanum", map[string]int{"max_hp": 210, "speed": 12, "magic_attack": 24, "healing_power": 18}),
+		"nightglass_arcanum_hood_blue":          rewardCatalogItem("nightglass_arcanum_hood_blue", "Nightglass Arcanum Hood", "head", "blue", "nightglass_arcanum", map[string]int{"max_hp": 230, "magic_attack": 22, "magic_defense": 18}),
+		"nightglass_arcanum_ring_purple":        rewardCatalogItem("nightglass_arcanum_ring_purple", "Nightglass Arcanum Ring", "ring", "purple", "nightglass_arcanum", map[string]int{"magic_attack": 36, "healing_power": 24}),
+		"nightglass_arcanum_necklace_purple":    rewardCatalogItem("nightglass_arcanum_necklace_purple", "Nightglass Arcanum Necklace", "necklace", "purple", "nightglass_arcanum", map[string]int{"max_hp": 190, "magic_attack": 28, "healing_power": 28}),
+		"nightglass_arcanum_chest_gold":         rewardCatalogItem("nightglass_arcanum_chest_gold", "Nightglass Arcanum Chest", "chest", "gold", "nightglass_arcanum", map[string]int{"max_hp": 360, "physical_defense": 20, "magic_defense": 28, "magic_attack": 30}),
+		"nightglass_arcanum_boots_gold":         rewardCatalogItem("nightglass_arcanum_boots_gold", "Nightglass Arcanum Boots", "boots", "gold", "nightglass_arcanum", map[string]int{"max_hp": 240, "speed": 16, "magic_attack": 30, "healing_power": 22}),
+		"nightglass_arcanum_chest_red":          rewardCatalogItem("nightglass_arcanum_chest_red", "Nightglass Arcanum Chest", "chest", "red", "nightglass_arcanum", map[string]int{"max_hp": 410, "physical_defense": 22, "magic_defense": 34, "magic_attack": 34}),
+		"nightglass_arcanum_ring_red":           rewardCatalogItem("nightglass_arcanum_ring_red", "Nightglass Arcanum Ring", "ring", "red", "nightglass_arcanum", map[string]int{"magic_attack": 44, "healing_power": 32}),
+		"nightglass_arcanum_necklace_prismatic": rewardCatalogItem("nightglass_arcanum_necklace_prismatic", "Nightglass Arcanum Necklace", "necklace", "prismatic", "nightglass_arcanum", map[string]int{"max_hp": 230, "magic_attack": 36, "healing_power": 36, "speed": 10}),
+	})
+	return items
 }
 
 type shopEntry struct {
@@ -1872,18 +2074,18 @@ var shopCatalogByID = func() map[string]shopCatalogItem {
 }()
 
 var consumableShopCatalog = []consumableCatalogItem{
-	{CatalogID: "potion_hp_t1", Name: "Minor HP Potion", ItemType: "consumable", Family: "hp", Tier: 1, PriceGold: 12, MinRank: "low", EffectSummary: "Restore 25% max HP, capped at 220.", BuildingTypes: []string{"apothecary"}},
-	{CatalogID: "potion_atk_t1", Name: "Minor Attack Potion", ItemType: "consumable", Family: "atk", Tier: 1, PriceGold: 14, MinRank: "low", EffectSummary: "Increase primary attack by 10% for 3 rounds.", BuildingTypes: []string{"apothecary"}},
-	{CatalogID: "potion_def_t1", Name: "Minor Defense Potion", ItemType: "consumable", Family: "def", Tier: 1, PriceGold: 14, MinRank: "low", EffectSummary: "Increase defenses by 10% for 3 rounds.", BuildingTypes: []string{"apothecary"}},
-	{CatalogID: "potion_spd_t1", Name: "Minor Speed Potion", ItemType: "consumable", Family: "spd", Tier: 1, PriceGold: 14, MinRank: "low", EffectSummary: "Increase speed by 8% for 3 rounds.", BuildingTypes: []string{"apothecary"}},
-	{CatalogID: "potion_hp_t2", Name: "Standard HP Potion", ItemType: "consumable", Family: "hp", Tier: 2, PriceGold: 22, MinRank: "mid", EffectSummary: "Restore 35% max HP, capped at 520.", BuildingTypes: []string{"apothecary"}},
-	{CatalogID: "potion_atk_t2", Name: "Standard Attack Potion", ItemType: "consumable", Family: "atk", Tier: 2, PriceGold: 24, MinRank: "mid", EffectSummary: "Increase primary attack by 16% for 3 rounds.", BuildingTypes: []string{"apothecary"}},
-	{CatalogID: "potion_def_t2", Name: "Standard Defense Potion", ItemType: "consumable", Family: "def", Tier: 2, PriceGold: 24, MinRank: "mid", EffectSummary: "Increase defenses by 16% for 3 rounds.", BuildingTypes: []string{"apothecary"}},
-	{CatalogID: "potion_spd_t2", Name: "Standard Speed Potion", ItemType: "consumable", Family: "spd", Tier: 2, PriceGold: 24, MinRank: "mid", EffectSummary: "Increase speed by 12% for 3 rounds.", BuildingTypes: []string{"apothecary"}},
-	{CatalogID: "potion_hp_t3", Name: "Superior HP Potion", ItemType: "consumable", Family: "hp", Tier: 3, PriceGold: 36, MinRank: "high", EffectSummary: "Restore 45% max HP, capped at 980.", BuildingTypes: []string{"apothecary"}},
-	{CatalogID: "potion_atk_t3", Name: "Superior Attack Potion", ItemType: "consumable", Family: "atk", Tier: 3, PriceGold: 38, MinRank: "high", EffectSummary: "Increase primary attack by 24% for 4 rounds.", BuildingTypes: []string{"apothecary"}},
-	{CatalogID: "potion_def_t3", Name: "Superior Defense Potion", ItemType: "consumable", Family: "def", Tier: 3, PriceGold: 38, MinRank: "high", EffectSummary: "Increase defenses by 24% for 4 rounds.", BuildingTypes: []string{"apothecary"}},
-	{CatalogID: "potion_spd_t3", Name: "Superior Speed Potion", ItemType: "consumable", Family: "spd", Tier: 3, PriceGold: 38, MinRank: "high", EffectSummary: "Increase speed by 18% for 4 rounds.", BuildingTypes: []string{"apothecary"}},
+	{CatalogID: "potion_hp_t1", Name: "Minor HP Potion", ItemType: "consumable", Family: "hp", Tier: 1, PriceGold: 12, EffectSummary: "Restore 25% max HP, capped at 220.", BuildingTypes: []string{"apothecary"}},
+	{CatalogID: "potion_atk_t1", Name: "Minor Attack Potion", ItemType: "consumable", Family: "atk", Tier: 1, PriceGold: 14, EffectSummary: "Increase primary attack by 10% for 3 rounds.", BuildingTypes: []string{"apothecary"}},
+	{CatalogID: "potion_def_t1", Name: "Minor Defense Potion", ItemType: "consumable", Family: "def", Tier: 1, PriceGold: 14, EffectSummary: "Increase defenses by 10% for 3 rounds.", BuildingTypes: []string{"apothecary"}},
+	{CatalogID: "potion_spd_t1", Name: "Minor Speed Potion", ItemType: "consumable", Family: "spd", Tier: 1, PriceGold: 14, EffectSummary: "Increase speed by 8% for 3 rounds.", BuildingTypes: []string{"apothecary"}},
+	{CatalogID: "potion_hp_t2", Name: "Standard HP Potion", ItemType: "consumable", Family: "hp", Tier: 2, PriceGold: 22, EffectSummary: "Restore 35% max HP, capped at 520.", BuildingTypes: []string{"apothecary"}},
+	{CatalogID: "potion_atk_t2", Name: "Standard Attack Potion", ItemType: "consumable", Family: "atk", Tier: 2, PriceGold: 24, EffectSummary: "Increase primary attack by 16% for 3 rounds.", BuildingTypes: []string{"apothecary"}},
+	{CatalogID: "potion_def_t2", Name: "Standard Defense Potion", ItemType: "consumable", Family: "def", Tier: 2, PriceGold: 24, EffectSummary: "Increase defenses by 16% for 3 rounds.", BuildingTypes: []string{"apothecary"}},
+	{CatalogID: "potion_spd_t2", Name: "Standard Speed Potion", ItemType: "consumable", Family: "spd", Tier: 2, PriceGold: 24, EffectSummary: "Increase speed by 12% for 3 rounds.", BuildingTypes: []string{"apothecary"}},
+	{CatalogID: "potion_hp_t3", Name: "Superior HP Potion", ItemType: "consumable", Family: "hp", Tier: 3, PriceGold: 36, EffectSummary: "Restore 45% max HP, capped at 980.", BuildingTypes: []string{"apothecary"}},
+	{CatalogID: "potion_atk_t3", Name: "Superior Attack Potion", ItemType: "consumable", Family: "atk", Tier: 3, PriceGold: 38, EffectSummary: "Increase primary attack by 24% for 4 rounds.", BuildingTypes: []string{"apothecary"}},
+	{CatalogID: "potion_def_t3", Name: "Superior Defense Potion", ItemType: "consumable", Family: "def", Tier: 3, PriceGold: 38, EffectSummary: "Increase defenses by 24% for 4 rounds.", BuildingTypes: []string{"apothecary"}},
+	{CatalogID: "potion_spd_t3", Name: "Superior Speed Potion", ItemType: "consumable", Family: "spd", Tier: 3, PriceGold: 38, EffectSummary: "Increase speed by 18% for 4 rounds.", BuildingTypes: []string{"apothecary"}},
 }
 
 var consumableShopCatalogByID = func() map[string]consumableCatalogItem {

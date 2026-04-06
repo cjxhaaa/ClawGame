@@ -51,9 +51,13 @@ export const mapLayout: Record<
   main_city: { left: "20%", top: "18%", zoneClass: "city" },
   greenfield_village: { left: "36%", top: "34%", zoneClass: "village" },
   whispering_forest: { left: "25%", top: "58%", zoneClass: "forest" },
+  briar_thicket: { left: "38%", top: "56%", zoneClass: "forest" },
   ancient_catacomb: { left: "49%", top: "66%", zoneClass: "catacomb" },
+  thorned_hollow: { left: "56%", top: "56%", zoneClass: "forest" },
   sunscar_desert_outskirts: { left: "70%", top: "42%", zoneClass: "desert" },
-  sandworm_den: { left: "82%", top: "70%", zoneClass: "den" },
+  sunscar_warvault: { left: "79%", top: "56%", zoneClass: "den" },
+  ashen_ridge: { left: "72%", top: "72%", zoneClass: "desert" },
+  obsidian_spire: { left: "86%", top: "74%", zoneClass: "den" },
 };
 
 export const metrics = [
@@ -165,7 +169,6 @@ export const uiText = {
       unknownActor: "未知角色",
       scoreLabel: "主指标",
       travelCost: "旅行费用",
-      minRank: "最低阶位",
       localActivity: "局部动态",
       buildingList: "区域建筑",
       travelRoutes: "可前往区域",
@@ -310,7 +313,6 @@ export const uiText = {
       unknownActor: "Unknown actor",
       scoreLabel: "Primary metric",
       travelCost: "Travel cost",
-      minRank: "Min rank",
       localActivity: "Local activity",
       buildingList: "Buildings",
       travelRoutes: "Travel routes",
@@ -439,9 +441,13 @@ const regionNameDictionary = {
   main_city: { "zh-CN": "铁旗城", "en-US": "Ironbanner City" },
   greenfield_village: { "zh-CN": "绿野前哨", "en-US": "Greenfield Outpost" },
   whispering_forest: { "zh-CN": "低语森林", "en-US": "Whispering Forest" },
+  briar_thicket: { "zh-CN": "荆棘密径", "en-US": "Briar Thicket" },
   ancient_catacomb: { "zh-CN": "远古墓窟", "en-US": "Ancient Catacomb" },
+  thorned_hollow: { "zh-CN": "荆冠空坳", "en-US": "Thorned Hollow" },
   sunscar_desert_outskirts: { "zh-CN": "灼痕前线", "en-US": "Sunscar Frontier" },
-  sandworm_den: { "zh-CN": "沙虫巢穴", "en-US": "Sandworm Den" },
+  sunscar_warvault: { "zh-CN": "灼痕战库", "en-US": "Sunscar Warvault" },
+  ashen_ridge: { "zh-CN": "灰烬山脊", "en-US": "Ashen Ridge" },
+  obsidian_spire: { "zh-CN": "黑曜高塔", "en-US": "Obsidian Spire" },
 } as const;
 
 const regionAtlasDictionary = {
@@ -735,12 +741,6 @@ const regionTypeDictionary = {
   dungeon: { "zh-CN": "地下城", "en-US": "Dungeon" },
 } as const;
 
-const rankDictionary = {
-  low: { "zh-CN": "低阶", "en-US": "Low" },
-  mid: { "zh-CN": "中阶", "en-US": "Mid" },
-  high: { "zh-CN": "高阶", "en-US": "High" },
-} as const;
-
 const buildingNameDictionary = {
   guild_main_city: { "zh-CN": "冒险者公会", "en-US": "Adventurers Guild" },
   weapon_shop_main_city: { "zh-CN": "武器店", "en-US": "Weapon Shop" },
@@ -756,9 +756,8 @@ const buildingNameDictionary = {
 
 const actionNameDictionary = {
   list_quests: { "zh-CN": "查看任务", "en-US": "List quests" },
-  accept_quest: { "zh-CN": "接取任务", "en-US": "Accept quest" },
   submit_quest: { "zh-CN": "提交任务", "en-US": "Submit quest" },
-  reroll_quests: { "zh-CN": "重置任务板", "en-US": "Reroll quests" },
+  exchange_dungeon_reward_claims: { "zh-CN": "兑换领奖次数", "en-US": "Exchange reward claims" },
   browse_stock: { "zh-CN": "浏览商品", "en-US": "Browse stock" },
   purchase: { "zh-CN": "购买物品", "en-US": "Purchase" },
   sell_loot: { "zh-CN": "出售战利品", "en-US": "Sell loot" },
@@ -929,9 +928,9 @@ const activityLabelDictionary = {
     "zh-CN": "墓窟专精选手",
     "en-US": "Ancient Catacomb specialist",
   },
-  "Sandworm Den frontrunner": {
-    "zh-CN": "沙虫巢穴领先者",
-    "en-US": "Sandworm Den frontrunner",
+  "Obsidian Spire frontrunner": {
+    "zh-CN": "黑曜高塔领先者",
+    "en-US": "Obsidian Spire frontrunner",
   },
   "Fast resolver": { "zh-CN": "高速结算者", "en-US": "Fast resolver" },
   "Highest reputation active bot": {
@@ -1065,10 +1064,6 @@ export function localizeRegionHighlight(value: string, language: Language) {
 
 export function localizeRegionType(value: string, language: Language) {
   return regionTypeDictionary[value as keyof typeof regionTypeDictionary]?.[language] ?? value;
-}
-
-export function localizeRank(value: string, language: Language) {
-  return rankDictionary[value as keyof typeof rankDictionary]?.[language] ?? value;
 }
 
 export function localizeBuildingName(building: Building, language: Language) {

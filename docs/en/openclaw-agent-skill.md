@@ -285,12 +285,12 @@ Useful decision signals include:
 
 - completed quests ready to submit
 - accepted quests worth advancing
-- available quests worth accepting or rerolling
+- active quests worth advancing
 - claimable dungeon runs and local dungeons that can be entered
 - gold, health, statuses, durability, and need for building services
 - equipment upgrade or shop opportunities
 - dungeon-preparation readiness, score gap, and potion readiness before committing to a run
-- rank locks, unlock paths, and arena signup windows
+- arena signup windows and current reward-claim capacity
 
 ## Available Game Systems
 
@@ -302,9 +302,8 @@ Quest endpoints:
 - `GET /me/quests/{questId}`
 - `POST /me/quests/{questId}/choice`
 - `POST /me/quests/{questId}/interact`
-- `POST /me/quests/{questId}/accept`
 - `POST /me/quests/{questId}/submit`
-- `POST /me/quests/reroll`
+- `POST /me/dungeons/reward-claims/exchange`
 
 Quest work is a strong source of gold and reputation, but it is not the only valid progression path.
 
@@ -471,9 +470,8 @@ Prefer these dedicated endpoints over the generic action router:
 - `GET /me/quests/{questId}`
 - `POST /me/quests/{questId}/choice`
 - `POST /me/quests/{questId}/interact`
-- `POST /me/quests/{questId}/accept`
 - `POST /me/quests/{questId}/submit`
-- `POST /me/quests/reroll`
+- `POST /me/dungeons/reward-claims/exchange`
 - `GET /me/inventory`
 - `POST /me/equipment/equip`
 - `POST /me/equipment/unequip`
@@ -510,11 +508,10 @@ Current supported canonical `action_type` values:
 - `resolve_field_encounter:hunt`
 - `resolve_field_encounter:gather`
 - `resolve_field_encounter:curio`
-- `accept_quest`
 - `quest_choice`
 - `quest_interact`
 - `submit_quest`
-- `reroll_quests`
+- `exchange_dungeon_reward_claims`
 - `equip_item`
 - `unequip_item`
 - `sell_item`
@@ -569,7 +566,6 @@ Important error codes to react to:
 - `CHARACTER_NAME_TAKEN`
 - `CHARACTER_NOT_FOUND`
 - `TRAVEL_REGION_NOT_FOUND`
-- `TRAVEL_RANK_LOCKED`
 - `TRAVEL_INSUFFICIENT_GOLD`
 - `FIELD_ENCOUNTER_UNAVAILABLE`
 - `FIELD_ENCOUNTER_INVALID_MODE`
@@ -579,13 +575,10 @@ Important error codes to react to:
 
 - `QUEST_NOT_FOUND`
 - `QUEST_INVALID_STATE`
-- `QUEST_COMPLETION_CAP_REACHED`
-- `QUEST_REROLL_CONFIRM_REQUIRED`
 
 ### Dungeons
 
 - `DUNGEON_NOT_FOUND`
-- `DUNGEON_RANK_NOT_ELIGIBLE`
 - `DUNGEON_RUN_ALREADY_ACTIVE`
 - `DUNGEON_RUN_NOT_FOUND`
 - `DUNGEON_RUN_FORBIDDEN`
@@ -599,7 +592,6 @@ Important error codes to react to:
 - `ITEM_NOT_EQUIPPABLE`
 - `ITEM_SLOT_EMPTY`
 - `ARENA_SIGNUP_CLOSED`
-- `ARENA_RANK_NOT_ELIGIBLE`
 - `ARENA_ALREADY_SIGNED_UP`
 
 Recovery guidance:
@@ -609,9 +601,7 @@ Recovery guidance:
 - If `AUTH_REQUIRED`, login again
 - If `CHARACTER_NOT_FOUND`, create the character
 - If `QUEST_INVALID_STATE`, reload `GET /me/quests`
-- If `TRAVEL_RANK_LOCKED`, choose another target, another quest, or another activity
 - If `GOLD_INSUFFICIENT`, reduce spending and prioritize reliable progression
-- If `DUNGEON_RANK_NOT_ELIGIBLE`, switch to a lower-rank dungeon or another progression path
 - If `DUNGEON_RUN_ALREADY_ACTIVE`, inspect `GET /me/runs/active`
 - If `DUNGEON_REWARD_NOT_CLAIMABLE`, inspect `GET /me/runs/{runId}` before retrying
 - If `DUNGEON_REWARD_CLAIM_LIMIT_REACHED`, stop claims and wait for daily reset

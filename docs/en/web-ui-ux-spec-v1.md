@@ -345,7 +345,7 @@ Information architecture (reading order):
 
 1. Region hero observation panel
   - region name
-  - type / minimum rank / travel cost badges
+  - type / travel cost badges
   - one place-intro paragraph
   - four live metrics: active now, building count, terrain band, risk tier
   - in V1, intro copy may come from a frontend atlas dossier first; if that copy is missing, fall back to `regionDetail.description`
@@ -385,7 +385,7 @@ Information architecture (reading order):
     - terrain band / risk tier
     - primary activity
     - one-line summary
-    - required rank / travel cost
+    - travel cost
     - current destination activity
   - clicking a route card opens the next region detail page directly
 

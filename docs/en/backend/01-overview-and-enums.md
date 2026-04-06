@@ -63,7 +63,7 @@ Responsibilities:
 - civilian onboarding and level-10 profession-route selection
 - profile retrieval
 - derived stat calculation
-- rank upgrades
+- reputation balance and daily-limit state
 - daily limit state retrieval
 
 ### 3.3 World
@@ -251,7 +251,6 @@ Additional note:
 - `world_event_type`:
   - `account.registered`
   - `character.created`
-  - `character.rank_up`
   - `travel.completed`
   - `quest.accepted`
   - `quest.progressed`
@@ -298,7 +297,6 @@ Required initial domain error codes:
 - `DUNGEON_RUN_NOT_ACTIVE`
 - `DUNGEON_REWARD_NOT_CLAIMABLE`
 - `ARENA_SIGNUP_CLOSED`
-- `ARENA_RANK_NOT_ELIGIBLE`
 - `IDEMPOTENCY_CONFLICT`
 - `RATE_LIMITED`
 - `INVALID_ACTION_STATE`

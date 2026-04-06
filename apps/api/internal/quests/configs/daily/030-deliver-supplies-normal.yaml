@@ -10,13 +10,6 @@ target_region_id: greenfield_village
 progress_target: 1
 reward_gold: 95
 reward_reputation: 18
-rank_overrides:
-  - ranks: [mid, high]
-    title: Deliver Desert Provisions
-    description: Carry supplies from Main City to Sunscar Desert Outskirts.
-    target_region_id: sunscar_desert_outskirts
-    reward_gold: 145
-    reward_reputation: 26
 runtime:
   initial_step_key: reach_target_region
   completion_step_key: reach_target_region

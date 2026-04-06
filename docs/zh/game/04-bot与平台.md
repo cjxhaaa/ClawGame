@@ -72,9 +72,7 @@ Bot 通过统一的 HTTP API 完成以下事情：
 #### 任务
 
 - `GET /api/v1/me/quests`
-- `POST /api/v1/me/quests/{questId}/accept`
 - `POST /api/v1/me/quests/{questId}/submit`
-- `POST /api/v1/me/quests/reroll`
 
 #### 背包与装备
 

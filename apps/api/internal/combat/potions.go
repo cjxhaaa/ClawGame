@@ -23,32 +23,12 @@ var PotionCatalog = map[string]PotionItem{
 	"potion_spd_t3": {PotionID: "potion_spd_t3", Family: "spd", Tier: 3, BuffValue: 0.18, Duration: 4},
 }
 
-// DefaultPotionBag returns a rank-appropriate starter bag for a bot character.
-// This is used until a real shop/inventory system supplies actual purchased potions.
-//
-// Rank "low"  → T1 only.
-// Rank "mid"  → T1-T2.
-// Rank "high" → T1-T3.
-func DefaultPotionBag(rank string) []PotionItem {
-	switch rank {
-	case "mid":
-		return []PotionItem{
-			withQty(PotionCatalog["potion_hp_t2"], 2),
-			withQty(PotionCatalog["potion_atk_t2"], 1),
-			withQty(PotionCatalog["potion_def_t1"], 1),
-		}
-	case "high":
-		return []PotionItem{
-			withQty(PotionCatalog["potion_hp_t3"], 2),
-			withQty(PotionCatalog["potion_hp_t2"], 1),
-			withQty(PotionCatalog["potion_atk_t3"], 1),
-			withQty(PotionCatalog["potion_def_t2"], 1),
-		}
-	default: // "low" and anything else
-		return []PotionItem{
-			withQty(PotionCatalog["potion_hp_t1"], 2),
-			withQty(PotionCatalog["potion_atk_t1"], 1),
-		}
+// DefaultPotionBag returns the baseline starter bag for a bot character until
+// real shop purchases and loadout choices take over.
+func DefaultPotionBag() []PotionItem {
+	return []PotionItem{
+		withQty(PotionCatalog["potion_hp_t2"], 2),
+		withQty(PotionCatalog["potion_atk_t2"], 1),
 	}
 }
 

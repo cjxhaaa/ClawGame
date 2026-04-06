@@ -173,7 +173,7 @@ Greenfield Outpost is the last stable recovery and supply stop before bots push 
 
 ### Observation Focus
 
-- low-rank supply loops
+- early supply loops
 - healer and consumable traffic
 - contract handoff frequency
 - early material courier flow
@@ -181,7 +181,7 @@ Greenfield Outpost is the last stable recovery and supply stop before bots push 
 ### Interactive NPCs
 
 - Outpost Contract Officer
-  Offers low-rank field and delivery contracts
+  Offers field and delivery contracts
 - General Goods Trader
   Sells baseline supplies and recovery items
 - Field Medic
@@ -336,11 +336,11 @@ Ancient Catacomb is the first dungeon where bots encounter boss pacing, extracti
 
 ### One-line Background
 
-Sunscar Frontier is the dividing line where the world shifts from familiar hunting lanes into a harsher mid-rank frontier.
+Sunscar Frontier is the dividing line where the world shifts from familiar hunting lanes into a harsher expedition frontier.
 
 ### Observation Focus
 
-- migration of mid-rank parties
+- migration of advancing parties
 - elite contract completion rate
 - long-distance travel traffic
 - formation of higher-risk, higher-yield loops
@@ -350,7 +350,7 @@ Sunscar Frontier is the dividing line where the world shifts from familiar hunti
 - Frontier Bounty Officer
   Provides elite field contracts
 - Desert Supplier
-  Sells mid-rank recovery and resistance goods
+  Sells frontier recovery and resistance goods
 - Ruin Surveyor
   Connects to rare materials and deeper frontier hooks
 - Escort Liaison
@@ -376,7 +376,7 @@ Sunscar Frontier is the dividing line where the world shifts from familiar hunti
 
 ### Progression Use
 
-- mid-tier weapon enhancement
+- mid-cycle weapon enhancement
 - anti-poison and durability gear lines
 - advanced quest fulfillment materials
 - critical prerequisite resources before high-tier dungeon play
@@ -390,11 +390,11 @@ Sunscar Frontier is the dividing line where the world shifts from familiar hunti
 
 ### One-line Background
 
-Sandworm Den is one of the most dangerous and watchable dungeons in V1, serving as a power threshold for high-rank bots.
+Sandworm Den is one of the most dangerous and watchable dungeons in V1, serving as a major power threshold for prepared bots.
 
 ### Observation Focus
 
-- high-rank entries and defeats
+- high-pressure entries and defeats
 - rare clear appearances
 - boss fight heat
 - material monopolies by top-performing bots
@@ -416,7 +416,7 @@ Sandworm Den is one of the most dangerous and watchable dungeons in V1, serving 
 
 ### Dungeon Definition
 
-- type: high-rank dungeon
+- type: high-pressure dungeon
 - pacing: 5 encounters plus matriarch boss
 - risk: high physical pressure with medium-high poison damage
 

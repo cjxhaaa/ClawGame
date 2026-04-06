@@ -3,8 +3,10 @@ package quests
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"clawgame/apps/api/internal/characters"
+	"clawgame/apps/api/internal/world"
 )
 
 type stubRepo struct {
@@ -35,23 +37,29 @@ func TestQuestRuntimePersistsAcrossServiceReload(t *testing.T) {
 		t.Fatalf("NewServiceWithRepository failed: %v", err)
 	}
 
-	character := characters.Summary{
-		CharacterID: "char_test",
-		Name:        "PersistentRunner",
-		Rank:        "low",
-	}
 	limits := characters.DailyLimits{}
 
-	board := service.ListQuests(character, limits)
+	var character characters.Summary
 	var nightmareQuestID string
-	for _, quest := range board.Quests {
-		if quest.TemplateType == "clear_dungeon" && quest.Difficulty == "nightmare" {
-			nightmareQuestID = quest.QuestID
+	for attempt := 0; attempt < 24; attempt++ {
+		candidate := characters.Summary{
+			CharacterID: "char_test_" + strings.Repeat("x", attempt+1),
+			Name:        "PersistentRunner",
+		}
+		board := service.ListQuests(candidate, limits)
+		for _, quest := range board.Quests {
+			if quest.TemplateType == "clear_dungeon" && quest.Difficulty == "nightmare" {
+				character = candidate
+				nightmareQuestID = quest.QuestID
+				break
+			}
+		}
+		if nightmareQuestID != "" {
 			break
 		}
 	}
 	if nightmareQuestID == "" {
-		t.Fatal("expected nightmare clear_dungeon quest in board")
+		t.Fatal("expected nightmare clear_dungeon quest in sampled boards")
 	}
 
 	if _, _, err := service.AcceptQuest(character, nightmareQuestID, limits); err != nil {
@@ -125,7 +133,7 @@ func TestQuestTemplateCatalogLoadsFromYAML(t *testing.T) {
 	}
 }
 
-func TestInstantiateQuestAppliesRankOverridesFromYAML(t *testing.T) {
+func TestInstantiateQuestAutoAcceptsAndRollsRewardFromTemplate(t *testing.T) {
 	definition, ok := findQuestDefinition(characters.QuestSummary{
 		TemplateType: "deliver_supplies",
 		Difficulty:   "normal",
@@ -135,12 +143,12 @@ func TestInstantiateQuestAppliesRankOverridesFromYAML(t *testing.T) {
 		t.Fatal("expected normal deliver_supplies definition to exist")
 	}
 
-	quest := instantiateQuest(definition, characters.Summary{Rank: "mid"}, "board_test")
-	if quest.TargetRegionID != "sunscar_desert_outskirts" {
-		t.Fatalf("expected mid-rank override target sunscar_desert_outskirts, got %q", quest.TargetRegionID)
+	quest := instantiateQuest(definition, characters.Summary{}, "board_test", "board_test|seed")
+	if quest.Status != "accepted" {
+		t.Fatalf("expected generated quest to be auto-accepted, got %q", quest.Status)
 	}
-	if quest.Title != "Deliver Desert Provisions" {
-		t.Fatalf("expected overridden title Deliver Desert Provisions, got %q", quest.Title)
+	if quest.RewardGold < 85 || quest.RewardGold > 250 {
+		t.Fatalf("expected rolled deliver reward in supported range, got %d", quest.RewardGold)
 	}
 }
 
@@ -160,5 +168,91 @@ func TestValidateQuestTemplateDefinitionRejectsBrokenStepRefs(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "missing step") {
 		t.Fatalf("expected missing step error, got %v", err)
+	}
+}
+
+func TestQuestBoardRefillsToFourAcrossDailyReset(t *testing.T) {
+	service := NewService()
+	now := time.Date(2026, 4, 6, 10, 0, 0, 0, time.FixedZone("CST", 8*3600))
+	service.clock = func() time.Time { return now }
+
+	character := characters.Summary{
+		CharacterID: "char_daily",
+		Name:        "DailyRunner",
+	}
+
+	board := service.ListQuests(character, characters.DailyLimits{})
+	if len(board.Quests) != characters.DailyQuestBoardSize {
+		t.Fatalf("expected %d quests on first board, got %d", characters.DailyQuestBoardSize, len(board.Quests))
+	}
+
+	for i := 0; i < 2; i++ {
+		board.Quests[i].Status = "submitted"
+	}
+	service.boardByCharacter[character.CharacterID] = boardRecord{
+		boardID:     board.BoardID,
+		resetDate:   service.businessDate(),
+		status:      "active",
+		rerollCount: 0,
+		quests:      board.Quests,
+	}
+
+	now = now.Add(24 * time.Hour)
+	refilled := service.ListQuests(character, characters.DailyLimits{})
+	if len(refilled.Quests) != characters.DailyQuestBoardSize {
+		t.Fatalf("expected board to refill back to %d, got %d", characters.DailyQuestBoardSize, len(refilled.Quests))
+	}
+
+	active := 0
+	for _, quest := range refilled.Quests {
+		if quest.Status == "accepted" || quest.Status == "completed" {
+			active++
+		}
+	}
+	if active != characters.DailyQuestBoardSize {
+		t.Fatalf("expected %d active quests after refill, got %d", characters.DailyQuestBoardSize, active)
+	}
+}
+
+func TestCurioFollowupDoesNotOverflowFixedDailyBoard(t *testing.T) {
+	service := NewService()
+	now := time.Date(2026, 4, 6, 10, 0, 0, 0, time.FixedZone("CST", 8*3600))
+	service.clock = func() time.Time { return now }
+
+	character := characters.Summary{
+		CharacterID: "char_curio_fixed_board",
+		Name:        "CurioFixedBoard",
+	}
+
+	board := service.ListQuests(character, characters.DailyLimits{})
+	if len(board.Quests) != characters.DailyQuestBoardSize {
+		t.Fatalf("expected fixed board size %d, got %d", characters.DailyQuestBoardSize, len(board.Quests))
+	}
+
+	board.Quests[0].Status = "submitted"
+	service.boardByCharacter[character.CharacterID] = boardRecord{
+		boardID:     board.BoardID,
+		resetDate:   service.businessDate(),
+		status:      "active",
+		rerollCount: 0,
+		quests:      board.Quests,
+	}
+
+	view, followup, err := service.EnsureCurioFollowupQuest(character, world.CurioQuestSeed{
+		TemplateType:     "curio_followup_delivery",
+		Title:            "Escort the Shrine Witness",
+		Description:      "Take the witness back to the village.",
+		TargetRegionID:   "greenfield_village",
+		RewardGold:       120,
+		RewardReputation: 20,
+	}, characters.DailyLimits{})
+	if err != nil {
+		t.Fatalf("EnsureCurioFollowupQuest failed: %v", err)
+	}
+	if followup != nil {
+		t.Fatal("expected curio followup not to create a fifth same-day quest")
+	}
+	if len(view.Quests) != characters.DailyQuestBoardSize {
+		t.Fatalf("expected board to remain at %d quests, got %d", characters.DailyQuestBoardSize, len(view.Quests))
 	}
 }

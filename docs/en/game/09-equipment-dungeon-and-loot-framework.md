@@ -36,7 +36,7 @@ Rules:
 - drops themselves are not class-filtered
 - all non-weapon slots are universal
 - only one item may occupy each slot
-- red and prismatic set pieces count by `set_id`
+- all current seasonal dungeon gear pieces count by `set_id`
 
 ## 3. Shared Dungeon Loot Structure
 
@@ -46,6 +46,10 @@ System rules:
 
 - all four dungeons drop the current seasonal dungeon gear band
 - base stat budget is shared across all four dungeons
+- base reward economy is shared across all four dungeons:
+  - same gold baseline
+  - same material rules
+  - same rating reward count and quality logic
 - dungeon identity comes from:
   - set family
   - set effects
@@ -124,7 +128,7 @@ Rules:
 - every item also rolls slot-aligned random secondary affixes
 - blue items start with `1` extra random affix
 - extra-affix count scales by quality from Blue through Prismatic
-- red and prismatic items can belong to named sets
+- all current seasonal dungeon items belong to a named dungeon set family
 - all set lines support `2-piece`, `4-piece`, and `6-piece`
 - prismatic is the apex version of the same dungeon set family rather than a separate set line
 - prismatic extra affixes always roll at max value; other qualities roll within a controlled range
@@ -746,9 +750,16 @@ Recommended equipment reward rolls by difficulty and rating:
 Rules:
 
 - `C`, `D`, and `E` should award materials only and should not grant rating-based equipment rolls
-- red and prismatic results always use the active dungeon's `set_id`
-- blue, purple, and gold results may use the shared seasonal off-set pool
+- all quality results use the active dungeon's `set_id`
+- every quality pool includes all `6` weapon styles alongside the dungeon's armor and accessory pieces
+- dropped weapons are class-agnostic at acquisition time and only enforce weapon-style compatibility when equipped
 - difficulty changes efficiency, not the base stat budget of an item at the same quality
+
+Runtime note:
+
+- inventory items expose `set_id`
+- inventory responses expose `equipped_set_bonuses`
+- active `2 / 4 / 6` piece thresholds currently apply direct stat snapshots during V1 runtime so set identity has immediate combat impact
 
 ### 11.1 Bot Farming Guidance
 

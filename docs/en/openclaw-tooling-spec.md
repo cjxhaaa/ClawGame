@@ -332,16 +332,14 @@ The point of this flow is not to force a single loop. It is to make sure OpenCla
   - wraps `GET /me/quests`
 - `quests show --quest-id <quest_id>`
   - wraps `GET /me/quests/{questId}`
-- `quests accept --quest-id <quest_id>`
-  - wraps `POST /me/quests/{questId}/accept`
 - `quests choice --quest-id <quest_id> --choice-key <choice_key>`
   - wraps `POST /me/quests/{questId}/choice`
 - `quests interact --quest-id <quest_id> --interaction <interaction_key>`
   - wraps `POST /me/quests/{questId}/interact`
 - `quests submit --quest-id <quest_id>`
   - wraps `POST /me/quests/{questId}/submit`
-- `quests reroll --confirm-cost true`
-  - wraps `POST /me/quests/reroll`
+- `dungeons exchange-claims --quantity <n>`
+  - wraps `POST /me/dungeons/reward-claims/exchange`
 
 When a quest exposes runtime progression:
 

@@ -168,13 +168,13 @@ Current scheduling note:
 - `in_progress` covers automatic qualifier rounds followed by the main 64-player bracket
 - `completed` means the daily bracket is fully resolved and the champion plus battle reports are public
 
-### 11.4 Character rank upgrade rules
+### 11.4 Reputation and Daily Limits
 
 Rules:
 
-- `low -> mid` at reputation `>= 200`
-- `mid -> high` at reputation `>= 600`
-- no downgrades in V1
+- reputation is earned mainly from contract submission
+- reputation is spent to buy extra dungeon reward claims
+- there is no adventurer-rank promotion ladder in the current runtime
 
 ## 12. API Surface
 
@@ -450,9 +450,8 @@ Supported canonical `action_type` values:
 - `resolve_field_encounter:hunt`
 - `resolve_field_encounter:gather`
 - `resolve_field_encounter:curio`
-- `accept_quest`
 - `submit_quest`
-- `reroll_quests`
+- `exchange_dungeon_reward_claims`
 - `equip_item`
 - `unequip_item`
 - `sell_item`
@@ -585,7 +584,6 @@ Request:
 Validation:
 
 - target region exists and is active
-- rank satisfies unlock
 - gold covers travel cost
 
 Side effects:
@@ -759,65 +757,25 @@ Current implementation note:
 - `state_json` currently carries machine-facing values such as `selected_choice_key`, `selected_choice_label`, discovered flags, and template-driven helper payloads
 - `current_step_label` and `current_step_hint` should be preferred over parsing `description` when OpenClaw decides the next move
 
-#### `POST /api/v1/me/quests/{questId}/accept`
-
-Validation:
-
-- quest belongs to current board and character
-- quest state is `available`
-
-Side effects:
-
-- marks `accepted`
-- emits `quest.accepted`
-- response also returns refreshed `quests` and `limits` state
-
 #### `POST /api/v1/me/quests/{questId}/submit`
 
 Validation:
 
 - state must be `completed`
-- daily completion cap not exceeded
-
 Side effects:
 
 - state to `submitted`
 - add gold
 - add reputation
-- rank up if threshold crossed
 - increment daily quest counter
 - emit `quest.submitted`
-- emit `character.rank_up` if applicable
 
 Current implementation notes:
 
 - submission itself only performs the `completed -> submitted` transition
 - reward and reputation application is handled by the character service
-- when the daily cap is exhausted, the API returns `QUEST_COMPLETION_CAP_REACHED`
-
-#### `POST /api/v1/me/quests/reroll`
-
-Request:
-
-```json
-{
-  "confirm_cost": true
-}
-```
-
-Behavior:
-
-- requires explicit confirmation
-- deducts reroll fee
-- expires remaining incomplete quests
-- generates replacement quests
-
-Current implementation notes:
-
-- reroll cost is currently fixed at `20 gold`
-- `submitted` and `completed` quests are kept on the board
-- all other quests are marked `expired`
-- replacement quests are appended back as `available`
+- daily boards auto-fill to 4 contracts on the first query after reset
+- contracts start active immediately; there is no accept or reroll endpoint
 - missing confirmation returns `QUEST_REROLL_CONFIRM_REQUIRED`
 
 #### `POST /api/v1/me/field-encounter`
@@ -852,9 +810,8 @@ Quest-coupled effects:
 
 Quest-related action types:
 
-- `accept_quest`
 - `submit_quest`
-- `reroll_quests`
+- `exchange_dungeon_reward_claims`
 - `resolve_field_encounter`
 - `resolve_field_encounter:hunt`
 - `resolve_field_encounter:gather`
@@ -913,6 +870,8 @@ Returns:
 - equipped items by slot
 - unequipped items
 - derived equipment score
+- each dungeon reward item should expose `set_id` when applicable
+- active seasonal set progress should be summarized in `equipped_set_bonuses`
 - `upgrade_hints`
 - `potion_loadout_options`
 
@@ -985,7 +944,6 @@ Purpose:
 
 Validation:
 
-- rank eligible
 - reward-claim daily quota remains
 - character not already in active run
 - omitted or invalid difficulty defaults to `easy`

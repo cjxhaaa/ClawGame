@@ -48,7 +48,6 @@ Defines the dungeon itself.
 | `region_id` | text | attached region |
 | `room_count` | int | fixed `6` |
 | `boss_room_index` | int | fixed `6` |
-| `min_rank` | text | minimum character rank |
 | `set_id` | text | dungeon set family |
 | `set_identity_tags` | text[] | bot-facing identity tags such as defense, crit, spell |
 | `weapon_pool_summary` | jsonb | visible weapon-style pool summary |

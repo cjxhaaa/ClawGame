@@ -21,20 +21,19 @@ type questTemplateCatalog struct {
 }
 
 type questTemplateConfigFile struct {
-	Pool             string                      `yaml:"pool"`
-	Order            int                         `yaml:"order"`
-	TemplateType     string                      `yaml:"template_type"`
-	Difficulty       string                      `yaml:"difficulty"`
-	FlowKind         string                      `yaml:"flow_kind"`
-	Rarity           string                      `yaml:"rarity"`
-	Title            string                      `yaml:"title"`
-	Description      string                      `yaml:"description"`
-	TargetRegionID   string                      `yaml:"target_region_id"`
-	ProgressTarget   int                         `yaml:"progress_target"`
-	RewardGold       int                         `yaml:"reward_gold"`
-	RewardReputation int                         `yaml:"reward_reputation"`
-	Runtime          questRuntimeConfigFile      `yaml:"runtime"`
-	RankOverrides    []questTemplateRankOverride `yaml:"rank_overrides"`
+	Pool             string                 `yaml:"pool"`
+	Order            int                    `yaml:"order"`
+	TemplateType     string                 `yaml:"template_type"`
+	Difficulty       string                 `yaml:"difficulty"`
+	FlowKind         string                 `yaml:"flow_kind"`
+	Rarity           string                 `yaml:"rarity"`
+	Title            string                 `yaml:"title"`
+	Description      string                 `yaml:"description"`
+	TargetRegionID   string                 `yaml:"target_region_id"`
+	ProgressTarget   int                    `yaml:"progress_target"`
+	RewardGold       int                    `yaml:"reward_gold"`
+	RewardReputation int                    `yaml:"reward_reputation"`
+	Runtime          questRuntimeConfigFile `yaml:"runtime"`
 }
 
 type questRuntimeConfigFile struct {
@@ -171,7 +170,6 @@ func buildQuestTemplateDefinition(path string, file questTemplateConfigFile) (qu
 		ProgressTarget:   file.ProgressTarget,
 		RewardGold:       file.RewardGold,
 		RewardReputation: file.RewardReputation,
-		RankOverrides:    file.RankOverrides,
 		Spec: questRuntimeSpec{
 			InitialStepKey:       strings.TrimSpace(file.Runtime.InitialStepKey),
 			CompletionStepKey:    strings.TrimSpace(file.Runtime.CompletionStepKey),

@@ -30,12 +30,18 @@ var (
 	ErrSkillInvalidLoadout    = errors.New("skill loadout invalid")
 	ErrGoldInsufficient       = errors.New("gold insufficient")
 	ErrMaterialsInsufficient  = errors.New("materials insufficient")
-	ErrTravelRankLocked       = errors.New("travel rank locked")
 	ErrTravelInsufficientGold = errors.New("travel insufficient gold")
 	ErrTravelRegionNotFound   = errors.New("travel region not found")
 	ErrQuestCompletionCap     = errors.New("quest completion cap reached")
 	ErrDungeonRewardClaimCap  = errors.New("dungeon reward claim cap reached")
+	ErrReputationInsufficient = errors.New("reputation insufficient")
 	ErrActionNotSupported     = errors.New("action not supported")
+)
+
+const (
+	FreeDungeonRewardClaimsPerDay = 2
+	BonusDungeonClaimCostRep      = 50
+	DailyQuestBoardSize           = 4
 )
 
 type Summary struct {
@@ -46,7 +52,6 @@ type Summary struct {
 	WeaponStyle      string `json:"weapon_style"`
 	SeasonLevel      int    `json:"season_level"`
 	SeasonXP         int    `json:"season_xp"`
-	Rank             string `json:"rank"`
 	Reputation       int    `json:"reputation"`
 	Gold             int    `json:"gold"`
 	LocationRegionID string `json:"location_region_id"`
@@ -90,7 +95,7 @@ type DungeonPowerPreview struct {
 type CombatPowerSummary struct {
 	FormulaVersion     string                `json:"formula_version"`
 	EffectiveLevel     int                   `json:"effective_level"`
-	RankCoeff          float64               `json:"rank_coeff"`
+	ProgressionCoeff   float64               `json:"progression_coeff"`
 	BaseGrowthScore    int                   `json:"base_growth_score"`
 	EquipmentScore     int                   `json:"equipment_score"`
 	BuildModifierScore int                   `json:"build_modifier_score"`
@@ -101,17 +106,21 @@ type CombatPowerSummary struct {
 }
 
 type DailyLimits struct {
-	DailyResetAt        string `json:"daily_reset_at"`
-	QuestCompletionCap  int    `json:"quest_completion_cap"`
-	QuestCompletionUsed int    `json:"quest_completion_used"`
-	DungeonEntryCap     int    `json:"dungeon_entry_cap"`
-	DungeonEntryUsed    int    `json:"dungeon_entry_used"`
+	DailyResetAt               string `json:"daily_reset_at"`
+	QuestCompletionCap         int    `json:"quest_completion_cap"`
+	QuestCompletionUsed        int    `json:"quest_completion_used"`
+	DungeonEntryCap            int    `json:"dungeon_entry_cap"`
+	DungeonEntryUsed           int    `json:"dungeon_entry_used"`
+	FreeDungeonEntryCap        int    `json:"free_dungeon_entry_cap"`
+	BonusDungeonEntryPurchased int    `json:"bonus_dungeon_entry_purchased"`
+	ReputationPerBonusClaim    int    `json:"reputation_per_bonus_claim"`
 }
 
 type QuestSummary struct {
 	QuestID          string `json:"quest_id"`
 	BoardID          string `json:"board_id"`
 	TemplateType     string `json:"template_type"`
+	ContractType     string `json:"contract_type,omitempty"`
 	Difficulty       string `json:"difficulty,omitempty"`
 	FlowKind         string `json:"flow_kind,omitempty"`
 	Rarity           string `json:"rarity"`
@@ -200,14 +209,15 @@ type TravelResult struct {
 }
 
 type StoredCharacter struct {
-	AccountID            string
-	Summary              Summary
-	Stats                StatsSnapshot
-	SkillLevels          map[string]int
-	SkillLoadout         []string
-	QuestCompletionUsed  int
-	DungeonEntryUsed     int
-	DailyLimitsResetDate string
+	AccountID             string
+	Summary               Summary
+	Stats                 StatsSnapshot
+	SkillLevels           map[string]int
+	SkillLoadout          []string
+	QuestCompletionUsed   int
+	DungeonEntryUsed      int
+	DungeonBonusPurchased int
+	DailyLimitsResetDate  string
 }
 
 type Repository interface {
@@ -218,15 +228,16 @@ type Repository interface {
 }
 
 type record struct {
-	summary              Summary
-	stats                StatsSnapshot
-	skillLevels          map[string]int
-	skillLoadout         []string
-	questCompletionUsed  int
-	dungeonEntryUsed     int
-	materials            map[string]int
-	dailyLimitsResetDate string
-	recentEvents         []world.WorldEvent
+	summary               Summary
+	stats                 StatsSnapshot
+	skillLevels           map[string]int
+	skillLoadout          []string
+	questCompletionUsed   int
+	dungeonEntryUsed      int
+	dungeonBonusPurchased int
+	materials             map[string]int
+	dailyLimitsResetDate  string
+	recentEvents          []world.WorldEvent
 }
 
 type RuntimeSnapshot struct {
@@ -274,15 +285,16 @@ func NewServiceWithRepository(repo Repository) (*Service, error) {
 
 	for _, stored := range storedCharacters {
 		service.characterByAccountID[stored.AccountID] = record{
-			summary:              stored.Summary,
-			stats:                stored.Stats,
-			skillLevels:          cloneSkillLevels(stored.SkillLevels),
-			skillLoadout:         cloneSkillLoadout(stored.SkillLoadout),
-			questCompletionUsed:  stored.QuestCompletionUsed,
-			dungeonEntryUsed:     stored.DungeonEntryUsed,
-			materials:            map[string]int{},
-			dailyLimitsResetDate: strings.TrimSpace(stored.DailyLimitsResetDate),
-			recentEvents:         []world.WorldEvent{},
+			summary:               stored.Summary,
+			stats:                 stored.Stats,
+			skillLevels:           cloneSkillLevels(stored.SkillLevels),
+			skillLoadout:          cloneSkillLoadout(stored.SkillLoadout),
+			questCompletionUsed:   stored.QuestCompletionUsed,
+			dungeonEntryUsed:      stored.DungeonEntryUsed,
+			dungeonBonusPurchased: stored.DungeonBonusPurchased,
+			materials:             map[string]int{},
+			dailyLimitsResetDate:  strings.TrimSpace(stored.DailyLimitsResetDate),
+			recentEvents:          []world.WorldEvent{},
 		}
 		service.accountIDByName[strings.ToLower(stored.Summary.Name)] = stored.AccountID
 	}
@@ -332,7 +344,6 @@ func (s *Service) CreateCharacter(account auth.Account, name, class, weaponStyle
 		WeaponStyle:      "",
 		SeasonLevel:      1,
 		SeasonXP:         0,
-		Rank:             "low",
 		Reputation:       0,
 		Gold:             100,
 		LocationRegionID: "main_city",
@@ -494,7 +505,7 @@ func (s *Service) GetState(account auth.Account, worldService *world.Service) (S
 	}
 
 	now := s.clock().In(s.loc)
-	limits := LimitsForRank(entry.summary.Rank, nextDailyReset(now), entry.questCompletionUsed, entry.dungeonEntryUsed)
+	limits := BuildDailyLimits(nextDailyReset(now), entry.questCompletionUsed, entry.dungeonEntryUsed, entry.dungeonBonusPurchased)
 	validActions := s.listValidActions(entry.summary.LocationRegionID, worldService)
 
 	recentEvents := make([]world.WorldEvent, len(entry.recentEvents))
@@ -544,10 +555,6 @@ func (s *Service) Travel(account auth.Account, targetRegionID string, worldServi
 	if err != nil {
 		s.mu.Unlock()
 		return TravelResult{}, err
-	}
-	if !rankAllows(entry.summary.Rank, region.Region.MinRank) {
-		s.mu.Unlock()
-		return TravelResult{}, ErrTravelRankLocked
 	}
 	if entry.summary.Gold < region.Region.TravelCostGold {
 		s.mu.Unlock()
@@ -694,6 +701,7 @@ func (s *Service) normalizeDailyLimitsLocked(accountID string, entry record) (re
 
 	entry.questCompletionUsed = 0
 	entry.dungeonEntryUsed = 0
+	entry.dungeonBonusPurchased = 0
 	entry.dailyLimitsResetDate = currentDate
 
 	if err := s.saveRecordLocked(accountID, entry); err != nil {
@@ -710,14 +718,15 @@ func (s *Service) saveRecordLocked(accountID string, entry record) error {
 	}
 
 	return s.repo.SaveCharacter(StoredCharacter{
-		AccountID:            accountID,
-		Summary:              entry.summary,
-		Stats:                entry.stats,
-		SkillLevels:          cloneSkillLevels(entry.skillLevels),
-		SkillLoadout:         cloneSkillLoadout(entry.skillLoadout),
-		QuestCompletionUsed:  entry.questCompletionUsed,
-		DungeonEntryUsed:     entry.dungeonEntryUsed,
-		DailyLimitsResetDate: entry.dailyLimitsResetDate,
+		AccountID:             accountID,
+		Summary:               entry.summary,
+		Stats:                 entry.stats,
+		SkillLevels:           cloneSkillLevels(entry.skillLevels),
+		SkillLoadout:          cloneSkillLoadout(entry.skillLoadout),
+		QuestCompletionUsed:   entry.questCompletionUsed,
+		DungeonEntryUsed:      entry.dungeonEntryUsed,
+		DungeonBonusPurchased: entry.dungeonBonusPurchased,
+		DailyLimitsResetDate:  entry.dailyLimitsResetDate,
 	})
 }
 
@@ -740,32 +749,16 @@ func prependEvent(events []world.WorldEvent, event world.WorldEvent) []world.Wor
 	return items
 }
 
-func LimitsForRank(rank string, resetAt time.Time, questCompletionUsed, dungeonEntryUsed int) DailyLimits {
-	switch rank {
-	case "mid":
-		return DailyLimits{
-			DailyResetAt:        resetAt.Format(time.RFC3339),
-			QuestCompletionCap:  6,
-			QuestCompletionUsed: questCompletionUsed,
-			DungeonEntryCap:     4,
-			DungeonEntryUsed:    dungeonEntryUsed,
-		}
-	case "high":
-		return DailyLimits{
-			DailyResetAt:        resetAt.Format(time.RFC3339),
-			QuestCompletionCap:  8,
-			QuestCompletionUsed: questCompletionUsed,
-			DungeonEntryCap:     6,
-			DungeonEntryUsed:    dungeonEntryUsed,
-		}
-	default:
-		return DailyLimits{
-			DailyResetAt:        resetAt.Format(time.RFC3339),
-			QuestCompletionCap:  4,
-			QuestCompletionUsed: questCompletionUsed,
-			DungeonEntryCap:     2,
-			DungeonEntryUsed:    dungeonEntryUsed,
-		}
+func BuildDailyLimits(resetAt time.Time, questCompletionUsed, dungeonEntryUsed, dungeonBonusPurchased int) DailyLimits {
+	return DailyLimits{
+		DailyResetAt:               resetAt.Format(time.RFC3339),
+		QuestCompletionCap:         DailyQuestBoardSize,
+		QuestCompletionUsed:        questCompletionUsed,
+		DungeonEntryCap:            FreeDungeonRewardClaimsPerDay + max(0, dungeonBonusPurchased),
+		DungeonEntryUsed:           dungeonEntryUsed,
+		FreeDungeonEntryCap:        FreeDungeonRewardClaimsPerDay,
+		BonusDungeonEntryPurchased: max(0, dungeonBonusPurchased),
+		ReputationPerBonusClaim:    BonusDungeonClaimCostRep,
 	}
 }
 
@@ -881,7 +874,7 @@ func (s *Service) SpendMaterials(characterID string, materialCosts []map[string]
 	return materialBalancesView(entry.materials), nil
 }
 
-func (s *Service) ApplyFieldEncounter(characterID string, rewardGold int, materialDrops []map[string]any, event world.WorldEvent) (Summary, []MaterialBalance, error) {
+func (s *Service) ApplyFieldEncounter(characterID string, rewardGold int, materialDrops []map[string]any, grantXP bool, event world.WorldEvent) (Summary, []MaterialBalance, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -898,7 +891,9 @@ func (s *Service) ApplyFieldEncounter(characterID string, rewardGold int, materi
 	if rewardGold > 0 {
 		entry.summary.Gold += rewardGold
 	}
-	grantSeasonXP(&entry.summary, 100)
+	if grantXP {
+		grantSeasonXP(&entry.summary, 100)
+	}
 	if entry.materials == nil {
 		entry.materials = map[string]int{}
 	}
@@ -971,7 +966,7 @@ func (s *Service) ApplyDungeonRewardClaim(characterID, runID, dungeonID string, 
 	}
 
 	s.characterByAccountID[accountID] = entry
-	updatedLimits := LimitsForRank(entry.summary.Rank, resetAt, entry.questCompletionUsed, entry.dungeonEntryUsed)
+	updatedLimits := BuildDailyLimits(resetAt, entry.questCompletionUsed, entry.dungeonEntryUsed, entry.dungeonBonusPurchased)
 	return entry.summary, updatedLimits, event, nil
 }
 
@@ -989,17 +984,14 @@ func (s *Service) ApplyQuestSubmission(characterID string, quest QuestSummary) (
 	}
 
 	resetAt := nextDailyReset(s.clock().In(s.loc))
-	limits := LimitsForRank(entry.summary.Rank, resetAt, entry.questCompletionUsed, entry.dungeonEntryUsed)
-	if entry.questCompletionUsed >= limits.QuestCompletionCap {
+	if entry.questCompletionUsed >= DailyQuestBoardSize {
 		return Summary{}, DailyLimits{}, nil, false, ErrQuestCompletionCap
 	}
 
-	previousRank := entry.summary.Rank
 	entry.summary.Gold += quest.RewardGold
 	entry.summary.Reputation += quest.RewardReputation
 	grantSeasonXP(&entry.summary, xpForQuest(quest))
 	entry.questCompletionUsed++
-	entry.summary.Rank = rankForReputation(entry.summary.Reputation)
 
 	submitEvent := world.WorldEvent{
 		EventID:          nextID("evt"),
@@ -1019,22 +1011,6 @@ func (s *Service) ApplyQuestSubmission(characterID string, quest QuestSummary) (
 	}
 
 	events := []world.WorldEvent{submitEvent}
-	if entry.summary.Rank != previousRank {
-		events = append([]world.WorldEvent{{
-			EventID:          nextID("evt"),
-			EventType:        "character.rank_up",
-			Visibility:       "public",
-			ActorCharacterID: entry.summary.CharacterID,
-			ActorName:        entry.summary.Name,
-			RegionID:         entry.summary.LocationRegionID,
-			Summary:          fmt.Sprintf("%s advanced from %s-rank to %s-rank.", entry.summary.Name, previousRank, entry.summary.Rank),
-			Payload: map[string]any{
-				"previous_rank": previousRank,
-				"current_rank":  entry.summary.Rank,
-			},
-			OccurredAt: s.clock().In(s.loc).Format(time.RFC3339),
-		}}, events...)
-	}
 
 	for _, event := range events {
 		entry.recentEvents = prependEvent(entry.recentEvents, event)
@@ -1047,8 +1023,42 @@ func (s *Service) ApplyQuestSubmission(characterID string, quest QuestSummary) (
 		return Summary{}, DailyLimits{}, nil, false, err
 	}
 	s.characterByAccountID[accountID] = entry
-	updatedLimits := LimitsForRank(entry.summary.Rank, resetAt, entry.questCompletionUsed, entry.dungeonEntryUsed)
-	return entry.summary, updatedLimits, events, entry.summary.Rank != previousRank, nil
+	updatedLimits := BuildDailyLimits(resetAt, entry.questCompletionUsed, entry.dungeonEntryUsed, entry.dungeonBonusPurchased)
+	return entry.summary, updatedLimits, events, false, nil
+}
+
+func (s *Service) PurchaseDungeonRewardClaims(characterID string, quantity int) (Summary, DailyLimits, error) {
+	if quantity <= 0 {
+		quantity = 1
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	accountID, entry, ok := s.lookupByCharacterIDLocked(characterID)
+	if !ok {
+		return Summary{}, DailyLimits{}, ErrCharacterNotFound
+	}
+	entry, _, err := s.normalizeDailyLimitsLocked(accountID, entry)
+	if err != nil {
+		return Summary{}, DailyLimits{}, err
+	}
+
+	totalCost := quantity * BonusDungeonClaimCostRep
+	if entry.summary.Reputation < totalCost {
+		return Summary{}, DailyLimits{}, ErrReputationInsufficient
+	}
+
+	entry.summary.Reputation -= totalCost
+	entry.dungeonBonusPurchased += quantity
+
+	if err := s.saveRecordLocked(accountID, entry); err != nil {
+		return Summary{}, DailyLimits{}, err
+	}
+
+	s.characterByAccountID[accountID] = entry
+	resetAt := nextDailyReset(s.clock().In(s.loc))
+	return entry.summary, BuildDailyLimits(resetAt, entry.questCompletionUsed, entry.dungeonEntryUsed, entry.dungeonBonusPurchased), nil
 }
 
 func (s *Service) AppendEvents(characterID string, events ...world.WorldEvent) error {
@@ -1090,7 +1100,7 @@ func (s *Service) GetRuntimeDetailByCharacterID(characterID string) (Summary, St
 	}
 
 	resetAt := nextDailyReset(s.clock().In(s.loc))
-	limits := LimitsForRank(entry.summary.Rank, resetAt, entry.questCompletionUsed, entry.dungeonEntryUsed)
+	limits := BuildDailyLimits(resetAt, entry.questCompletionUsed, entry.dungeonEntryUsed, entry.dungeonBonusPurchased)
 	events := make([]world.WorldEvent, len(entry.recentEvents))
 	copy(events, entry.recentEvents)
 
@@ -1123,17 +1133,6 @@ func (s *Service) lookupByCharacterIDLocked(characterID string) (string, record,
 	}
 
 	return "", record{}, false
-}
-
-func rankForReputation(reputation int) string {
-	switch {
-	case reputation >= 600:
-		return "high"
-	case reputation >= 200:
-		return "mid"
-	default:
-		return "low"
-	}
 }
 
 func applyMaterialDrops(balance map[string]int, drops []map[string]any) {
@@ -1207,10 +1206,6 @@ func intPayload(payload map[string]any, key string) int {
 	return intFromAny(payload[key])
 }
 
-func rankAllows(currentRank, requiredRank string) bool {
-	return rankOrder[currentRank] >= rankOrder[requiredRank]
-}
-
 func nextDailyReset(now time.Time) time.Time {
 	resetToday := time.Date(now.Year(), now.Month(), now.Day(), 4, 0, 0, 0, now.Location())
 	if now.Before(resetToday) {
@@ -1246,12 +1241,6 @@ func mustLocation(name string) *time.Location {
 
 func nextID(prefix string) string {
 	return fmt.Sprintf("%s_%d_%06d", prefix, time.Now().UnixNano(), atomic.AddUint64(&characterIDCounter, 1))
-}
-
-var rankOrder = map[string]int{
-	"low":  1,
-	"mid":  2,
-	"high": 3,
 }
 
 var allowedWeaponStyles = map[string][]string{

@@ -17,7 +17,6 @@ import (
 
 var (
 	ErrSignupClosed           = errors.New("arena signup closed")
-	ErrRankNotEligible        = errors.New("arena rank not eligible")
 	ErrAlreadySignedUp        = errors.New("arena already signed up")
 	ErrArenaMatchNotFound     = errors.New("arena match not found")
 	ErrChallengeWindow        = errors.New("arena challenge window closed")
@@ -38,7 +37,6 @@ type Entry struct {
 	CharacterName   string `json:"character_name"`
 	Class           string `json:"class"`
 	WeaponStyle     string `json:"weapon_style"`
-	Rank            string `json:"rank"`
 	PanelPowerScore int    `json:"panel_power_score"`
 	EquipmentScore  int    `json:"equipment_score"`
 	SignedUpAt      string `json:"signed_up_at"`
@@ -113,7 +111,6 @@ type HistoryOpponent struct {
 	CharacterName   string `json:"character_name"`
 	Class           string `json:"class"`
 	WeaponStyle     string `json:"weapon_style"`
-	Rank            string `json:"rank"`
 	PanelPowerScore int    `json:"panel_power_score"`
 	IsNPC           bool   `json:"is_npc,omitempty"`
 }
@@ -169,7 +166,6 @@ type RatingCandidate struct {
 	CharacterName   string `json:"character_name"`
 	Class           string `json:"class"`
 	WeaponStyle     string `json:"weapon_style"`
-	Rank            string `json:"rank"`
 	Rating          int    `json:"rating"`
 	PanelPowerScore int    `json:"panel_power_score"`
 	EquipmentScore  int    `json:"equipment_score"`
@@ -423,9 +419,6 @@ func (s *Service) Signup(character characters.Summary, panelPowerScore, equipmen
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if character.Rank != "mid" && character.Rank != "high" {
-		return Entry{}, ErrRankNotEligible
-	}
 	if arenaStatus.Code != "signup_open" && arenaStatus.Code != "rating_open" {
 		return Entry{}, ErrSignupClosed
 	}
@@ -443,7 +436,6 @@ func (s *Service) Signup(character characters.Summary, panelPowerScore, equipmen
 		CharacterName:   character.Name,
 		Class:           character.Class,
 		WeaponStyle:     character.WeaponStyle,
-		Rank:            character.Rank,
 		PanelPowerScore: panelPowerScore,
 		EquipmentScore:  equipmentScore,
 		SignedUpAt:      s.clock().Format(time.RFC3339),
@@ -802,11 +794,6 @@ func fillNPCEntries(dayKey string, entries []Entry, target int) ([]Entry, int) {
 	if medianEquipmentScore == 0 {
 		medianEquipmentScore = 320
 	}
-	rank := medianRank(entries)
-	if rank == "" {
-		rank = "mid"
-	}
-
 	result := append([]Entry(nil), entries...)
 	for i := len(entries); i < target; i++ {
 		result = append(result, Entry{
@@ -814,7 +801,6 @@ func fillNPCEntries(dayKey string, entries []Entry, target int) ([]Entry, int) {
 			CharacterName:   fmt.Sprintf("Arena NPC %02d", i+1),
 			Class:           npcClassFor(i),
 			WeaponStyle:     npcWeaponFor(i),
-			Rank:            rank,
 			PanelPowerScore: medianScore,
 			EquipmentScore:  medianEquipmentScore,
 			SignedUpAt:      "",
@@ -1087,22 +1073,6 @@ func lowestPanelPower(entries []Entry) int {
 	return entries[len(entries)-1].PanelPowerScore
 }
 
-func medianRank(entries []Entry) string {
-	if len(entries) == 0 {
-		return ""
-	}
-	high := 0
-	for _, entry := range entries {
-		if entry.Rank == "high" {
-			high++
-		}
-	}
-	if high*2 >= len(entries) {
-		return "high"
-	}
-	return "mid"
-}
-
 func npcClassFor(index int) string {
 	classes := []string{"warrior", "mage", "priest"}
 	return classes[index%len(classes)]
@@ -1131,18 +1101,11 @@ func buildCombatantFromEntry(entry Entry, team string) combat.Combatant {
 	comb.Name = entry.CharacterName
 	comb.Team = team
 	comb.IsPlayerSide = true
-	comb.PotionBag = combat.DefaultPotionBag(entry.Rank)
+	comb.PotionBag = combat.DefaultPotionBag()
 	referencePower := 6200.0
-	if entry.Rank == "high" {
-		referencePower = 9800.0
-	}
 	scoreFactor := float64(entry.PanelPowerScore) / referencePower
 	scoreFactor = math.Max(0.72, math.Min(1.45, scoreFactor))
-	rankFactor := 1.0
-	if entry.Rank == "high" {
-		rankFactor = 1.08
-	}
-	applyFactor := scoreFactor * rankFactor
+	applyFactor := scoreFactor
 	comb.MaxHP = maxInt(1, int(float64(comb.MaxHP)*applyFactor))
 	comb.PhysAtk = maxInt(1, int(float64(comb.PhysAtk)*applyFactor))
 	comb.MagAtk = maxInt(1, int(float64(comb.MagAtk)*applyFactor))
@@ -1496,7 +1459,6 @@ func ratingCandidateFromEntry(entry Entry, rating int) RatingCandidate {
 		CharacterName:   entry.CharacterName,
 		Class:           entry.Class,
 		WeaponStyle:     entry.WeaponStyle,
-		Rank:            entry.Rank,
 		Rating:          rating,
 		PanelPowerScore: entry.PanelPowerScore,
 		EquipmentScore:  entry.EquipmentScore,
@@ -1774,7 +1736,6 @@ func historyOpponentFor(match Matchup, characterID string) *HistoryOpponent {
 		CharacterName:   opponent.CharacterName,
 		Class:           opponent.Class,
 		WeaponStyle:     opponent.WeaponStyle,
-		Rank:            opponent.Rank,
 		PanelPowerScore: opponent.PanelPowerScore,
 		IsNPC:           opponent.IsNPC,
 	}
@@ -1789,7 +1750,6 @@ func historyOpponentFromEntry(entry *Entry) *HistoryOpponent {
 		CharacterName:   entry.CharacterName,
 		Class:           entry.Class,
 		WeaponStyle:     entry.WeaponStyle,
-		Rank:            entry.Rank,
 		PanelPowerScore: entry.PanelPowerScore,
 		IsNPC:           entry.IsNPC,
 	}
@@ -1984,7 +1944,7 @@ type DuelResult struct {
 }
 
 // SimulateDuel runs a one-off auto-resolved duel between two characters using
-// class-baseline stats and rank-appropriate potion bags.
+// class-baseline stats and the shared starter potion bag.
 func (s *Service) SimulateDuel(a, b characters.Summary) DuelResult {
 	combA := combat.BaselineCombatant(a.Class)
 	combA.EntityID = a.CharacterID
@@ -1992,7 +1952,7 @@ func (s *Service) SimulateDuel(a, b characters.Summary) DuelResult {
 	combA.Team = "a"
 	combA.IsPlayerSide = true
 	combA.CurrentHP = combA.MaxHP
-	combA.PotionBag = combat.DefaultPotionBag(a.Rank)
+	combA.PotionBag = combat.DefaultPotionBag()
 
 	combB := combat.BaselineCombatant(b.Class)
 	combB.EntityID = b.CharacterID
@@ -2000,7 +1960,7 @@ func (s *Service) SimulateDuel(a, b characters.Summary) DuelResult {
 	combB.Team = "b"
 	combB.IsPlayerSide = true
 	combB.CurrentHP = combB.MaxHP
-	combB.PotionBag = combat.DefaultPotionBag(b.Rank)
+	combB.PotionBag = combat.DefaultPotionBag()
 
 	battleID := fmt.Sprintf("duel_%d", s.clock().UnixNano())
 	result := combat.SimulateBattle(combat.BattleConfig{

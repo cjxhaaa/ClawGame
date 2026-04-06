@@ -20,7 +20,6 @@ func TestSignupIsScopedPerDay(t *testing.T) {
 		Name:        "NovaScript",
 		Class:       "warrior",
 		WeaponStyle: "great_axe",
-		Rank:        "mid",
 	}
 	status := world.ArenaStatus{Code: "signup_open"}
 
@@ -44,9 +43,9 @@ func TestGetCurrentPadsNPCsTo64(t *testing.T) {
 
 	dayKey := dayKeyFor(now)
 	svc.entriesByDay[dayKey] = map[string]Entry{
-		"char_1": {CharacterID: "char_1", CharacterName: "NovaScript", Class: "warrior", WeaponStyle: "great_axe", Rank: "mid", PanelPowerScore: 6100, EquipmentScore: 300, SignedUpAt: now.Add(-3 * time.Minute).Format(time.RFC3339)},
-		"char_2": {CharacterID: "char_2", CharacterName: "LyraLoop", Class: "priest", WeaponStyle: "holy_tome", Rank: "mid", PanelPowerScore: 6400, EquipmentScore: 340, SignedUpAt: now.Add(-2 * time.Minute).Format(time.RFC3339)},
-		"char_3": {CharacterID: "char_3", CharacterName: "KiroNode", Class: "mage", WeaponStyle: "spellbook", Rank: "high", PanelPowerScore: 9800, EquipmentScore: 380, SignedUpAt: now.Add(-1 * time.Minute).Format(time.RFC3339)},
+		"char_1": {CharacterID: "char_1", CharacterName: "NovaScript", Class: "warrior", WeaponStyle: "great_axe", PanelPowerScore: 6100, EquipmentScore: 300, SignedUpAt: now.Add(-3 * time.Minute).Format(time.RFC3339)},
+		"char_2": {CharacterID: "char_2", CharacterName: "LyraLoop", Class: "priest", WeaponStyle: "holy_tome", PanelPowerScore: 6400, EquipmentScore: 340, SignedUpAt: now.Add(-2 * time.Minute).Format(time.RFC3339)},
+		"char_3": {CharacterID: "char_3", CharacterName: "KiroNode", Class: "mage", WeaponStyle: "spellbook", PanelPowerScore: 9800, EquipmentScore: 380, SignedUpAt: now.Add(-1 * time.Minute).Format(time.RFC3339)},
 	}
 
 	view := svc.GetCurrent(world.ArenaStatus{Code: "knockout_in_progress"}, sortedEntries(svc.entriesByDay[dayKey]))
@@ -77,7 +76,6 @@ func TestSaturdayKnockoutUsesTop64Seeds(t *testing.T) {
 			CharacterName:   fmt.Sprintf("Bot %03d", i+1),
 			Class:           npcClassFor(i),
 			WeaponStyle:     npcWeaponFor(i),
-			Rank:            "mid",
 			PanelPowerScore: 6200 + ((i % 20) * 40),
 			EquipmentScore:  320 + (i % 20),
 			SignedUpAt:      now.Add(-time.Duration(i) * time.Second).Format(time.RFC3339),
@@ -118,8 +116,8 @@ func TestChampionAvailableAfterFinalWindow(t *testing.T) {
 
 	dayKey := dayKeyFor(now)
 	svc.entriesByDay[dayKey] = map[string]Entry{
-		"char_1": {CharacterID: "char_1", CharacterName: "NovaScript", Class: "warrior", WeaponStyle: "great_axe", Rank: "high", PanelPowerScore: 10200, EquipmentScore: 420, SignedUpAt: now.Add(-5 * time.Minute).Format(time.RFC3339)},
-		"char_2": {CharacterID: "char_2", CharacterName: "LyraLoop", Class: "priest", WeaponStyle: "holy_tome", Rank: "high", PanelPowerScore: 9900, EquipmentScore: 410, SignedUpAt: now.Add(-4 * time.Minute).Format(time.RFC3339)},
+		"char_1": {CharacterID: "char_1", CharacterName: "NovaScript", Class: "warrior", WeaponStyle: "great_axe", PanelPowerScore: 10200, EquipmentScore: 420, SignedUpAt: now.Add(-5 * time.Minute).Format(time.RFC3339)},
+		"char_2": {CharacterID: "char_2", CharacterName: "LyraLoop", Class: "priest", WeaponStyle: "holy_tome", PanelPowerScore: 9900, EquipmentScore: 410, SignedUpAt: now.Add(-4 * time.Minute).Format(time.RFC3339)},
 	}
 
 	view := svc.GetCurrent(world.ArenaStatus{Code: "knockout_results_live"}, sortedEntries(svc.entriesByDay[dayKey]))
@@ -138,9 +136,9 @@ func TestArenaHistoryReturnsResolvedMatches(t *testing.T) {
 
 	dayKey := dayKeyFor(now)
 	svc.entriesByDay[dayKey] = map[string]Entry{
-		"char_1": {CharacterID: "char_1", CharacterName: "NovaScript", Class: "warrior", WeaponStyle: "great_axe", Rank: "mid", PanelPowerScore: 6500, EquipmentScore: 330, SignedUpAt: now.Add(-2 * time.Hour).Format(time.RFC3339)},
-		"char_2": {CharacterID: "char_2", CharacterName: "LyraLoop", Class: "priest", WeaponStyle: "holy_tome", Rank: "mid", PanelPowerScore: 6400, EquipmentScore: 328, SignedUpAt: now.Add(-2 * time.Hour).Format(time.RFC3339)},
-		"char_3": {CharacterID: "char_3", CharacterName: "KiroNode", Class: "mage", WeaponStyle: "spellbook", Rank: "mid", PanelPowerScore: 6300, EquipmentScore: 320, SignedUpAt: now.Add(-2 * time.Hour).Format(time.RFC3339)},
+		"char_1": {CharacterID: "char_1", CharacterName: "NovaScript", Class: "warrior", WeaponStyle: "great_axe", PanelPowerScore: 6500, EquipmentScore: 330, SignedUpAt: now.Add(-2 * time.Hour).Format(time.RFC3339)},
+		"char_2": {CharacterID: "char_2", CharacterName: "LyraLoop", Class: "priest", WeaponStyle: "holy_tome", PanelPowerScore: 6400, EquipmentScore: 328, SignedUpAt: now.Add(-2 * time.Hour).Format(time.RFC3339)},
+		"char_3": {CharacterID: "char_3", CharacterName: "KiroNode", Class: "mage", WeaponStyle: "spellbook", PanelPowerScore: 6300, EquipmentScore: 320, SignedUpAt: now.Add(-2 * time.Hour).Format(time.RFC3339)},
 	}
 
 	items := svc.ListHistory("char_1", HistoryFilters{Limit: 20})
@@ -198,12 +196,12 @@ func TestRatingBoardAndChallengeFlow(t *testing.T) {
 	svc.clock = func() time.Time { return now }
 
 	entries := []Entry{
-		{CharacterID: "char_1", CharacterName: "NovaScript", Class: "warrior", WeaponStyle: "great_axe", Rank: "mid", PanelPowerScore: 6800, EquipmentScore: 340},
-		{CharacterID: "char_2", CharacterName: "LyraLoop", Class: "priest", WeaponStyle: "holy_tome", Rank: "mid", PanelPowerScore: 7000, EquipmentScore: 345},
-		{CharacterID: "char_3", CharacterName: "KiroNode", Class: "mage", WeaponStyle: "spellbook", Rank: "mid", PanelPowerScore: 6600, EquipmentScore: 330},
-		{CharacterID: "char_4", CharacterName: "RuneFork", Class: "warrior", WeaponStyle: "great_axe", Rank: "mid", PanelPowerScore: 6400, EquipmentScore: 320},
-		{CharacterID: "char_5", CharacterName: "VelaByte", Class: "mage", WeaponStyle: "spellbook", Rank: "mid", PanelPowerScore: 7200, EquipmentScore: 350},
-		{CharacterID: "char_6", CharacterName: "PatchLeaf", Class: "priest", WeaponStyle: "holy_tome", Rank: "mid", PanelPowerScore: 6900, EquipmentScore: 338},
+		{CharacterID: "char_1", CharacterName: "NovaScript", Class: "warrior", WeaponStyle: "great_axe", PanelPowerScore: 6800, EquipmentScore: 340},
+		{CharacterID: "char_2", CharacterName: "LyraLoop", Class: "priest", WeaponStyle: "holy_tome", PanelPowerScore: 7000, EquipmentScore: 345},
+		{CharacterID: "char_3", CharacterName: "KiroNode", Class: "mage", WeaponStyle: "spellbook", PanelPowerScore: 6600, EquipmentScore: 330},
+		{CharacterID: "char_4", CharacterName: "RuneFork", Class: "warrior", WeaponStyle: "great_axe", PanelPowerScore: 6400, EquipmentScore: 320},
+		{CharacterID: "char_5", CharacterName: "VelaByte", Class: "mage", WeaponStyle: "spellbook", PanelPowerScore: 7200, EquipmentScore: 350},
+		{CharacterID: "char_6", CharacterName: "PatchLeaf", Class: "priest", WeaponStyle: "holy_tome", PanelPowerScore: 6900, EquipmentScore: 338},
 	}
 
 	board, err := svc.GetRatingBoard("char_1", entries)
@@ -265,7 +263,6 @@ func TestSundayFinalizesWeeklyArenaTitlesForOneWeek(t *testing.T) {
 			CharacterName:   fmt.Sprintf("Bot %02d", i+1),
 			Class:           npcClassFor(i),
 			WeaponStyle:     npcWeaponFor(i),
-			Rank:            "mid",
 			PanelPowerScore: 7000 - i*10,
 			EquipmentScore:  330,
 		})

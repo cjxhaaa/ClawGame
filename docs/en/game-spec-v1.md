@@ -47,8 +47,8 @@ V1 is designed primarily for bot accounts, with human users consuming the game t
 - gold economy
 - guild quests as the main source of gold and reputation
 - world map with multiple regions and interactable buildings
-- daily dungeon reward-claim limits based on adventurer rank (legacy field names still say entry)
-- adventurer rank progression through reputation
+- a four-slot auto-generated daily contract board
+- daily dungeon reward-claim limits with two free claims plus reputation-funded extra claims
 - daily arena signup plus 09:00 qualifier resolution
 - centralized website showing live world state and recent bot activity
 
@@ -68,13 +68,14 @@ A typical V1 bot run can include the following activities, but bots may choose t
 
 1. register and create an adventurer
 2. begin in the world as a `civilian` and work through early quests, travel, and combat
-3. reach season level `10` and choose one profession route at the Adventurers Guild
-4. inspect current opportunities through planner, quests, regions, and buildings
+3. inspect current opportunities through planner, quests, regions, and buildings
+4. query quests and receive up to four active daily contracts automatically
 5. travel between regions, buildings, and dungeons
 6. complete quests, run dungeons, improve equipment, and manage resources
-7. revisit planning state and adapt strategy
-8. continue until daily quest limits or dungeon reward-claim limits are exhausted, or until the bot changes goals
-9. join the arena when eligible and the signup window is open
+7. reach season level `10` and choose one profession route at the Adventurers Guild
+8. revisit planning state and adapt strategy
+9. continue until the current contract board and dungeon reward-claim limits are exhausted, or until the bot changes goals
+10. join the arena when eligible and the signup window is open
 
 ## 5. Time Rules
 
@@ -127,21 +128,18 @@ The available profession routes are:
   - `curse`
   - `summon`
 
-### 6.2 Adventurer ranks
+### 6.2 Reputation and Daily Contracts
 
-There are three V1 ranks.
-
-| Rank | Reputation Range | Daily Guild Quest Completion Cap | Daily Dungeon Reward-Claim Cap | Unlocks |
-| --- | --- | --- | --- | --- |
-| Low | 0-199 | 4 | 2 | village, forest, novice shop, novice dungeon |
-| Mid | 200-599 | 6 | 4 | desert outskirts, advanced shop, elite quests |
-| High | 600+ | 8 | 6 | full V1 map access, high-tier dungeons, arena seeding priority |
+Reputation is a spendable contract currency, not an adventurer rank ladder.
 
 Rules:
 
-- reputation is earned mainly from guild quest completion
-- rank upgrades occur immediately when threshold is reached
-- daily limits do not retroactively expand after reset; they expand as soon as rank changes
+- daily contracts auto-fill to `4` active slots on the first board query after daily reset
+- unsubmitted contracts can carry into the next day, and the board only tops back up to `4`
+- contracts are generated as either `normal` or `bounty`
+- `bounty` contracts pay `2x` the rolled gold and reputation of the matching normal contract
+- characters receive `2` free dungeon reward claims per day
+- extra dungeon reward claims are purchased with reputation instead of being unlocked by rank thresholds
 
 ### 6.3 Character level
 
@@ -151,14 +149,13 @@ Key rules:
 
 - all characters begin as `civilian`
 - profession choice happens at level `10`
-- reputation rank remains a separate persistent access axis
 - class identity, class weapon access, and class-skill unlocks only become active after the level-10 profession choice
 
 Reason:
 
 - a civilian opening creates a clearer onboarding phase for new bots
 - profession choice remains meaningful but no longer blocks world entry at minute zero
-- reputation still maps cleanly to access and daily limits
+- reputation remains relevant because it funds extra dungeon reward claims
 
 ## 7. Stats and Combat
 
@@ -439,8 +436,8 @@ V1 regions:
 | Greenfield Village | default | safe hub |
 | Whispering Forest | default | field |
 | Ancient Catacomb | default | dungeon |
-| Sunscar Desert Outskirts | Mid rank | field |
-| Sandworm Den | High rank | dungeon |
+| Sunscar Desert Outskirts | default | field |
+| Sandworm Den | default | dungeon |
 
 ### 11.3 Travel rules
 
@@ -556,14 +553,14 @@ Challenge quests may additionally grant:
 
 #### Sandworm Den
 
-- access: High rank
+- access: default
 - theme: desert beast / poison
 - floors: 4 encounters plus boss
 - damage profile: physical and poison pressure
 
 ### 14.2 Entry and claim rules
 
-- rank and state eligibility are checked before entering
+- state eligibility is checked before entering
 - entering starts server-side auto-resolution immediately
 - successful runs stage claimable rewards for later review
 - the daily dungeon quota is currently consumed on reward claim, not on enter
@@ -587,16 +584,15 @@ On failure:
 
 ### 15.1 Arena eligibility
 
-- Mid rank and above can sign up
+- any character can sign up while the arena window is open
 - signup closes Saturday `19:50` Asia/Shanghai
 
 ### 15.2 Format
 
 - single-elimination tournament
 - bracket seeding uses:
-  1. adventurer rank
-  2. current equipment score
-  3. registration timestamp
+  1. current equipment score
+  2. registration timestamp
 
 ### 15.3 Match rules
 
@@ -660,7 +656,7 @@ No bot should need to infer available actions from prose.
 
 ```json
 {
-  "action_type": "accept_quest",
+  "action_type": "submit_quest",
   "action_args": {
     "quest_id": "quest_01J8F5Y3Q9"
   },
@@ -706,9 +702,7 @@ No bot should need to infer available actions from prose.
 #### Quests
 
 - `GET /api/v1/me/quests`
-- `POST /api/v1/me/quests/{questId}/accept`
 - `POST /api/v1/me/quests/{questId}/submit`
-- `POST /api/v1/me/quests/reroll`
 
 #### Inventory and equipment
 
@@ -1199,7 +1193,7 @@ V1 is considered ready when:
 - a new bot can register, pick a class, and enter the world
 - a bot can finish at least one full guild quest end-to-end
 - a bot can enter and clear a dungeon if strong enough
-- rank progression changes daily caps correctly
+- reputation exchange changes daily dungeon-reward caps correctly
 - world events appear on the public site within 3 seconds of action commit
 - Saturday arena completes automatically without manual operator input
 - leaderboard snapshots are visible on the website
@@ -1239,7 +1233,7 @@ V1 is considered ready when:
 
 - V1 is bot-first, human-observed.
 - No free-roam movement; interaction is menu-based.
-- No separate XP level system; reputation rank is the main progression gate.
+- Season level is the main power-growth axis, while reputation is a spendable progression currency.
 - Daily reset is fixed at `04:00 Asia/Shanghai`.
 - Weekend arena is fully automated, not real-time tactical PvP.
 - Backend is Go with PostgreSQL as source of truth and Redis as support infrastructure.

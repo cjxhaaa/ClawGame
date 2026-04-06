@@ -244,7 +244,8 @@ func (s *PostgresStore) LoadCharacters() ([]characters.StoredCharacter, error) {
 			COALESCE(bs.healing_power, 0),
 			COALESCE(dl.reset_date::text, ''),
 			COALESCE(dl.quest_completion_used, 0),
-			COALESCE(dl.dungeon_entry_used, 0)
+			COALESCE(dl.dungeon_entry_used, 0),
+			COALESCE(dl.dungeon_bonus_purchased, 0)
 		FROM characters c
 		LEFT JOIN character_base_stats bs ON bs.character_id = c.id
 		LEFT JOIN character_daily_limits dl ON dl.character_id = c.id
@@ -259,6 +260,7 @@ func (s *PostgresStore) LoadCharacters() ([]characters.StoredCharacter, error) {
 	for rows.Next() {
 		var item characters.StoredCharacter
 		var ignoredMaxMP int
+		var ignoredRank string
 		var skillLevelsJSON []byte
 		var skillLoadoutJSON []byte
 		if err := rows.Scan(
@@ -272,7 +274,7 @@ func (s *PostgresStore) LoadCharacters() ([]characters.StoredCharacter, error) {
 			&item.Summary.SeasonXP,
 			&skillLevelsJSON,
 			&skillLoadoutJSON,
-			&item.Summary.Rank,
+			&ignoredRank,
 			&item.Summary.Reputation,
 			&item.Summary.Gold,
 			&item.Summary.Status,
@@ -288,6 +290,7 @@ func (s *PostgresStore) LoadCharacters() ([]characters.StoredCharacter, error) {
 			&item.DailyLimitsResetDate,
 			&item.QuestCompletionUsed,
 			&item.DungeonEntryUsed,
+			&item.DungeonBonusPurchased,
 		); err != nil {
 			return nil, err
 		}
@@ -368,7 +371,7 @@ func (s *PostgresStore) SaveCharacter(stored characters.StoredCharacter) error {
 	if resetDate == "" {
 		resetDate = businessDate(now)
 	}
-	limits := characters.LimitsForRank(stored.Summary.Rank, nextDailyReset(now), stored.QuestCompletionUsed, stored.DungeonEntryUsed)
+	limits := characters.BuildDailyLimits(nextDailyReset(now), stored.QuestCompletionUsed, stored.DungeonEntryUsed, stored.DungeonBonusPurchased)
 	skillLevelsJSON, err := json.Marshal(stored.SkillLevels)
 	if err != nil {
 		return err
@@ -408,7 +411,7 @@ func (s *PostgresStore) SaveCharacter(stored characters.StoredCharacter) error {
 		    mp_current = EXCLUDED.mp_current,
 		    updated_at = EXCLUDED.updated_at
 	`, stored.Summary.CharacterID, stored.AccountID, stored.Summary.Name, stored.Summary.Class, nullableString(stored.Summary.ProfessionRoute), nullableString(stored.Summary.WeaponStyle), stored.Summary.SeasonLevel, stored.Summary.SeasonXP,
-		skillLevelsJSON, skillLoadoutJSON, stored.Summary.Rank, stored.Summary.Reputation, stored.Summary.Gold, stored.Summary.Status, stored.Summary.LocationRegionID,
+		skillLevelsJSON, skillLoadoutJSON, "", stored.Summary.Reputation, stored.Summary.Gold, stored.Summary.Status, stored.Summary.LocationRegionID,
 		stored.Stats.MaxHP, 0, now, now); err != nil {
 		return err
 	}
@@ -437,18 +440,19 @@ func (s *PostgresStore) SaveCharacter(stored characters.StoredCharacter) error {
 	if _, err := tx.Exec(`
 		INSERT INTO character_daily_limits (
 			character_id, reset_date, quest_completion_cap, quest_completion_used,
-			dungeon_entry_cap, dungeon_entry_used, updated_at
+			dungeon_entry_cap, dungeon_entry_used, dungeon_bonus_purchased, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT (character_id) DO UPDATE
 		SET reset_date = EXCLUDED.reset_date,
 		    quest_completion_cap = EXCLUDED.quest_completion_cap,
 		    quest_completion_used = EXCLUDED.quest_completion_used,
 		    dungeon_entry_cap = EXCLUDED.dungeon_entry_cap,
 		    dungeon_entry_used = EXCLUDED.dungeon_entry_used,
+		    dungeon_bonus_purchased = EXCLUDED.dungeon_bonus_purchased,
 		    updated_at = EXCLUDED.updated_at
 	`, stored.Summary.CharacterID, resetDate, limits.QuestCompletionCap, stored.QuestCompletionUsed,
-		limits.DungeonEntryCap, stored.DungeonEntryUsed, now); err != nil {
+		limits.DungeonEntryCap, stored.DungeonEntryUsed, stored.DungeonBonusPurchased, now); err != nil {
 		return err
 	}
 
@@ -704,6 +708,7 @@ func (s *PostgresStore) ensureSchema() error {
 		`ALTER TABLE quests ADD COLUMN IF NOT EXISTS difficulty text`,
 		`ALTER TABLE quests ADD COLUMN IF NOT EXISTS flow_kind text`,
 		`ALTER TABLE quests ADD COLUMN IF NOT EXISTS runtime_state_json jsonb NOT NULL DEFAULT '{}'::jsonb`,
+		`ALTER TABLE character_daily_limits ADD COLUMN IF NOT EXISTS dungeon_bonus_purchased integer NOT NULL DEFAULT 0`,
 		`CREATE INDEX IF NOT EXISTS idx_auth_sessions_access_token ON auth_sessions(access_token)`,
 		`CREATE TABLE IF NOT EXISTS auth_challenges (
 			id text PRIMARY KEY,

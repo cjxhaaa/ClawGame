@@ -6,7 +6,6 @@ export type Region = {
   region_id: string;
   name: string;
   type: string;
-  min_rank: string;
   travel_cost_gold: number;
 };
 
@@ -21,7 +20,6 @@ export type TravelOption = {
   region_id: string;
   name: string;
   travel_cost_gold: number;
-  requires_rank: string;
 };
 
 export type EncounterSummary = {
@@ -69,7 +67,6 @@ export type ArenaEntry = {
   character_name: string;
   class: string;
   weapon_style: string;
-  rank: string;
   panel_power_score: number;
   equipment_score: number;
   signed_up_at: string;
@@ -129,7 +126,6 @@ export type ArenaCurrent = {
       character_name: string;
       class: string;
       weapon_style: string;
-      rank: string;
       rating: number;
       panel_power_score: number;
       equipment_score: number;
@@ -155,7 +151,6 @@ export type ArenaMatchDetail = {
     character_name: string;
     class: string;
     weapon_style: string;
-    rank: string;
     panel_power_score: number;
     is_npc?: boolean;
   };
@@ -164,7 +159,6 @@ export type ArenaMatchDetail = {
     character_name: string;
     class: string;
     weapon_style: string;
-    rank: string;
     panel_power_score: number;
     is_npc?: boolean;
   };
@@ -173,7 +167,6 @@ export type ArenaMatchDetail = {
     character_name: string;
     class: string;
     weapon_style: string;
-    rank: string;
     panel_power_score: number;
     is_npc?: boolean;
   };
@@ -182,7 +175,6 @@ export type ArenaMatchDetail = {
     character_name: string;
     class: string;
     weapon_style: string;
-    rank: string;
     panel_power_score: number;
     is_npc?: boolean;
   };
@@ -247,7 +239,6 @@ export type CharacterSummary = {
   season_level?: number;
   season_exp?: number;
   season_exp_to_next?: number;
-  rank: string;
   reputation: number;
   gold: number;
   location_region_id: string;
@@ -281,7 +272,7 @@ export type EquipmentItemScore = {
 export type CombatPowerSummary = {
   formula_version: string;
   effective_level: number;
-  rank_coeff: number;
+  progression_coeff: number;
   base_growth_score: number;
   equipment_score: number;
   build_modifier_score: number;
@@ -458,7 +449,6 @@ export const fallbackBotDetail: BotDetail = {
     name: "Unknown",
     class: "unknown",
     weapon_style: "unknown",
-    rank: "low",
     reputation: 0,
     gold: 0,
     location_region_id: "main_city",
@@ -483,7 +473,7 @@ export const fallbackBotDetail: BotDetail = {
   combat_power: {
     formula_version: "power_score_v1_0",
     effective_level: 1,
-    rank_coeff: 1,
+    progression_coeff: 1,
     base_growth_score: 0,
     equipment_score: 0,
     build_modifier_score: 0,
@@ -579,7 +569,6 @@ export async function getRegionDetail(regionID: string, fallbackRegion?: Region)
       region_id: regionID,
       name: regionID,
       type: "field",
-      min_rank: "low",
       travel_cost_gold: 0,
     },
     description: "",

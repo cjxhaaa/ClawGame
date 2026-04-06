@@ -197,9 +197,13 @@ V1 regions:
 - Main City
 - Greenfield Village
 - Whispering Forest
+- Briar Thicket
 - Sunscar Desert Outskirts
+- Ashen Ridge
 - Ancient Catacomb
-- Sandworm Den
+- Thorned Hollow
+- Sunscar Warvault
+- Obsidian Spire
 
 ### 11.2 Region unlocks
 
@@ -208,9 +212,13 @@ V1 regions:
 | Main City | default | safe hub |
 | Greenfield Village | default | safe hub |
 | Whispering Forest | default | field |
+| Briar Thicket | default | field |
 | Ancient Catacomb | default | dungeon |
-| Sunscar Desert Outskirts | Mid rank | field |
-| Sandworm Den | High rank | dungeon |
+| Thorned Hollow | default | dungeon |
+| Sunscar Desert Outskirts | default | field |
+| Ashen Ridge | default | field |
+| Sunscar Warvault | default | dungeon |
+| Obsidian Spire | default | dungeon |
 
 ### 11.3 Travel rules
 
@@ -454,39 +462,33 @@ Presentation rules:
 
 ### 13.1 Quest board structure
 
-At daily reset, each adventurer receives a personal quest board.
+Each adventurer maintains a personal daily contract board with a maximum of four active contracts.
 
 The board contains:
 
-- 3 `normal` quests
-- 2 `hard` quests
-- 1 `nightmare` quest
-- the current repo still uses `common / uncommon / challenge` as the temporary board-pool split and should later migrate to an explicit `difficulty`
 - the business-day reset happens at `04:00 Asia/Shanghai`
-- quest states currently include `available`, `accepted`, `completed`, `submitted`, and `expired`
+- querying `GET /me/quests` is what triggers board generation or top-up
+- on the first quest query after reset, the server tops the board back up to `4`
+- unfinished accepted or completed contracts from the previous day carry over
+- submitted contracts do not carry over into the next day
+- contracts do not refill again during the same business day after the reset top-up is done
+- contracts are auto-accepted when generated
+- quest states currently center on `accepted`, `completed`, `submitted`, and `expired`
 - `GET /me/quests` returns the whole active board rather than a paged quest list
 
 ### 13.2 Quest difficulty
 
-Quest difficulty should be a separate axis from quest rarity or quest source.
-
-The three planned tiers are:
+Daily contracts now use two runtime contract kinds:
 
 - `normal`
-- `hard`
-- `nightmare`
+- `bounty`
 
-Their intended roles:
+Rules:
 
-- `normal`: one region, one objective, one loop; suitable for stable daily throughput
-- `hard`: cross-region, cross-facility, or multi-step but still rule-driven
-- `nightmare`: requires information interpretation and a small story-like procedure rather than a single combat check
-
-The increase in difficulty should come not only from combat numbers but also from procedural complexity:
-
-- `normal` is direct action
-- `hard` is combined action
-- `nightmare` is a conditional mini-scenario
+- both kinds draw from the same quest-template framework
+- a bounty contract pays exactly `2x` the rolled gold and reputation of the corresponding normal contract
+- bounty contracts should be slightly harder or more procedural than the baseline version, usually through a higher target count or one extra required step
+- the board should still lean toward normal contracts, with bounty contracts appearing less often
 
 ### 13.3 Quest types
 
@@ -513,7 +515,26 @@ Quest content should not be restricted to pure combat. The daily pool should als
 - story reasoning
 - multi-step handoff flows
 
-### 13.4 Daily quest pool planning
+### 13.4 Daily contract reward planning
+
+Normal contracts should roll within reward ranges instead of using one fixed reward number.
+
+Recommended normal reward bands:
+
+| Template family | Gold range | Reputation range |
+| --- | --- | --- |
+| kill-region enemies | `90-130` | `16-20` |
+| collect materials | `80-120` | `14-18` |
+| standard delivery | `85-125` | `15-19` |
+| reinforced delivery | `110-150` | `20-24` |
+| investigation | `125-170` | `22-28` |
+| dungeon clear | `155-210` | `28-36` |
+
+Rules:
+
+- the final reward is rolled deterministically inside the configured range when the contract is generated
+- bounty contracts double the already-rolled reward
+- the target daily reputation output should land near `100`, which maps to roughly `2` extra dungeon reward claims at `50` reputation each
 
 #### `normal` daily quests
 
@@ -596,11 +617,10 @@ Key requirements for `nightmare` dailies:
 ### 13.5 Quest constraints
 
 - a quest can be active or completed once per daily board
-- only `available` quests can be accepted in the current implementation
 - quest state must advance through its defined state machine and cannot skip to submit
-- rerolling replaces all incomplete quests on the board
-- `submitted` and `completed` quests are preserved across reroll
-- other non-finished quests are marked `expired` before replacement quests are appended
+- contracts are auto-accepted when generated; there is no separate accept step in the intended loop
+- reroll is no longer part of the intended daily-board loop
+- unfinished accepted or completed contracts are preserved across reset and count toward the next day's four-slot cap
 
 Additional process constraint for future daily quests:
 
@@ -613,17 +633,11 @@ Every quest grants:
 - gold
 - reputation
 
-Challenge quests may additionally grant:
-
-- enhancement materials
-- guaranteed Rare item
-
 Current implementation notes:
 
 - the stable reward loop today is gold plus reputation
-- submitting a quest can immediately rank the character up when the reputation threshold is crossed
-- challenge-specific bonus item rewards are not yet a fully implemented loop
-- reward values should stay open for now and be filled in after the broader economy and progression numbers are locked
+- reputation is a spendable currency and no longer triggers rank-up
+- the immediate downstream use of reputation is buying extra dungeon reward claims
 
 ### 13.7 Current progression triggers
 
@@ -645,7 +659,7 @@ The current quest system is intentionally basic and aims to provide a stable gro
 Already supported:
 
 - personal daily quest boards
-- accept, complete, submit, and reroll flow
+- automatic generation, complete, and submit flow
 - automatic progress updates from travel, field, and dungeon resolution
 - curio-seeded delivery follow-up quests
 
@@ -655,7 +669,7 @@ Not yet fully supported:
 - explicit prerequisite trees
 - region-level quest priority recommendation
 - a dedicated strategy layer for quest planning
-- an explicit `quest_difficulty`
+- richer bounty-specific procedural mutations beyond simple target increases
 - text-clue judgment and multi-step state handling for `nightmare` daily content
 
 ### 13.9 Quest framework design principles
@@ -732,15 +746,29 @@ Goal:
 
 - access: Low rank
 - theme: undead / dark magic
-- floors: 3 encounters plus boss
+- floors: 6 rooms, boss in room 6
 - damage profile: mixed physical and magic
 
-#### Sandworm Den
+#### Thorned Hollow
+
+- access: Mid rank
+- theme: predator grove / crit pressure
+- floors: 6 rooms, boss in room 6
+- damage profile: speed, precision, focus fire
+
+#### Sunscar Warvault
 
 - access: High rank
-- theme: desert beast / poison
-- floors: 4 encounters plus boss
-- damage profile: physical and poison pressure
+- theme: fortress soldiers / burst windows
+- floors: 6 rooms, boss in room 6
+- damage profile: physical burst and breakpoints
+
+#### Obsidian Spire
+
+- access: High rank
+- theme: arcane tower / void magic
+- floors: 6 rooms, boss in room 6
+- damage profile: magic chains and silence pressure
 
 ### 14.2 Entry rules
 
@@ -766,7 +794,7 @@ On failure:
 
 ### 15.1 Arena eligibility
 
-- Mid rank and above can sign up
+- any character can sign up while the arena window is open
 - signup stays open each day until `09:00` Asia/Shanghai
 
 ### 15.2 Format

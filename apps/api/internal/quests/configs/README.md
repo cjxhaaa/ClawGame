@@ -76,19 +76,6 @@ Every step key referenced by:
 
 must also exist in `runtime.steps`.
 
-## Rank Overrides
-
-Use `rank_overrides` when one quest family should stay structurally the same but shift target region, title, description, or reward placeholders by rank.
-
-Example:
-
-```yaml
-rank_overrides:
-  - ranks: [mid, high]
-    title: Deliver Desert Provisions
-    target_region_id: sunscar_desert_outskirts
-```
-
 ## Authoring Guidance
 
 - Prefer adding a new YAML file over modifying Go code.

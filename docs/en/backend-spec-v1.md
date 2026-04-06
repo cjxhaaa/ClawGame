@@ -63,8 +63,8 @@ Responsibilities:
 - civilian onboarding and level-10 profession-route selection
 - profile retrieval
 - derived stat calculation
-- rank upgrades
 - daily limit state retrieval
+- reputation spending for extra dungeon reward claims
 
 ### 3.3 World
 
@@ -81,10 +81,9 @@ Responsibilities:
 Responsibilities:
 
 - personal daily quest-board generation
-- quest acceptance
+- daily-board top-up on query
 - quest progress updates
 - quest submission
-- quest reroll
 - reward payout
 
 ### 3.5 Inventory
@@ -207,8 +206,11 @@ These string enums should be stable in DB and API payloads.
 - `character_class`: `civilian`, `warrior`, `mage`, `priest`
 - `profession_route_id`: `tank`, `physical_burst`, `magic_burst`, `single_burst`, `aoe_burst`, `control`, `healing_support`, `curse`, `summon`
 - `weapon_style`: `sword_shield`, `great_axe`, `staff`, `spellbook`, `scepter`, `holy_tome`
-- `adventurer_rank`: `low`, `mid`, `high`
 - `character_status`: `active`, `locked`, `banned`
+
+Compatibility note:
+
+- the API may still expose a legacy `rank` field on character payloads, but it is no longer an authoritative progression gate
 
 ### 6.2 Equipment enums
 
@@ -312,7 +314,6 @@ Required initial domain error codes:
 - `DUNGEON_RUN_NOT_ACTIVE`
 - `DUNGEON_ACTION_INVALID`
 - `ARENA_SIGNUP_CLOSED`
-- `ARENA_RANK_NOT_ELIGIBLE`
 - `IDEMPOTENCY_CONFLICT`
 - `RATE_LIMITED`
 - `INVALID_ACTION_STATE`
@@ -698,7 +699,6 @@ Fields:
 - `id` `text` primary key
 - `name` `text` not null
 - `type` `text` not null
-- `min_rank` `text` not null default `low`
 - `travel_cost_gold` `int` not null default `0`
 - `sort_order` `int` not null
 - `is_active` `boolean` not null default `true`
@@ -852,7 +852,6 @@ Fields:
 
 - `id` `text` primary key
 - `name` `text` not null
-- `min_rank` `text` not null
 - `region_id` `text` not null references `regions(id)`
 - `room_count` `int` not null
 - `boss_room_index` `int` not null
@@ -1468,9 +1467,8 @@ Supported canonical `action_type` values:
 
 - `travel`
 - `enter_building`
-- `accept_quest`
 - `submit_quest`
-- `reroll_quests`
+- `exchange_dungeon_reward_claims`
 - `equip_item`
 - `unequip_item`
 - `sell_item`
@@ -1520,7 +1518,6 @@ Request:
 Validation:
 
 - target region exists and is active
-- rank satisfies unlock
 - gold covers travel cost
 
 Side effects:
@@ -1573,51 +1570,39 @@ Returns:
 - active quest count
 - completion cap status
 
-#### `POST /api/v1/me/quests/{questId}/accept`
-
-Validation:
-
-- quest belongs to current board and character
-- quest state is `available`
-
-Side effects:
-
-- marks `accepted`
-- emits `quest.accepted`
-
 #### `POST /api/v1/me/quests/{questId}/submit`
 
 Validation:
 
 - state must be `completed`
-- daily completion cap not exceeded
 
 Side effects:
 
 - state to `submitted`
 - add gold
 - add reputation
-- rank up if threshold crossed
 - increment daily quest counter
 - emit `quest.submitted`
-- emit `character.rank_up` if applicable
 
-#### `POST /api/v1/me/quests/reroll`
+Current repo note:
+
+- the daily board auto-fills to 4 contracts on the first query after reset
+- contracts start active immediately; there is no accept or reroll endpoint
+
+#### `POST /api/v1/me/dungeons/reward-claims/exchange`
 
 Request:
 
 ```json
 {
-  "confirm_cost": true
+  "quantity": 1
 }
 ```
 
 Behavior:
 
-- requires explicit confirmation
-- deducts reroll fee
-- expires remaining incomplete quests
-- generates replacement quests
+- spends reputation
+- buys extra dungeon reward-claim entries for the current day
 
 ### 12.7 Inventory APIs
 
@@ -1628,6 +1613,8 @@ Returns:
 - equipped items by slot
 - unequipped items
 - derived equipment score
+- each dungeon reward item should expose `set_id` when applicable
+- active seasonal set progress should be summarized in `equipped_set_bonuses`
 
 #### `POST /api/v1/me/equipment/equip`
 
@@ -1691,7 +1678,6 @@ Purpose:
 
 Validation:
 
-- rank eligible
 - reward-claim daily quota remains
 - character not already in active run
 - omitted or invalid difficulty defaults to `easy`
@@ -1770,7 +1756,6 @@ Side effects:
 Validation:
 
 - signup window open
-- rank at least `mid`
 - character not already signed up
 
 Side effects:

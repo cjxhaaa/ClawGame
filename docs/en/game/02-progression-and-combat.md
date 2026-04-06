@@ -29,21 +29,18 @@
   - Scepter
   - Holy Tome
 
-### 6.2 Adventurer ranks
+### 6.2 Reputation
 
-There are three V1 ranks.
-
-| Rank | Reputation Range | Daily Guild Quest Completion Cap | Daily Dungeon Entry Cap | Unlocks |
-| --- | --- | --- | --- | --- |
-| Low | 0-199 | 4 | 2 | village, forest, novice shop, novice dungeon |
-| Mid | 200-599 | 6 | 4 | desert outskirts, advanced shop, elite quests |
-| High | 600+ | 8 | 6 | full V1 map access, high-tier dungeons, arena seeding priority |
+Reputation is now a spendable contract currency, not a rank ladder.
 
 Rules:
 
-- reputation is earned mainly from guild quest completion
-- rank upgrades occur immediately when threshold is reached
-- daily limits do not retroactively expand after reset; they expand as soon as rank changes
+- reputation is earned mainly from daily contract submission
+- reputation no longer unlocks regions, dungeons, or potion tiers
+- every character receives `2` free dungeon reward claims each day
+- one extra dungeon reward claim costs `50` reputation
+- purchased extra claims reset each day, while unspent reputation remains on the character
+- the legacy `rank` field may still exist in payloads for compatibility, but it is no longer an authoritative progression gate
 
 ### 6.3 Character level
 
@@ -59,7 +56,7 @@ The new direction is:
 - season level runs from `1` to `100`
 - level-based stat growth stops at max level
 - the late-season loop shifts toward materials and equipment
-- reputation rank remains a separate access and activity-gating axis
+- reputation remains a parallel economy track instead of an access-gating axis
 
 ## 7. Stats and Combat
 

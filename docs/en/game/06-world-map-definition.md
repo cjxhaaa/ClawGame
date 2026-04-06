@@ -26,8 +26,8 @@ V1 should feel like a compact frontier belt rather than a full continent.
 The current playable world is a single connected adventuring corridor:
 
 - west / northwest: guild civilization and logistics
-- center: low-rank hunting lands
-- east / southeast: harsher mid-rank frontier
+- center: early hunting lands
+- east / southeast: harsher frontier
 - underground branches: dungeon descent points attached to field regions
 
 This means the map is not a random cluster of nodes. It has direction:
@@ -35,7 +35,7 @@ This means the map is not a random cluster of nodes. It has direction:
 - safety to danger
 - commerce to wilderness
 - public roads to risky routes
-- low-rank loops to high-rank commitment
+- early loops to deep-frontier commitment
 
 ## 3. Macro Geography
 
@@ -71,7 +71,7 @@ Regions:
 
 Function:
 
-- low-rank repeatable play
+- early repeatable play
 - first major quest loop
 - first dungeon branch
 - first “public adventure story” zone
@@ -86,11 +86,13 @@ Visual identity:
 Regions:
 
 - Sunscar Desert Outskirts
-- Sandworm Den
+- Ashen Ridge
+- Sunscar Warvault
+- Obsidian Spire
 
 Function:
 
-- mid/high-rank transition
+- frontier transition
 - tougher field contracts
 - highest-risk V1 dungeon
 - strongest sense of expedition
@@ -118,9 +120,13 @@ Suggested relative placement:
 | Main City | northwest core | Civil Core | capital hub |
 | Greenfield Village | west-central | Civil Core | logistics outpost |
 | Whispering Forest | southwest / central | Wild Belt | starter field |
+| Briar Thicket | south-central / west | Wild Belt | field |
 | Ancient Catacomb | south-central, below forest lane | Wild Belt | starter dungeon branch |
-| Sunscar Desert Outskirts | east-central | Frontier Edge | mid-rank field |
-| Sandworm Den | southeast, below desert lane | Frontier Edge | high-rank dungeon branch |
+| Thorned Hollow | central south, below briar lane | Wild Belt | dungeon branch |
+| Sunscar Desert Outskirts | east-central | Frontier Edge | field |
+| Sunscar Warvault | east-southeast, below desert lane | Frontier Edge | dungeon branch |
+| Ashen Ridge | south-east | Frontier Edge | field |
+| Obsidian Spire | far southeast, below ridge lane | Frontier Edge | dungeon branch |
 
 Suggested normalized coordinates for web use:
 
@@ -129,28 +135,37 @@ Suggested normalized coordinates for web use:
 | `main_city` | 20 | 18 |
 | `greenfield_village` | 36 | 34 |
 | `whispering_forest` | 25 | 58 |
+| `briar_thicket` | 38 | 56 |
 | `ancient_catacomb` | 49 | 66 |
+| `thorned_hollow` | 56 | 56 |
 | `sunscar_desert_outskirts` | 70 | 42 |
-| `sandworm_den` | 82 | 70 |
+| `sunscar_warvault` | 79 | 56 |
+| `ashen_ridge` | 72 | 72 |
+| `obsidian_spire` | 86 | 74 |
 
 These values should be treated as atlas coordinates, not simulation coordinates.
 
 ## 5. Route Topology
 
-The world should read as a road network with two dungeon branches.
+The world should read as a road network with four dungeon branches.
 
 ### 5.1 Primary Routes
 
 - Main City <-> Greenfield Village
 - Greenfield Village <-> Whispering Forest
+- Greenfield Village <-> Briar Thicket
 - Main City <-> Whispering Forest
+- Main City <-> Briar Thicket
 - Main City <-> Sunscar Desert Outskirts
-- Whispering Forest <-> Sunscar Desert Outskirts
+- Main City <-> Ashen Ridge
+- Sunscar Desert Outskirts <-> Ashen Ridge
 
 ### 5.2 Dungeon Branch Routes
 
 - Whispering Forest <-> Ancient Catacomb
-- Sunscar Desert Outskirts <-> Sandworm Den
+- Briar Thicket <-> Thorned Hollow
+- Sunscar Desert Outskirts <-> Sunscar Warvault
+- Ashen Ridge <-> Obsidian Spire
 
 ### 5.3 Travel Reading
 
@@ -442,7 +457,7 @@ The current regional capability model already changes how bots understand a plac
 For OpenClaw:
 
 - when it reaches a `safe_hub`, it can directly see whether the region exposes enterable facilities through `enter_building`
-- when it reaches a `field`, it can directly see whether `hunt`, `gather`, and `curio` are supported as field interactions
+- when it reaches a `field`, it can directly see whether `hunt`, `gather`, and `curio` are supported as field skirmish interactions
 - when it reaches a `dungeon`, or a field region that has an attached dungeon entrance, it can directly see whether `enter_dungeon` is available
 - this means the bot no longer has to infer the next step only from region type; it can read the regional capability panel directly
 
@@ -496,7 +511,7 @@ Preferred V1.1 expansion seams:
 - north of Main City: political or military district
 - deeper west/south forest: harder woodland field route
 - east of Sunscar Desert Outskirts: true desert interior
-- deeper below Sandworm Den: endgame dungeon chain
+- deeper below Obsidian Spire: endgame dungeon chain
 
 Rule:
 

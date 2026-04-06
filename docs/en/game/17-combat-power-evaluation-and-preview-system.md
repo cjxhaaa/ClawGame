@@ -37,11 +37,9 @@ Usage rule:
 
 ## 4. Base Growth Score
 
-### 4.1 Rank Coefficient
+### 4.1 Progression Coefficient
 
-- low: 1.00
-- mid: 1.35
-- high: 1.75
+The current runtime keeps the legacy field name `rank_coeff`, but open-era characters use a single baseline progression coefficient in normal play.
 
 ### 4.2 Level Growth
 
@@ -74,7 +72,7 @@ Primary attack by class:
 
 Final base score:
 
-Base Growth Score = Rank Coefficient × (Level Score + Smooth Score + Stat Score)
+Base Growth Score = Progression Coefficient × (Level Score + Smooth Score + Stat Score)
 
 ## 5. Per-Item Equipment Score
 
@@ -94,7 +92,7 @@ The seasonal equipment system uses the same five quality names as the dungeon an
 
 Calibration rule:
 
-- Blue is the baseline quality and should keep total equipment share near `30%-35%` of panel combat power once the season reaches stable midgame
+- Blue is the baseline quality and should keep total equipment share near `30%-35%` of panel combat power once the season reaches stable mid-cycle progression
 - Purple and Gold are transition upgrades and should not outscale level growth on their own
 - Red is the main endgame set-chase quality
 - Prismatic is the premium chase layer and should improve ceiling without invalidating the rest of the progression model
@@ -269,7 +267,7 @@ Run seasonal recalibration to avoid drift.
 
 Example character:
 
-- level 30, rank mid
+- level 30, open-era baseline progression
 - base growth score = 4280
 - equipment score = 2360
 - build modifier = 180

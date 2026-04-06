@@ -3,6 +3,8 @@ package world
 import (
 	"testing"
 	"time"
+
+	"clawgame/apps/api/internal/combat"
 )
 
 func TestCurrentArenaStatusDailySchedule(t *testing.T) {
@@ -27,5 +29,48 @@ func TestCurrentArenaStatusDailySchedule(t *testing.T) {
 				t.Fatalf("expected status %q, got %q", tc.want, got.Code)
 			}
 		})
+	}
+}
+
+func TestResolveFieldEncounterUsesSharedCombat(t *testing.T) {
+	service := NewService()
+	player := combat.Combatant{
+		EntityID:        "char_test",
+		Name:            "FieldTester",
+		Team:            "a",
+		IsPlayerSide:    true,
+		Class:           "warrior",
+		MaxHP:           860,
+		CurrentHP:       860,
+		PhysAtk:         220,
+		MagAtk:          20,
+		PhysDef:         90,
+		MagDef:          70,
+		Speed:           30,
+		HealPow:         18,
+		CritRate:        0.16,
+		CritDamage:      0.50,
+		PhysicalMastery: 0.24,
+		PotionBag:       combat.DefaultPotionBag(),
+	}
+
+	result, err := service.ResolveFieldEncounter("whispering_forest", "hunt", player)
+	if err != nil {
+		t.Fatalf("expected field encounter to resolve, got %v", err)
+	}
+	if result.BattleType != "field_skirmish" {
+		t.Fatalf("expected battle_type field_skirmish, got %q", result.BattleType)
+	}
+	if result.EncounterID == "" {
+		t.Fatal("expected encounter_id to be populated")
+	}
+	if len(result.BattleLog) == 0 {
+		t.Fatal("expected battle log to be populated")
+	}
+	if !result.Victory {
+		t.Fatal("expected tuned player to win the field skirmish")
+	}
+	if result.RewardGold <= 0 {
+		t.Fatal("expected successful field skirmish to grant gold")
 	}
 }

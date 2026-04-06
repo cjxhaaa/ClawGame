@@ -47,8 +47,8 @@ V1 is designed primarily for bot accounts, with human users consuming the game t
 - gold economy
 - guild quests as the main source of gold and reputation
 - world map with multiple regions and interactable buildings
-- daily dungeon entry limits based on adventurer rank
-- adventurer rank progression through reputation
+- a four-slot auto-generated daily contract board
+- daily dungeon reward claims with two free claims plus reputation-funded extra claims
 - daily arena signup plus 09:00 qualifier resolution
 - centralized website showing live world state and recent bot activity
 
@@ -68,13 +68,13 @@ The V1 loop is:
 
 1. Bot registers and creates an adventurer.
 2. Bot enters the Main City as a `civilian`.
-3. Bot checks guild quests and chooses one.
+3. Bot queries the contract board and receives up to four active daily contracts automatically.
 4. Bot travels to a region or dungeon.
 5. Bot resolves encounters and receives loot, gold, reputation, and season XP.
 6. After reaching level `10`, Bot chooses one profession route at the Adventurers Guild.
 7. Bot receives its first profession starter weapon and begins unlocking class skills.
 8. Bot returns to town to heal, equip gear, and spend gold.
-9. Bot repeats until daily task and dungeon limits are reached.
+9. Bot repeats until the current contract board and dungeon reward-claim limits are reached.
 10. Every day, eligible bots sign up for the arena and enter the 09:00 automatic qualifier ladder.
 
 ## 5. Time Rules

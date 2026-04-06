@@ -17,7 +17,6 @@ import (
 
 var (
 	ErrDungeonNotFound              = errors.New("dungeon not found")
-	ErrDungeonRankNotEligible       = errors.New("dungeon rank not eligible")
 	ErrDungeonRunAlreadyActive      = errors.New("dungeon run already active")
 	ErrDungeonRunNotFound           = errors.New("dungeon run not found")
 	ErrDungeonRunForbidden          = errors.New("dungeon run forbidden")
@@ -30,7 +29,6 @@ type DefinitionView struct {
 	DungeonID           string              `json:"dungeon_id"`
 	Name                string              `json:"name"`
 	RegionID            string              `json:"region_id"`
-	MinRank             string              `json:"min_rank"`
 	RoomCount           int                 `json:"room_count"`
 	BossRoomIndex       int                 `json:"boss_room_index"`
 	RecommendedLevelMin int                 `json:"recommended_level_min"`
@@ -141,10 +139,6 @@ func (s *Service) ListDungeonDefinitions() []DefinitionView {
 	})
 
 	return definitions
-}
-
-func RankAllows(currentRank, requiredRank string) bool {
-	return rankAllows(currentRank, requiredRank)
 }
 
 func BuildPlayerCombatant(character characters.Summary, stats characters.StatsSnapshot, skills characters.SkillsStateView) combat.Combatant {
@@ -343,9 +337,6 @@ func (s *Service) EnterDungeon(character characters.Summary, _ characters.DailyL
 	if !ok {
 		return RunView{}, ErrDungeonNotFound
 	}
-	if !rankAllows(character.Rank, def.MinRank) {
-		return RunView{}, ErrDungeonRankNotEligible
-	}
 	if len(potionLoadout) > 2 || len(potionBag) > 2 {
 		return RunView{}, ErrDungeonPotionLoadoutInvalid
 	}
@@ -438,7 +429,8 @@ func (s *Service) EnterDungeon(character characters.Summary, _ characters.DailyL
 
 	rewardGold := 0
 	if battleResult.Cleared {
-		rewardGold = scaledRewardGold(definitionRewardGold(def), battleResult.HighestRoomCleared, def.RoomCount, difficulty)
+		goldMin, goldMax := definitionRewardGoldRange(def)
+		rewardGold = scaledRewardGold(goldMin, goldMax, battleResult.HighestRoomCleared, def.RoomCount, difficulty, runID)
 	}
 
 	s.runsByID[runID] = runRecord{
@@ -607,7 +599,7 @@ func (s *Service) BuildRunPayload(run RunView, detailLevel string) map[string]an
 	}
 }
 
-func (s *Service) ClaimRunRewards(characterID, runID string, limits characters.DailyLimits) (RunView, ClaimRewardPackage, error) {
+func (s *Service) PreviewRunRewards(characterID, runID string, limits characters.DailyLimits) (RunView, ClaimRewardPackage, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -628,17 +620,6 @@ func (s *Service) ClaimRunRewards(characterID, runID string, limits characters.D
 	materialDrops := copyMapSlice(record.Run.StagedMaterialDrops)
 	ratingRewards := copyMapSlice(record.Run.PendingRatingRewards)
 
-	now := s.clock().Format(time.RFC3339)
-	record.Run.RewardClaimable = false
-	record.Run.RewardClaimedAt = &now
-	record.Run.RuntimePhase = "claim_settled"
-	record.Run.AvailableActions = []characters.ValidAction{}
-	record.Run.ClaimConsumesDailyCounter = true
-	record.Run.StagedMaterialDrops = []map[string]any{}
-	record.Run.PendingRatingRewards = []map[string]any{}
-
-	s.runsByID[runID] = record
-
 	rating := ""
 	if record.Run.CurrentRating != nil {
 		rating = *record.Run.CurrentRating
@@ -652,18 +633,57 @@ func (s *Service) ClaimRunRewards(characterID, runID string, limits characters.D
 	}, nil
 }
 
+func (s *Service) FinalizeRunRewards(characterID, runID string) (RunView, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	record, ok := s.runsByID[runID]
+	if !ok {
+		return RunView{}, ErrDungeonRunNotFound
+	}
+	if record.CharacterID != characterID {
+		return RunView{}, ErrDungeonRunForbidden
+	}
+	if record.Run.RunStatus != "cleared" || !record.Run.RewardClaimable {
+		return RunView{}, ErrDungeonRewardClaimNotAllowed
+	}
+
+	now := s.clock().Format(time.RFC3339)
+	record.Run.RewardClaimable = false
+	record.Run.RewardClaimedAt = &now
+	record.Run.RuntimePhase = "claim_settled"
+	record.Run.AvailableActions = []characters.ValidAction{}
+	record.Run.ClaimConsumesDailyCounter = true
+	record.Run.StagedMaterialDrops = []map[string]any{}
+	record.Run.PendingRatingRewards = []map[string]any{}
+
+	s.runsByID[runID] = record
+	return record.Run, nil
+}
+
 func nextID(prefix string) string {
 	return fmt.Sprintf("%s_%d_%06d", prefix, time.Now().UnixNano(), atomic.AddUint64(&runCounter, 1))
 }
 
-func definitionRewardGold(def DefinitionView) int {
+func definitionRewardGoldRange(def DefinitionView) (int, int) {
+	minValue := 120
+	maxValue := 120
 	if value, ok := def.RewardSummary["gold_min"].(int); ok {
-		return value
+		minValue = value
 	}
 	if value, ok := def.RewardSummary["gold_min"].(float64); ok {
-		return int(value)
+		minValue = int(value)
 	}
-	return 120
+	if value, ok := def.RewardSummary["gold_max"].(int); ok {
+		maxValue = value
+	}
+	if value, ok := def.RewardSummary["gold_max"].(float64); ok {
+		maxValue = int(value)
+	}
+	if maxValue < minValue {
+		maxValue = minValue
+	}
+	return minValue, maxValue
 }
 
 type simulatedRunResult struct {
@@ -846,7 +866,7 @@ func runSummaryTag(run RunView) string {
 		return "cleared_stable"
 	}
 	if bossReached(run) {
-		return "failed_before_boss"
+		return "failed_at_boss"
 	}
 	if run.CurrentRoomIndex > 0 {
 		return fmt.Sprintf("failed_room_%d", run.CurrentRoomIndex)
@@ -1192,7 +1212,31 @@ var monsterBlueprints = map[string]monsterBlueprint{
 	"tomb_hexer":            {Name: "Tomb Hexer", Tier: "elite", Role: "controller", MaxHP: 234, PhysAtk: 6, MagAtk: 26, PhysDef: 8, MagDef: 14, Speed: 12, HealPow: 0},
 	"morthis_chapel_keeper": {Name: "Morthis, Chapel Keeper", Tier: "boss", Role: "boss", MaxHP: 620, PhysAtk: 16, MagAtk: 38, PhysDef: 14, MagDef: 16, Speed: 11, HealPow: 18},
 
-	// Sandworm Den
+	// Thorned Hollow
+	"thornclaw_stalker":     {Name: "Thornclaw Stalker", Tier: "normal", Role: "assassin", MaxHP: 124, PhysAtk: 24, MagAtk: 0, PhysDef: 8, MagDef: 6, Speed: 17, HealPow: 0},
+	"briar_hexcaller":       {Name: "Briar Hexcaller", Tier: "normal", Role: "caster", MaxHP: 110, PhysAtk: 5, MagAtk: 24, PhysDef: 6, MagDef: 10, Speed: 13, HealPow: 0},
+	"hollow_trapper":        {Name: "Hollow Trapper", Tier: "normal", Role: "controller", MaxHP: 132, PhysAtk: 18, MagAtk: 6, PhysDef: 10, MagDef: 8, Speed: 14, HealPow: 0},
+	"needlemane_huntmaster": {Name: "Needlemane Huntmaster", Tier: "elite", Role: "bruiser", MaxHP: 292, PhysAtk: 32, MagAtk: 0, PhysDef: 16, MagDef: 10, Speed: 14, HealPow: 0},
+	"thornveil_predator":    {Name: "Thornveil Predator", Tier: "elite", Role: "assassin", MaxHP: 248, PhysAtk: 34, MagAtk: 0, PhysDef: 10, MagDef: 8, Speed: 19, HealPow: 0},
+	"briarqueen_ravastra":   {Name: "Briarqueen Ravastra", Tier: "boss", Role: "boss", MaxHP: 670, PhysAtk: 36, MagAtk: 18, PhysDef: 14, MagDef: 12, Speed: 18, HealPow: 0},
+
+	// Sunscar Warvault
+	"warvault_legionary":  {Name: "Warvault Legionary", Tier: "normal", Role: "bruiser", MaxHP: 148, PhysAtk: 26, MagAtk: 0, PhysDef: 13, MagDef: 8, Speed: 11, HealPow: 0},
+	"sunforge_channeler":  {Name: "Sunforge Channeler", Tier: "normal", Role: "caster", MaxHP: 118, PhysAtk: 4, MagAtk: 26, PhysDef: 7, MagDef: 11, Speed: 12, HealPow: 0},
+	"shieldline_sentinel": {Name: "Shieldline Sentinel", Tier: "normal", Role: "tank", MaxHP: 164, PhysAtk: 20, MagAtk: 0, PhysDef: 16, MagDef: 10, Speed: 9, HealPow: 0},
+	"vault_breaker":       {Name: "Vault Breaker", Tier: "elite", Role: "bruiser", MaxHP: 320, PhysAtk: 38, MagAtk: 0, PhysDef: 18, MagDef: 10, Speed: 12, HealPow: 0},
+	"standard_bearer":     {Name: "Standard Bearer", Tier: "elite", Role: "controller", MaxHP: 274, PhysAtk: 20, MagAtk: 12, PhysDef: 15, MagDef: 12, Speed: 13, HealPow: 0},
+	"sunscar_warmarshal":  {Name: "Sunscar Warmarshal", Tier: "boss", Role: "boss", MaxHP: 740, PhysAtk: 40, MagAtk: 18, PhysDef: 18, MagDef: 12, Speed: 15, HealPow: 0},
+
+	// Obsidian Spire
+	"blackglass_sentinel": {Name: "Blackglass Sentinel", Tier: "normal", Role: "tank", MaxHP: 150, PhysAtk: 22, MagAtk: 0, PhysDef: 15, MagDef: 12, Speed: 10, HealPow: 0},
+	"void_adept":          {Name: "Void Adept", Tier: "normal", Role: "caster", MaxHP: 116, PhysAtk: 4, MagAtk: 28, PhysDef: 7, MagDef: 13, Speed: 14, HealPow: 0},
+	"eclipse_scribe":      {Name: "Eclipse Scribe", Tier: "normal", Role: "controller", MaxHP: 108, PhysAtk: 4, MagAtk: 24, PhysDef: 6, MagDef: 12, Speed: 15, HealPow: 0},
+	"mirrorbound_rector":  {Name: "Mirrorbound Rector", Tier: "elite", Role: "caster", MaxHP: 258, PhysAtk: 6, MagAtk: 34, PhysDef: 10, MagDef: 16, Speed: 15, HealPow: 0},
+	"obsidian_lancer":     {Name: "Obsidian Lancer", Tier: "elite", Role: "bruiser", MaxHP: 282, PhysAtk: 30, MagAtk: 10, PhysDef: 16, MagDef: 13, Speed: 13, HealPow: 0},
+	"obsidian_archon":     {Name: "Obsidian Archon", Tier: "boss", Role: "boss", MaxHP: 710, PhysAtk: 18, MagAtk: 42, PhysDef: 15, MagDef: 18, Speed: 16, HealPow: 16},
+
+	// Sandworm Den (archived reference)
 	"dune_skitterer":                {Name: "Dune Skitterer", Tier: "normal", Role: "assassin", MaxHP: 108, PhysAtk: 22, MagAtk: 0, PhysDef: 6, MagDef: 6, Speed: 16, HealPow: 0},
 	"sand_burrower":                 {Name: "Sand Burrower", Tier: "normal", Role: "bruiser", MaxHP: 140, PhysAtk: 24, MagAtk: 0, PhysDef: 12, MagDef: 8, Speed: 9, HealPow: 0},
 	"scorched_spitter":              {Name: "Scorched Spitter", Tier: "normal", Role: "caster", MaxHP: 112, PhysAtk: 4, MagAtk: 22, PhysDef: 6, MagDef: 10, Speed: 12, HealPow: 0},
@@ -1227,6 +1271,84 @@ var dungeonRoomCompositions = map[string]map[string]map[int]roomComposition{
 			4: {slots: []roomMonsterSlot{{MonsterID: "tomb_hexer", Tier: "elite", Role: "controller", Count: 1}, {MonsterID: "grave_rat_swarm", Tier: "normal", Role: "assassin", Count: 2}, {MonsterID: "ashen_skull_caster", Tier: "normal", Role: "caster", Count: 1}, {MonsterID: "catacomb_boneguard", Tier: "normal", Role: "bruiser", Count: 1}}},
 			5: {slots: []roomMonsterSlot{{MonsterID: "warden_of_seals", Tier: "elite", Role: "tank", Count: 1}, {MonsterID: "tomb_hexer", Tier: "elite", Role: "controller", Count: 1}, {MonsterID: "ashen_skull_caster", Tier: "normal", Role: "caster", Count: 1}, {MonsterID: "catacomb_boneguard", Tier: "normal", Role: "bruiser", Count: 1}, {MonsterID: "grave_rat_swarm", Tier: "normal", Role: "assassin", Count: 1}}},
 			6: {slots: []roomMonsterSlot{{MonsterID: "morthis_chapel_keeper", Tier: "boss", Role: "boss", Count: 1}, {MonsterID: "warden_of_seals", Tier: "elite", Role: "tank", Count: 1}, {MonsterID: "tomb_hexer", Tier: "elite", Role: "controller", Count: 1}, {MonsterID: "grave_rat_swarm", Tier: "normal", Role: "assassin", Count: 1}}},
+		},
+	},
+	"thorned_hollow_v1": {
+		"easy": {
+			1: {slots: []roomMonsterSlot{{MonsterID: "thornclaw_stalker", Tier: "normal", Role: "assassin", Count: 1}, {MonsterID: "briar_hexcaller", Tier: "normal", Role: "caster", Count: 1}}},
+			2: {slots: []roomMonsterSlot{{MonsterID: "thornclaw_stalker", Tier: "normal", Role: "assassin", Count: 1}, {MonsterID: "hollow_trapper", Tier: "normal", Role: "controller", Count: 1}, {MonsterID: "briar_hexcaller", Tier: "normal", Role: "caster", Count: 1}}},
+			3: {slots: []roomMonsterSlot{{MonsterID: "needlemane_huntmaster", Tier: "elite", Role: "bruiser", Count: 1}, {MonsterID: "thornclaw_stalker", Tier: "normal", Role: "assassin", Count: 1}}},
+			4: {slots: []roomMonsterSlot{{MonsterID: "thornveil_predator", Tier: "elite", Role: "assassin", Count: 1}, {MonsterID: "hollow_trapper", Tier: "normal", Role: "controller", Count: 1}, {MonsterID: "briar_hexcaller", Tier: "normal", Role: "caster", Count: 1}}},
+			5: {slots: []roomMonsterSlot{{MonsterID: "needlemane_huntmaster", Tier: "elite", Role: "bruiser", Count: 1}, {MonsterID: "thornveil_predator", Tier: "elite", Role: "assassin", Count: 1}, {MonsterID: "thornclaw_stalker", Tier: "normal", Role: "assassin", Count: 1}}},
+			6: {slots: []roomMonsterSlot{{MonsterID: "briarqueen_ravastra", Tier: "boss", Role: "boss", Count: 1}, {MonsterID: "thornclaw_stalker", Tier: "normal", Role: "assassin", Count: 1}}},
+		},
+		"hard": {
+			1: {slots: []roomMonsterSlot{{MonsterID: "thornclaw_stalker", Tier: "normal", Role: "assassin", Count: 2}, {MonsterID: "briar_hexcaller", Tier: "normal", Role: "caster", Count: 1}}},
+			2: {slots: []roomMonsterSlot{{MonsterID: "thornclaw_stalker", Tier: "normal", Role: "assassin", Count: 1}, {MonsterID: "hollow_trapper", Tier: "normal", Role: "controller", Count: 1}, {MonsterID: "briar_hexcaller", Tier: "normal", Role: "caster", Count: 1}, {MonsterID: "thornclaw_stalker", Tier: "normal", Role: "assassin", Count: 1}}},
+			3: {slots: []roomMonsterSlot{{MonsterID: "needlemane_huntmaster", Tier: "elite", Role: "bruiser", Count: 1}, {MonsterID: "thornclaw_stalker", Tier: "normal", Role: "assassin", Count: 1}, {MonsterID: "briar_hexcaller", Tier: "normal", Role: "caster", Count: 1}}},
+			4: {slots: []roomMonsterSlot{{MonsterID: "thornveil_predator", Tier: "elite", Role: "assassin", Count: 1}, {MonsterID: "hollow_trapper", Tier: "normal", Role: "controller", Count: 1}, {MonsterID: "needlemane_huntmaster", Tier: "elite", Role: "bruiser", Count: 1}}},
+			5: {slots: []roomMonsterSlot{{MonsterID: "needlemane_huntmaster", Tier: "elite", Role: "bruiser", Count: 1}, {MonsterID: "thornveil_predator", Tier: "elite", Role: "assassin", Count: 1}, {MonsterID: "hollow_trapper", Tier: "normal", Role: "controller", Count: 1}, {MonsterID: "briar_hexcaller", Tier: "normal", Role: "caster", Count: 1}}},
+			6: {slots: []roomMonsterSlot{{MonsterID: "briarqueen_ravastra", Tier: "boss", Role: "boss", Count: 1}, {MonsterID: "thornveil_predator", Tier: "elite", Role: "assassin", Count: 1}, {MonsterID: "briar_hexcaller", Tier: "normal", Role: "caster", Count: 1}}},
+		},
+		"nightmare": {
+			1: {slots: []roomMonsterSlot{{MonsterID: "thornclaw_stalker", Tier: "normal", Role: "assassin", Count: 2}, {MonsterID: "briar_hexcaller", Tier: "normal", Role: "caster", Count: 1}, {MonsterID: "hollow_trapper", Tier: "normal", Role: "controller", Count: 1}}},
+			2: {slots: []roomMonsterSlot{{MonsterID: "needlemane_huntmaster", Tier: "elite", Role: "bruiser", Count: 1}, {MonsterID: "thornclaw_stalker", Tier: "normal", Role: "assassin", Count: 2}, {MonsterID: "briar_hexcaller", Tier: "normal", Role: "caster", Count: 1}}},
+			3: {slots: []roomMonsterSlot{{MonsterID: "thornveil_predator", Tier: "elite", Role: "assassin", Count: 1}, {MonsterID: "hollow_trapper", Tier: "normal", Role: "controller", Count: 1}, {MonsterID: "briar_hexcaller", Tier: "normal", Role: "caster", Count: 1}, {MonsterID: "thornclaw_stalker", Tier: "normal", Role: "assassin", Count: 1}}},
+			4: {slots: []roomMonsterSlot{{MonsterID: "needlemane_huntmaster", Tier: "elite", Role: "bruiser", Count: 1}, {MonsterID: "thornveil_predator", Tier: "elite", Role: "assassin", Count: 1}, {MonsterID: "hollow_trapper", Tier: "normal", Role: "controller", Count: 1}, {MonsterID: "thornclaw_stalker", Tier: "normal", Role: "assassin", Count: 1}}},
+			5: {slots: []roomMonsterSlot{{MonsterID: "needlemane_huntmaster", Tier: "elite", Role: "bruiser", Count: 1}, {MonsterID: "thornveil_predator", Tier: "elite", Role: "assassin", Count: 1}, {MonsterID: "briar_hexcaller", Tier: "normal", Role: "caster", Count: 1}, {MonsterID: "hollow_trapper", Tier: "normal", Role: "controller", Count: 1}, {MonsterID: "thornclaw_stalker", Tier: "normal", Role: "assassin", Count: 1}}},
+			6: {slots: []roomMonsterSlot{{MonsterID: "briarqueen_ravastra", Tier: "boss", Role: "boss", Count: 1}, {MonsterID: "thornveil_predator", Tier: "elite", Role: "assassin", Count: 1}, {MonsterID: "needlemane_huntmaster", Tier: "elite", Role: "bruiser", Count: 1}}},
+		},
+	},
+	"sunscar_warvault_v1": {
+		"easy": {
+			1: {slots: []roomMonsterSlot{{MonsterID: "warvault_legionary", Tier: "normal", Role: "bruiser", Count: 1}, {MonsterID: "sunforge_channeler", Tier: "normal", Role: "caster", Count: 1}}},
+			2: {slots: []roomMonsterSlot{{MonsterID: "warvault_legionary", Tier: "normal", Role: "bruiser", Count: 1}, {MonsterID: "shieldline_sentinel", Tier: "normal", Role: "tank", Count: 1}, {MonsterID: "sunforge_channeler", Tier: "normal", Role: "caster", Count: 1}}},
+			3: {slots: []roomMonsterSlot{{MonsterID: "vault_breaker", Tier: "elite", Role: "bruiser", Count: 1}, {MonsterID: "warvault_legionary", Tier: "normal", Role: "bruiser", Count: 1}}},
+			4: {slots: []roomMonsterSlot{{MonsterID: "standard_bearer", Tier: "elite", Role: "controller", Count: 1}, {MonsterID: "shieldline_sentinel", Tier: "normal", Role: "tank", Count: 1}, {MonsterID: "sunforge_channeler", Tier: "normal", Role: "caster", Count: 1}}},
+			5: {slots: []roomMonsterSlot{{MonsterID: "vault_breaker", Tier: "elite", Role: "bruiser", Count: 1}, {MonsterID: "standard_bearer", Tier: "elite", Role: "controller", Count: 1}, {MonsterID: "warvault_legionary", Tier: "normal", Role: "bruiser", Count: 1}}},
+			6: {slots: []roomMonsterSlot{{MonsterID: "sunscar_warmarshal", Tier: "boss", Role: "boss", Count: 1}, {MonsterID: "shieldline_sentinel", Tier: "normal", Role: "tank", Count: 1}}},
+		},
+		"hard": {
+			1: {slots: []roomMonsterSlot{{MonsterID: "warvault_legionary", Tier: "normal", Role: "bruiser", Count: 2}, {MonsterID: "sunforge_channeler", Tier: "normal", Role: "caster", Count: 1}}},
+			2: {slots: []roomMonsterSlot{{MonsterID: "warvault_legionary", Tier: "normal", Role: "bruiser", Count: 1}, {MonsterID: "shieldline_sentinel", Tier: "normal", Role: "tank", Count: 2}, {MonsterID: "sunforge_channeler", Tier: "normal", Role: "caster", Count: 1}}},
+			3: {slots: []roomMonsterSlot{{MonsterID: "vault_breaker", Tier: "elite", Role: "bruiser", Count: 1}, {MonsterID: "warvault_legionary", Tier: "normal", Role: "bruiser", Count: 1}, {MonsterID: "sunforge_channeler", Tier: "normal", Role: "caster", Count: 1}}},
+			4: {slots: []roomMonsterSlot{{MonsterID: "standard_bearer", Tier: "elite", Role: "controller", Count: 1}, {MonsterID: "vault_breaker", Tier: "elite", Role: "bruiser", Count: 1}, {MonsterID: "shieldline_sentinel", Tier: "normal", Role: "tank", Count: 1}}},
+			5: {slots: []roomMonsterSlot{{MonsterID: "vault_breaker", Tier: "elite", Role: "bruiser", Count: 1}, {MonsterID: "standard_bearer", Tier: "elite", Role: "controller", Count: 1}, {MonsterID: "warvault_legionary", Tier: "normal", Role: "bruiser", Count: 1}, {MonsterID: "sunforge_channeler", Tier: "normal", Role: "caster", Count: 1}}},
+			6: {slots: []roomMonsterSlot{{MonsterID: "sunscar_warmarshal", Tier: "boss", Role: "boss", Count: 1}, {MonsterID: "vault_breaker", Tier: "elite", Role: "bruiser", Count: 1}, {MonsterID: "standard_bearer", Tier: "elite", Role: "controller", Count: 1}}},
+		},
+		"nightmare": {
+			1: {slots: []roomMonsterSlot{{MonsterID: "warvault_legionary", Tier: "normal", Role: "bruiser", Count: 2}, {MonsterID: "shieldline_sentinel", Tier: "normal", Role: "tank", Count: 1}, {MonsterID: "sunforge_channeler", Tier: "normal", Role: "caster", Count: 1}}},
+			2: {slots: []roomMonsterSlot{{MonsterID: "vault_breaker", Tier: "elite", Role: "bruiser", Count: 1}, {MonsterID: "shieldline_sentinel", Tier: "normal", Role: "tank", Count: 2}, {MonsterID: "sunforge_channeler", Tier: "normal", Role: "caster", Count: 1}}},
+			3: {slots: []roomMonsterSlot{{MonsterID: "vault_breaker", Tier: "elite", Role: "bruiser", Count: 1}, {MonsterID: "standard_bearer", Tier: "elite", Role: "controller", Count: 1}, {MonsterID: "warvault_legionary", Tier: "normal", Role: "bruiser", Count: 1}, {MonsterID: "sunforge_channeler", Tier: "normal", Role: "caster", Count: 1}}},
+			4: {slots: []roomMonsterSlot{{MonsterID: "standard_bearer", Tier: "elite", Role: "controller", Count: 1}, {MonsterID: "vault_breaker", Tier: "elite", Role: "bruiser", Count: 1}, {MonsterID: "shieldline_sentinel", Tier: "normal", Role: "tank", Count: 1}, {MonsterID: "warvault_legionary", Tier: "normal", Role: "bruiser", Count: 1}}},
+			5: {slots: []roomMonsterSlot{{MonsterID: "vault_breaker", Tier: "elite", Role: "bruiser", Count: 1}, {MonsterID: "standard_bearer", Tier: "elite", Role: "controller", Count: 1}, {MonsterID: "sunforge_channeler", Tier: "normal", Role: "caster", Count: 1}, {MonsterID: "shieldline_sentinel", Tier: "normal", Role: "tank", Count: 1}, {MonsterID: "warvault_legionary", Tier: "normal", Role: "bruiser", Count: 1}}},
+			6: {slots: []roomMonsterSlot{{MonsterID: "sunscar_warmarshal", Tier: "boss", Role: "boss", Count: 1}, {MonsterID: "vault_breaker", Tier: "elite", Role: "bruiser", Count: 1}, {MonsterID: "standard_bearer", Tier: "elite", Role: "controller", Count: 1}}},
+		},
+	},
+	"obsidian_spire_v1": {
+		"easy": {
+			1: {slots: []roomMonsterSlot{{MonsterID: "blackglass_sentinel", Tier: "normal", Role: "tank", Count: 1}, {MonsterID: "void_adept", Tier: "normal", Role: "caster", Count: 1}}},
+			2: {slots: []roomMonsterSlot{{MonsterID: "blackglass_sentinel", Tier: "normal", Role: "tank", Count: 1}, {MonsterID: "eclipse_scribe", Tier: "normal", Role: "controller", Count: 1}, {MonsterID: "void_adept", Tier: "normal", Role: "caster", Count: 1}}},
+			3: {slots: []roomMonsterSlot{{MonsterID: "obsidian_lancer", Tier: "elite", Role: "bruiser", Count: 1}, {MonsterID: "void_adept", Tier: "normal", Role: "caster", Count: 1}}},
+			4: {slots: []roomMonsterSlot{{MonsterID: "mirrorbound_rector", Tier: "elite", Role: "caster", Count: 1}, {MonsterID: "eclipse_scribe", Tier: "normal", Role: "controller", Count: 1}, {MonsterID: "blackglass_sentinel", Tier: "normal", Role: "tank", Count: 1}}},
+			5: {slots: []roomMonsterSlot{{MonsterID: "obsidian_lancer", Tier: "elite", Role: "bruiser", Count: 1}, {MonsterID: "mirrorbound_rector", Tier: "elite", Role: "caster", Count: 1}, {MonsterID: "void_adept", Tier: "normal", Role: "caster", Count: 1}}},
+			6: {slots: []roomMonsterSlot{{MonsterID: "obsidian_archon", Tier: "boss", Role: "boss", Count: 1}, {MonsterID: "blackglass_sentinel", Tier: "normal", Role: "tank", Count: 1}}},
+		},
+		"hard": {
+			1: {slots: []roomMonsterSlot{{MonsterID: "blackglass_sentinel", Tier: "normal", Role: "tank", Count: 2}, {MonsterID: "void_adept", Tier: "normal", Role: "caster", Count: 1}}},
+			2: {slots: []roomMonsterSlot{{MonsterID: "blackglass_sentinel", Tier: "normal", Role: "tank", Count: 1}, {MonsterID: "eclipse_scribe", Tier: "normal", Role: "controller", Count: 1}, {MonsterID: "void_adept", Tier: "normal", Role: "caster", Count: 2}}},
+			3: {slots: []roomMonsterSlot{{MonsterID: "obsidian_lancer", Tier: "elite", Role: "bruiser", Count: 1}, {MonsterID: "void_adept", Tier: "normal", Role: "caster", Count: 1}, {MonsterID: "blackglass_sentinel", Tier: "normal", Role: "tank", Count: 1}}},
+			4: {slots: []roomMonsterSlot{{MonsterID: "mirrorbound_rector", Tier: "elite", Role: "caster", Count: 1}, {MonsterID: "eclipse_scribe", Tier: "normal", Role: "controller", Count: 1}, {MonsterID: "obsidian_lancer", Tier: "elite", Role: "bruiser", Count: 1}}},
+			5: {slots: []roomMonsterSlot{{MonsterID: "obsidian_lancer", Tier: "elite", Role: "bruiser", Count: 1}, {MonsterID: "mirrorbound_rector", Tier: "elite", Role: "caster", Count: 1}, {MonsterID: "void_adept", Tier: "normal", Role: "caster", Count: 1}, {MonsterID: "eclipse_scribe", Tier: "normal", Role: "controller", Count: 1}}},
+			6: {slots: []roomMonsterSlot{{MonsterID: "obsidian_archon", Tier: "boss", Role: "boss", Count: 1}, {MonsterID: "mirrorbound_rector", Tier: "elite", Role: "caster", Count: 1}, {MonsterID: "blackglass_sentinel", Tier: "normal", Role: "tank", Count: 1}}},
+		},
+		"nightmare": {
+			1: {slots: []roomMonsterSlot{{MonsterID: "blackglass_sentinel", Tier: "normal", Role: "tank", Count: 2}, {MonsterID: "void_adept", Tier: "normal", Role: "caster", Count: 1}, {MonsterID: "eclipse_scribe", Tier: "normal", Role: "controller", Count: 1}}},
+			2: {slots: []roomMonsterSlot{{MonsterID: "obsidian_lancer", Tier: "elite", Role: "bruiser", Count: 1}, {MonsterID: "void_adept", Tier: "normal", Role: "caster", Count: 2}, {MonsterID: "blackglass_sentinel", Tier: "normal", Role: "tank", Count: 1}}},
+			3: {slots: []roomMonsterSlot{{MonsterID: "mirrorbound_rector", Tier: "elite", Role: "caster", Count: 1}, {MonsterID: "eclipse_scribe", Tier: "normal", Role: "controller", Count: 1}, {MonsterID: "void_adept", Tier: "normal", Role: "caster", Count: 1}, {MonsterID: "blackglass_sentinel", Tier: "normal", Role: "tank", Count: 1}}},
+			4: {slots: []roomMonsterSlot{{MonsterID: "obsidian_lancer", Tier: "elite", Role: "bruiser", Count: 1}, {MonsterID: "mirrorbound_rector", Tier: "elite", Role: "caster", Count: 1}, {MonsterID: "eclipse_scribe", Tier: "normal", Role: "controller", Count: 1}, {MonsterID: "void_adept", Tier: "normal", Role: "caster", Count: 1}}},
+			5: {slots: []roomMonsterSlot{{MonsterID: "obsidian_lancer", Tier: "elite", Role: "bruiser", Count: 1}, {MonsterID: "mirrorbound_rector", Tier: "elite", Role: "caster", Count: 1}, {MonsterID: "void_adept", Tier: "normal", Role: "caster", Count: 1}, {MonsterID: "eclipse_scribe", Tier: "normal", Role: "controller", Count: 1}, {MonsterID: "blackglass_sentinel", Tier: "normal", Role: "tank", Count: 1}}},
+			6: {slots: []roomMonsterSlot{{MonsterID: "obsidian_archon", Tier: "boss", Role: "boss", Count: 1}, {MonsterID: "mirrorbound_rector", Tier: "elite", Role: "caster", Count: 1}, {MonsterID: "obsidian_lancer", Tier: "elite", Role: "bruiser", Count: 1}}},
 		},
 	},
 	"sandworm_den_v1": {
@@ -1305,10 +1427,11 @@ func difficultyGoldMultiplier(difficulty string) float64 {
 	}
 }
 
-func scaledRewardGold(baseGold, highestRoomCleared, totalRooms int, difficulty string) int {
+func scaledRewardGold(baseGoldMin, baseGoldMax, highestRoomCleared, totalRooms int, difficulty string, seed string) int {
 	if totalRooms <= 0 {
-		return baseGold
+		return baseGoldMin
 	}
+	baseGold := deterministicGoldInRange(seed, baseGoldMin, baseGoldMax)
 	cleared := maxInt(0, minInt(highestRoomCleared, totalRooms))
 	if cleared == 0 {
 		return maxInt(1, baseGold/5)
@@ -1316,6 +1439,13 @@ func scaledRewardGold(baseGold, highestRoomCleared, totalRooms int, difficulty s
 	ratio := float64(cleared) / float64(totalRooms)
 	base := float64(baseGold) * (0.45 + ratio*0.55)
 	return maxInt(1, int(base*difficultyGoldMultiplier(difficulty)))
+}
+
+func deterministicGoldInRange(seed string, minGold, maxGold int) int {
+	if maxGold <= minGold {
+		return minGold
+	}
+	return minGold + deterministicIndex(seed, maxGold-minGold+1)
 }
 
 func maxInt(a, b int) int {
@@ -1523,11 +1653,32 @@ func deterministicIndex(seed string, size int) int {
 
 var dungeonQualityCatalogPools = map[string]map[string][]string{
 	"ancient_catacomb_v1": {
-		"blue":      {"gravewake_marchers_blue", "gravewake_shackles_blue"},
-		"purple":    {"gravewake_seal_purple", "gravewake_hood_purple"},
-		"gold":      {"gravewake_reliquary_gold", "gravewake_vestment_gold"},
-		"red":       {"gravewake_vestment_red", "gravewake_seal_red"},
-		"prismatic": {"gravewake_reliquary_prismatic"},
+		"blue":      expandDungeonRewardPool([]string{"gravewake_bastion_boots_blue", "gravewake_bastion_helm_blue"}, "gravewake_bastion", "blue"),
+		"purple":    expandDungeonRewardPool([]string{"gravewake_bastion_ring_purple", "gravewake_bastion_necklace_purple"}, "gravewake_bastion", "purple"),
+		"gold":      expandDungeonRewardPool([]string{"gravewake_bastion_chest_gold", "gravewake_bastion_greaves_gold"}, "gravewake_bastion", "gold"),
+		"red":       expandDungeonRewardPool([]string{"gravewake_bastion_chest_red", "gravewake_bastion_ring_red"}, "gravewake_bastion", "red"),
+		"prismatic": expandDungeonRewardPool([]string{"gravewake_bastion_necklace_prismatic"}, "gravewake_bastion", "prismatic"),
+	},
+	"thorned_hollow_v1": {
+		"blue":      expandDungeonRewardPool([]string{"briarbound_sight_boots_blue", "briarbound_sight_hood_blue"}, "briarbound_sight", "blue"),
+		"purple":    expandDungeonRewardPool([]string{"briarbound_sight_ring_purple", "briarbound_sight_necklace_purple"}, "briarbound_sight", "purple"),
+		"gold":      expandDungeonRewardPool([]string{"briarbound_sight_chest_gold", "briarbound_sight_boots_gold"}, "briarbound_sight", "gold"),
+		"red":       expandDungeonRewardPool([]string{"briarbound_sight_chest_red", "briarbound_sight_ring_red"}, "briarbound_sight", "red"),
+		"prismatic": expandDungeonRewardPool([]string{"briarbound_sight_necklace_prismatic"}, "briarbound_sight", "prismatic"),
+	},
+	"sunscar_warvault_v1": {
+		"blue":      expandDungeonRewardPool([]string{"sunscar_assault_boots_blue", "sunscar_assault_helm_blue"}, "sunscar_assault", "blue"),
+		"purple":    expandDungeonRewardPool([]string{"sunscar_assault_ring_purple", "sunscar_assault_necklace_purple"}, "sunscar_assault", "purple"),
+		"gold":      expandDungeonRewardPool([]string{"sunscar_assault_chest_gold", "sunscar_assault_boots_gold"}, "sunscar_assault", "gold"),
+		"red":       expandDungeonRewardPool([]string{"sunscar_assault_chest_red", "sunscar_assault_ring_red"}, "sunscar_assault", "red"),
+		"prismatic": expandDungeonRewardPool([]string{"sunscar_assault_necklace_prismatic"}, "sunscar_assault", "prismatic"),
+	},
+	"obsidian_spire_v1": {
+		"blue":      expandDungeonRewardPool([]string{"nightglass_arcanum_boots_blue", "nightglass_arcanum_hood_blue"}, "nightglass_arcanum", "blue"),
+		"purple":    expandDungeonRewardPool([]string{"nightglass_arcanum_ring_purple", "nightglass_arcanum_necklace_purple"}, "nightglass_arcanum", "purple"),
+		"gold":      expandDungeonRewardPool([]string{"nightglass_arcanum_chest_gold", "nightglass_arcanum_boots_gold"}, "nightglass_arcanum", "gold"),
+		"red":       expandDungeonRewardPool([]string{"nightglass_arcanum_chest_red", "nightglass_arcanum_ring_red"}, "nightglass_arcanum", "red"),
+		"prismatic": expandDungeonRewardPool([]string{"nightglass_arcanum_necklace_prismatic"}, "nightglass_arcanum", "prismatic"),
 	},
 	"sandworm_den_v1": {
 		"blue":      {"dunescourge_burrowstep_blue", "dunescourge_coilguards_blue"},
@@ -1536,6 +1687,20 @@ var dungeonQualityCatalogPools = map[string]map[string][]string{
 		"red":       {"dunescourge_carapace_mail_red", "dunescourge_fang_ring_red"},
 		"prismatic": {"dunescourge_heartspine_chain_prismatic"},
 	},
+}
+
+const (
+	sharedDungeonGoldMin = 265
+	sharedDungeonGoldMax = 370
+)
+
+func expandDungeonRewardPool(base []string, setPrefix, rarity string) []string {
+	pool := make([]string, 0, len(base)+6)
+	pool = append(pool, base...)
+	for _, style := range []string{"sword_shield", "great_axe", "staff", "spellbook", "scepter", "holy_tome"} {
+		pool = append(pool, fmt.Sprintf("%s_weapon_%s_%s", setPrefix, style, rarity))
+	}
+	return pool
 }
 
 func copyMapSlice(input []map[string]any) []map[string]any {
@@ -1555,10 +1720,6 @@ func copyMapSlice(input []map[string]any) []map[string]any {
 	return result
 }
 
-func rankAllows(currentRank, requiredRank string) bool {
-	return rankOrder[currentRank] >= rankOrder[requiredRank]
-}
-
 func sortRunsByResolvedAtDesc(runs []RunView) {
 	sort.Slice(runs, func(i, j int) bool {
 		left := parseRunTime(runs[i].ResolvedAt)
@@ -1576,18 +1737,11 @@ func parseRunTime(value string) time.Time {
 	return parsed
 }
 
-var rankOrder = map[string]int{
-	"low":  1,
-	"mid":  2,
-	"high": 3,
-}
-
 var dungeonDefinitions = map[string]DefinitionView{
 	"ancient_catacomb_v1": {
 		DungeonID:           "ancient_catacomb_v1",
 		Name:                "Ancient Catacomb",
 		RegionID:            "ancient_catacomb",
-		MinRank:             "low",
 		RoomCount:           6,
 		BossRoomIndex:       6,
 		RecommendedLevelMin: 1,
@@ -1602,19 +1756,62 @@ var dungeonDefinitions = map[string]DefinitionView{
 			{HighestRoomCleared: 6, Rating: "S"},
 		},
 		RewardSummary: map[string]any{
-			"gold_min":   180,
-			"gold_max":   260,
+			"gold_min":   sharedDungeonGoldMin,
+			"gold_max":   sharedDungeonGoldMax,
 			"drop_table": "catacomb_v1",
 		},
 	},
-	"sandworm_den_v1": {
-		DungeonID:           "sandworm_den_v1",
-		Name:                "Sandworm Den",
-		RegionID:            "sandworm_den",
-		MinRank:             "high",
+	"thorned_hollow_v1": {
+		DungeonID:           "thorned_hollow_v1",
+		Name:                "Thorned Hollow",
+		RegionID:            "thorned_hollow",
 		RoomCount:           6,
 		BossRoomIndex:       6,
-		RecommendedLevelMin: 70,
+		RecommendedLevelMin: 26,
+		RecommendedLevelMax: 55,
+		RatingRules: []DungeonRatingRule{
+			{HighestRoomCleared: 1, Rating: "E"},
+			{HighestRoomCleared: 2, Rating: "D"},
+			{HighestRoomCleared: 3, Rating: "C"},
+			{HighestRoomCleared: 4, Rating: "B"},
+			{HighestRoomCleared: 5, Rating: "A"},
+			{HighestRoomCleared: 6, Rating: "S"},
+		},
+		RewardSummary: map[string]any{
+			"gold_min":   sharedDungeonGoldMin,
+			"gold_max":   sharedDungeonGoldMax,
+			"drop_table": "thorned_hollow_v1",
+		},
+	},
+	"sunscar_warvault_v1": {
+		DungeonID:           "sunscar_warvault_v1",
+		Name:                "Sunscar Warvault",
+		RegionID:            "sunscar_warvault",
+		RoomCount:           6,
+		BossRoomIndex:       6,
+		RecommendedLevelMin: 56,
+		RecommendedLevelMax: 82,
+		RatingRules: []DungeonRatingRule{
+			{HighestRoomCleared: 1, Rating: "E"},
+			{HighestRoomCleared: 2, Rating: "D"},
+			{HighestRoomCleared: 3, Rating: "C"},
+			{HighestRoomCleared: 4, Rating: "B"},
+			{HighestRoomCleared: 5, Rating: "A"},
+			{HighestRoomCleared: 6, Rating: "S"},
+		},
+		RewardSummary: map[string]any{
+			"gold_min":   sharedDungeonGoldMin,
+			"gold_max":   sharedDungeonGoldMax,
+			"drop_table": "sunscar_warvault_v1",
+		},
+	},
+	"obsidian_spire_v1": {
+		DungeonID:           "obsidian_spire_v1",
+		Name:                "Obsidian Spire",
+		RegionID:            "obsidian_spire",
+		RoomCount:           6,
+		BossRoomIndex:       6,
+		RecommendedLevelMin: 68,
 		RecommendedLevelMax: 100,
 		RatingRules: []DungeonRatingRule{
 			{HighestRoomCleared: 1, Rating: "E"},
@@ -1625,9 +1822,9 @@ var dungeonDefinitions = map[string]DefinitionView{
 			{HighestRoomCleared: 6, Rating: "S"},
 		},
 		RewardSummary: map[string]any{
-			"gold_min":   320,
-			"gold_max":   460,
-			"drop_table": "sandworm_v1",
+			"gold_min":   sharedDungeonGoldMin,
+			"gold_max":   sharedDungeonGoldMax,
+			"drop_table": "obsidian_spire_v1",
 		},
 	},
 }

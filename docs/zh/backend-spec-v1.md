@@ -305,11 +305,9 @@ V1 后端由两个 Go 应用组成：
 - `CHARACTER_INVALID_CLASS`
 - `CHARACTER_INVALID_WEAPON_STYLE`
 - `TRAVEL_REGION_NOT_FOUND`
-- `TRAVEL_RANK_LOCKED`
 - `TRAVEL_INSUFFICIENT_GOLD`
 - `QUEST_NOT_FOUND`
 - `QUEST_INVALID_STATE`
-- `QUEST_COMPLETION_CAP_REACHED`
 - `INVENTORY_ITEM_NOT_FOUND`
 - `INVENTORY_ITEM_NOT_EQUIPPABLE`
 - `DUNGEON_NOT_FOUND`
@@ -648,7 +646,6 @@ V1 后端由两个 Go 应用组成：
 - `id`
 - `name`
 - `type`
-- `min_rank`
 - `travel_cost_gold`
 - `sort_order`
 - `is_active`
@@ -1187,9 +1184,8 @@ V1 后端由两个 Go 应用组成：
 
 - `travel`
 - `enter_building`
-- `accept_quest`
 - `submit_quest`
-- `reroll_quests`
+- `exchange_dungeon_reward_claims`
 - `equip_item`
 - `unequip_item`
 - `sell_item`
@@ -1239,7 +1235,6 @@ V1 后端由两个 Go 应用组成：
 校验：
 
 - 目标区域存在且已激活
-- 阶位满足要求
 - 金币足够支付旅行费用
 
 副作用：
@@ -1292,51 +1287,39 @@ V1 后端由两个 Go 应用组成：
 - 当前活跃任务情况
 - 每日提交上限使用情况
 
-#### `POST /api/v1/me/quests/{questId}/accept`
-
-校验：
-
-- 任务属于当前角色与当前任务板
-- 任务状态为 `available`
-
-副作用：
-
-- 标记为 `accepted`
-- 产生 `quest.accepted`
-
 #### `POST /api/v1/me/quests/{questId}/submit`
 
 校验：
 
 - 状态必须为 `completed`
-- 每日提交上限不能超出
 
 副作用：
 
 - 状态变为 `submitted`
 - 增加金币
 - 增加声望
-- 如跨过门槛则升级阶位
 - 递增每日任务提交计数
 - 产生 `quest.submitted`
-- 若升级则追加 `character.rank_up`
 
-#### `POST /api/v1/me/quests/reroll`
+当前仓库说明：
+
+- 每日任务板会在重置后的首次查询时自动补满到 4 个合同
+- 合同生成后立即激活，不再提供 accept 或 reroll 接口
+
+#### `POST /api/v1/me/dungeons/reward-claims/exchange`
 
 请求：
 
 ```json
 {
-  "confirm_cost": true
+  "quantity": 1
 }
 ```
 
 行为：
 
-- 必须显式确认成本
-- 扣除洗任务费用
-- 使未完成任务失效
-- 生成替换任务
+- 消耗声望
+- 为当天购买额外的副本领奖次数
 
 ### 12.7 Inventory APIs
 
@@ -1347,6 +1330,8 @@ V1 后端由两个 Go 应用组成：
 - 当前装备
 - 背包
 - 装备评分
+- 副本装备在适用时应暴露 `set_id`
+- 当前激活的赛季套装进度应汇总在 `equipped_set_bonuses`
 
 #### `POST /api/v1/me/equipment/equip`
 
@@ -1410,7 +1395,6 @@ V1 后端由两个 Go 应用组成：
 
 校验：
 
-- 阶位满足要求
 - 每日领奖配额仍有余量
 - 当前没有冲突中的 active run
 - difficulty 缺省或非法时回落为 `easy`
@@ -1489,7 +1473,6 @@ V1 后端由两个 Go 应用组成：
 校验：
 
 - 报名窗口已开启
-- 阶位至少为 `mid`
 - 当前角色尚未报名
 
 副作用：

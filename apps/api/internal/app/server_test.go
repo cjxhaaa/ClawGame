@@ -15,6 +15,7 @@ import (
 	"clawgame/apps/api/internal/dungeons"
 	"clawgame/apps/api/internal/inventory"
 	"clawgame/apps/api/internal/platform/config"
+	"clawgame/apps/api/internal/world"
 )
 
 func TestPublicWorldRoutes(t *testing.T) {
@@ -43,8 +44,8 @@ func TestPublicWorldRoutes(t *testing.T) {
 		if payload.RequestID == "" {
 			t.Fatal("expected request_id to be populated")
 		}
-		if len(payload.Data.Regions) != 6 {
-			t.Fatalf("expected 6 regions, got %d", len(payload.Data.Regions))
+		if len(payload.Data.Regions) != 10 {
+			t.Fatalf("expected 10 regions, got %d", len(payload.Data.Regions))
 		}
 		if payload.Data.Regions[0].RegionID != "main_city" {
 			t.Fatalf("expected first region to be main_city, got %q", payload.Data.Regions[0].RegionID)
@@ -446,8 +447,8 @@ func TestAuthCharacterFlow(t *testing.T) {
 	if stateResponse.Data.CombatPower.PanelPowerScore <= 0 {
 		t.Fatal("expected combat_power.panel_power_score in /me/state")
 	}
-	if len(stateResponse.Data.Objectives) != 0 {
-		t.Fatalf("expected no active objectives yet, got %d", len(stateResponse.Data.Objectives))
+	if len(stateResponse.Data.Objectives) != characters.DailyQuestBoardSize {
+		t.Fatalf("expected %d active objectives on first login, got %d", characters.DailyQuestBoardSize, len(stateResponse.Data.Objectives))
 	}
 
 	var rawStateResponse map[string]any
@@ -910,7 +911,7 @@ func TestWorldBossQueueAndReforgeFlow(t *testing.T) {
 	if !ok {
 		t.Fatal("expected first character to exist")
 	}
-	if _, _, err := server.inventoryService.GrantItemFromCatalog(firstCharacter, "gravewake_vestment_red"); err != nil {
+	if _, _, err := server.inventoryService.GrantItemFromCatalog(firstCharacter, "gravewake_bastion_chest_red"); err != nil {
 		t.Fatalf("failed to grant reforge item: %v", err)
 	}
 
@@ -931,7 +932,7 @@ func TestWorldBossQueueAndReforgeFlow(t *testing.T) {
 	var targetItemID string
 	var originalAffixCount int
 	for _, item := range inventoryResponse.Data.Inventory {
-		if item.CatalogID == "gravewake_vestment_red" {
+		if item.CatalogID == "gravewake_bastion_chest_red" {
 			targetItemID = item.ItemID
 			originalAffixCount = len(item.ExtraAffixes)
 			break
@@ -1016,50 +1017,20 @@ func TestWorldBossQueueAndReforgeFlow(t *testing.T) {
 
 func TestQuestBoardAndSubmissionFlow(t *testing.T) {
 	server := NewServer(config.API{Port: "8080"})
-
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
-		"bot_name": "bot-quester",
-		"password": "verysecure",
-	}), "", http.StatusOK, nil)
-
-	var loginResponse struct {
-		Data struct {
-			AccessToken string `json:"access_token"`
-		} `json:"data"`
-	}
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
-		"bot_name": "bot-quester",
-		"password": "verysecure",
-	}), "", http.StatusOK, &loginResponse)
-
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
-		"name":         "Courier",
-		"class":        "warrior",
-		"weapon_style": "sword_shield",
-	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
-
-	var questsResponse struct {
-		Data struct {
-			BoardID string `json:"board_id"`
-			Quests  []struct {
-				QuestID        string `json:"quest_id"`
-				TemplateType   string `json:"template_type"`
-				TargetRegionID string `json:"target_region_id"`
-				Status         string `json:"status"`
-			} `json:"quests"`
-		} `json:"data"`
-	}
-	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests", nil, loginResponse.Data.AccessToken, http.StatusOK, &questsResponse)
-
-	if questsResponse.Data.BoardID == "" {
-		t.Fatal("expected board_id to be populated")
-	}
-	if len(questsResponse.Data.Quests) != 6 {
-		t.Fatalf("expected 6 quests, got %d", len(questsResponse.Data.Quests))
+	token, questsResponse := createCharacterWithBoard(t, server, "bot-quester", "Courier", func(quests []boardQuestView) bool {
+		for _, quest := range quests {
+			if quest.TemplateType == "deliver_supplies" && quest.TargetRegionID == "greenfield_village" {
+				return true
+			}
+		}
+		return false
+	})
+	if len(questsResponse) != 4 {
+		t.Fatalf("expected 4 quests, got %d", len(questsResponse))
 	}
 
 	deliveryQuestID := ""
-	for _, quest := range questsResponse.Data.Quests {
+	for _, quest := range questsResponse {
 		if quest.TemplateType == "deliver_supplies" && quest.TargetRegionID == "greenfield_village" {
 			deliveryQuestID = quest.QuestID
 			break
@@ -1069,8 +1040,6 @@ func TestQuestBoardAndSubmissionFlow(t *testing.T) {
 		t.Fatal("expected a deliver_supplies quest for greenfield_village")
 	}
 
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/quests/"+deliveryQuestID+"/accept", nil, loginResponse.Data.AccessToken, http.StatusOK, nil)
-
 	var acceptedState struct {
 		Data struct {
 			Objectives []struct {
@@ -1079,15 +1048,22 @@ func TestQuestBoardAndSubmissionFlow(t *testing.T) {
 			} `json:"objectives"`
 		} `json:"data"`
 	}
-	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/state", nil, loginResponse.Data.AccessToken, http.StatusOK, &acceptedState)
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/state", nil, token, http.StatusOK, &acceptedState)
 
-	if len(acceptedState.Data.Objectives) == 0 || acceptedState.Data.Objectives[0].QuestID != deliveryQuestID {
+	foundObjective := false
+	for _, objective := range acceptedState.Data.Objectives {
+		if objective.QuestID == deliveryQuestID {
+			foundObjective = true
+			break
+		}
+	}
+	if !foundObjective {
 		t.Fatal("expected accepted delivery quest to appear in objectives")
 	}
 
 	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/travel", map[string]any{
 		"region_id": "greenfield_village",
-	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+	}, token, http.StatusOK, nil)
 
 	var completedBoard struct {
 		Data struct {
@@ -1097,7 +1073,7 @@ func TestQuestBoardAndSubmissionFlow(t *testing.T) {
 			} `json:"quests"`
 		} `json:"data"`
 	}
-	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests", nil, loginResponse.Data.AccessToken, http.StatusOK, &completedBoard)
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests", nil, token, http.StatusOK, &completedBoard)
 
 	foundCompleted := false
 	for _, quest := range completedBoard.Data.Quests {
@@ -1113,9 +1089,8 @@ func TestQuestBoardAndSubmissionFlow(t *testing.T) {
 		Data struct {
 			State struct {
 				Character struct {
-					Reputation int    `json:"reputation"`
-					Gold       int    `json:"gold"`
-					Rank       string `json:"rank"`
+					Reputation int `json:"reputation"`
+					Gold       int `json:"gold"`
 				} `json:"character"`
 				Limits struct {
 					QuestCompletionUsed int `json:"quest_completion_used"`
@@ -1126,7 +1101,7 @@ func TestQuestBoardAndSubmissionFlow(t *testing.T) {
 			} `json:"state"`
 		} `json:"data"`
 	}
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/quests/"+deliveryQuestID+"/submit", nil, loginResponse.Data.AccessToken, http.StatusOK, &submitResponse)
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/quests/"+deliveryQuestID+"/submit", nil, token, http.StatusOK, &submitResponse)
 
 	if submitResponse.Data.State.Character.Reputation <= 0 {
 		t.Fatal("expected quest submission to increase reputation")
@@ -1138,62 +1113,27 @@ func TestQuestBoardAndSubmissionFlow(t *testing.T) {
 		t.Fatal("expected quest.submitted to be the latest recent event")
 	}
 
-	var rerollResponse struct {
-		Data struct {
-			RerollCount int `json:"reroll_count"`
-		} `json:"data"`
-	}
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/quests/reroll", map[string]any{
-		"confirm_cost": true,
-	}, loginResponse.Data.AccessToken, http.StatusOK, &rerollResponse)
-
-	if rerollResponse.Data.RerollCount != 1 {
-		t.Fatalf("expected reroll_count to be 1, got %d", rerollResponse.Data.RerollCount)
-	}
 }
 
 func TestQuestDetailExposesRuntimeFramework(t *testing.T) {
 	server := NewServer(config.API{Port: "8080"})
-
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
-		"bot_name": "bot-quest-detail",
-		"password": "verysecure",
-	}), "", http.StatusOK, nil)
-
-	var loginResponse struct {
-		Data struct {
-			AccessToken string `json:"access_token"`
-		} `json:"data"`
-	}
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
-		"bot_name": "bot-quest-detail",
-		"password": "verysecure",
-	}), "", http.StatusOK, &loginResponse)
-
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
-		"name":         "QuestDetailer",
-		"class":        "warrior",
-		"weapon_style": "sword_shield",
-	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
-
-	var boardResponse struct {
-		Data struct {
-			Quests []struct {
-				QuestID      string `json:"quest_id"`
-				TemplateType string `json:"template_type"`
-				Difficulty   string `json:"difficulty"`
-				FlowKind     string `json:"flow_kind"`
-			} `json:"quests"`
-		} `json:"data"`
-	}
-	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests", nil, loginResponse.Data.AccessToken, http.StatusOK, &boardResponse)
+	token, boardResponse := createCharacterWithBoard(t, server, "bot-quest-detail", "QuestDetailer", func(quests []boardQuestView) bool {
+		for _, quest := range quests {
+			if quest.TemplateType == "deliver_supplies" {
+				return true
+			}
+		}
+		return false
+	})
 
 	var targetQuestID string
-	for _, quest := range boardResponse.Data.Quests {
+	var targetDifficulty string
+	for _, quest := range boardResponse {
 		if quest.TemplateType != "deliver_supplies" {
 			continue
 		}
 		targetQuestID = quest.QuestID
+		targetDifficulty = quest.Difficulty
 		if quest.Difficulty == "" {
 			t.Fatal("expected board quest difficulty to be populated")
 		}
@@ -1205,8 +1145,6 @@ func TestQuestDetailExposesRuntimeFramework(t *testing.T) {
 	if targetQuestID == "" {
 		t.Fatal("expected to find a deliver_supplies quest on the board")
 	}
-
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/quests/"+targetQuestID+"/accept", nil, loginResponse.Data.AccessToken, http.StatusOK, nil)
 
 	var questDetail struct {
 		Data struct {
@@ -1228,7 +1166,7 @@ func TestQuestDetailExposesRuntimeFramework(t *testing.T) {
 			} `json:"runtime"`
 		} `json:"data"`
 	}
-	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests/"+targetQuestID, nil, loginResponse.Data.AccessToken, http.StatusOK, &questDetail)
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests/"+targetQuestID, nil, token, http.StatusOK, &questDetail)
 
 	if questDetail.Data.Quest.QuestID != targetQuestID {
 		t.Fatalf("expected quest detail %q, got %q", targetQuestID, questDetail.Data.Quest.QuestID)
@@ -1242,13 +1180,21 @@ func TestQuestDetailExposesRuntimeFramework(t *testing.T) {
 	if questDetail.Data.Runtime.QuestID != targetQuestID {
 		t.Fatalf("expected runtime quest id %q, got %q", targetQuestID, questDetail.Data.Runtime.QuestID)
 	}
-	if questDetail.Data.Runtime.CurrentStepKey != "reach_target_region" {
-		t.Fatalf("expected accepted delivery quest current_step_key reach_target_region, got %q", questDetail.Data.Runtime.CurrentStepKey)
+	expectedStepKey := "reach_target_region"
+	if targetDifficulty == "hard" {
+		expectedStepKey = "confirm_route"
+	}
+	if questDetail.Data.Runtime.CurrentStepKey != expectedStepKey {
+		t.Fatalf("expected delivery quest current_step_key %s, got %q", expectedStepKey, questDetail.Data.Runtime.CurrentStepKey)
 	}
 	if questDetail.Data.Runtime.CurrentStepLabel == "" || questDetail.Data.Runtime.CurrentStepHint == "" {
 		t.Fatal("expected quest runtime step label and hint to be populated")
 	}
-	if questDetail.Data.Runtime.SuggestedActionType != "" {
+	if targetDifficulty == "hard" {
+		if questDetail.Data.Runtime.SuggestedActionType != "quest_interact" {
+			t.Fatalf("expected hard delivery to suggest quest_interact, got %q", questDetail.Data.Runtime.SuggestedActionType)
+		}
+	} else if questDetail.Data.Runtime.SuggestedActionType != "" {
 		t.Fatalf("expected plain delivery step to not force suggested action, got %q", questDetail.Data.Runtime.SuggestedActionType)
 	}
 	if questDetail.Data.Runtime.State == nil {
@@ -1258,41 +1204,17 @@ func TestQuestDetailExposesRuntimeFramework(t *testing.T) {
 
 func TestQuestRuntimeChoiceAndInteractionEndpoints(t *testing.T) {
 	server := NewServer(config.API{Port: "8080"})
-
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
-		"bot_name": "bot-quest-runtime",
-		"password": "verysecure",
-	}), "", http.StatusOK, nil)
-
-	var loginResponse struct {
-		Data struct {
-			AccessToken string `json:"access_token"`
-		} `json:"data"`
-	}
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
-		"bot_name": "bot-quest-runtime",
-		"password": "verysecure",
-	}), "", http.StatusOK, &loginResponse)
-
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
-		"name":         "RuntimeQuester",
-		"class":        "mage",
-		"weapon_style": "staff",
-	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
-
-	var boardResponse struct {
-		Data struct {
-			Quests []struct {
-				QuestID      string `json:"quest_id"`
-				TemplateType string `json:"template_type"`
-				Difficulty   string `json:"difficulty"`
-			} `json:"quests"`
-		} `json:"data"`
-	}
-	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests", nil, loginResponse.Data.AccessToken, http.StatusOK, &boardResponse)
+	token, boardResponse := createCharacterWithBoard(t, server, "bot-quest-runtime", "RuntimeQuester", func(quests []boardQuestView) bool {
+		for _, quest := range quests {
+			if quest.Difficulty == "nightmare" {
+				return true
+			}
+		}
+		return false
+	})
 
 	var nightmareQuestID string
-	for _, quest := range boardResponse.Data.Quests {
+	for _, quest := range boardResponse {
 		if quest.Difficulty == "nightmare" {
 			nightmareQuestID = quest.QuestID
 			break
@@ -1301,8 +1223,6 @@ func TestQuestRuntimeChoiceAndInteractionEndpoints(t *testing.T) {
 	if nightmareQuestID == "" {
 		t.Fatal("expected a nightmare quest on the daily board")
 	}
-
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/quests/"+nightmareQuestID+"/accept", nil, loginResponse.Data.AccessToken, http.StatusOK, nil)
 
 	var detailBefore struct {
 		Data struct {
@@ -1317,7 +1237,7 @@ func TestQuestRuntimeChoiceAndInteractionEndpoints(t *testing.T) {
 			} `json:"runtime"`
 		} `json:"data"`
 	}
-	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests/"+nightmareQuestID, nil, loginResponse.Data.AccessToken, http.StatusOK, &detailBefore)
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests/"+nightmareQuestID, nil, token, http.StatusOK, &detailBefore)
 
 	if detailBefore.Data.Runtime.CurrentStepKey != "inspect_clue" {
 		t.Fatalf("expected nightmare quest to start at inspect_clue, got %q", detailBefore.Data.Runtime.CurrentStepKey)
@@ -1352,7 +1272,7 @@ func TestQuestRuntimeChoiceAndInteractionEndpoints(t *testing.T) {
 	}
 	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/quests/"+nightmareQuestID+"/interact", map[string]any{
 		"interaction": "inspect_clue",
-	}, loginResponse.Data.AccessToken, http.StatusOK, &interactFirst)
+	}, token, http.StatusOK, &interactFirst)
 
 	if interactFirst.Data.Runtime.CurrentStepKey != "submit_choice" {
 		t.Fatalf("expected inspect_clue to advance nightmare runtime to submit_choice, got %q", interactFirst.Data.Runtime.CurrentStepKey)
@@ -1382,7 +1302,7 @@ func TestQuestRuntimeChoiceAndInteractionEndpoints(t *testing.T) {
 	}
 	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/quests/"+nightmareQuestID+"/choice", map[string]any{
 		"choice_key": interactFirst.Data.Runtime.AvailableChoices[0].ChoiceKey,
-	}, loginResponse.Data.AccessToken, http.StatusOK, &choiceResponse)
+	}, token, http.StatusOK, &choiceResponse)
 
 	if choiceResponse.Data.Runtime.CurrentStepKey != "clear_target_dungeon" {
 		t.Fatalf("expected choice to advance nightmare runtime to clear_target_dungeon, got %q", choiceResponse.Data.Runtime.CurrentStepKey)
@@ -1423,41 +1343,17 @@ func TestQuestRuntimeChoiceAndInteractionEndpoints(t *testing.T) {
 
 func TestNightmareDungeonQuestRequiresChoiceBeforeCompletion(t *testing.T) {
 	server := NewServer(config.API{Port: "8080"})
-
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
-		"bot_name": "bot-nightmare-gate",
-		"password": "verysecure",
-	}), "", http.StatusOK, nil)
-
-	var loginResponse struct {
-		Data struct {
-			AccessToken string `json:"access_token"`
-		} `json:"data"`
-	}
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
-		"bot_name": "bot-nightmare-gate",
-		"password": "verysecure",
-	}), "", http.StatusOK, &loginResponse)
-
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
-		"name":         "NightmareGate",
-		"class":        "warrior",
-		"weapon_style": "sword_shield",
-	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
-
-	var boardResponse struct {
-		Data struct {
-			Quests []struct {
-				QuestID      string `json:"quest_id"`
-				TemplateType string `json:"template_type"`
-				Difficulty   string `json:"difficulty"`
-			} `json:"quests"`
-		} `json:"data"`
-	}
-	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests", nil, loginResponse.Data.AccessToken, http.StatusOK, &boardResponse)
+	token, boardResponse := createCharacterWithBoard(t, server, "bot-nightmare-gate", "NightmareGate", func(quests []boardQuestView) bool {
+		for _, quest := range quests {
+			if quest.TemplateType == "clear_dungeon" && quest.Difficulty == "nightmare" {
+				return true
+			}
+		}
+		return false
+	})
 
 	var nightmareQuestID string
-	for _, quest := range boardResponse.Data.Quests {
+	for _, quest := range boardResponse {
 		if quest.TemplateType == "clear_dungeon" && quest.Difficulty == "nightmare" {
 			nightmareQuestID = quest.QuestID
 			break
@@ -1467,8 +1363,7 @@ func TestNightmareDungeonQuestRequiresChoiceBeforeCompletion(t *testing.T) {
 		t.Fatal("expected nightmare clear_dungeon quest on board")
 	}
 
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/quests/"+nightmareQuestID+"/accept", nil, loginResponse.Data.AccessToken, http.StatusOK, nil)
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/dungeons/ancient_catacomb_v1/enter", dungeonEnterPayload(""), loginResponse.Data.AccessToken, http.StatusOK, nil)
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/dungeons/ancient_catacomb_v1/enter", dungeonEnterPayload(""), token, http.StatusOK, nil)
 
 	var questsAfterFirstRun struct {
 		Data struct {
@@ -1478,7 +1373,7 @@ func TestNightmareDungeonQuestRequiresChoiceBeforeCompletion(t *testing.T) {
 			} `json:"quests"`
 		} `json:"data"`
 	}
-	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests", nil, loginResponse.Data.AccessToken, http.StatusOK, &questsAfterFirstRun)
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests", nil, token, http.StatusOK, &questsAfterFirstRun)
 
 	for _, quest := range questsAfterFirstRun.Data.Quests {
 		if quest.QuestID == nightmareQuestID && quest.Status == "completed" {
@@ -1488,11 +1383,11 @@ func TestNightmareDungeonQuestRequiresChoiceBeforeCompletion(t *testing.T) {
 
 	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/quests/"+nightmareQuestID+"/interact", map[string]any{
 		"interaction": "inspect_clue",
-	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+	}, token, http.StatusOK, nil)
 	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/quests/"+nightmareQuestID+"/choice", map[string]any{
 		"choice_key": "follow_standard_brief",
-	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/dungeons/ancient_catacomb_v1/enter", dungeonEnterPayload(""), loginResponse.Data.AccessToken, http.StatusOK, nil)
+	}, token, http.StatusOK, nil)
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/dungeons/ancient_catacomb_v1/enter", dungeonEnterPayload(""), token, http.StatusOK, nil)
 
 	var questsAfterSecondRun struct {
 		Data struct {
@@ -1502,7 +1397,7 @@ func TestNightmareDungeonQuestRequiresChoiceBeforeCompletion(t *testing.T) {
 			} `json:"quests"`
 		} `json:"data"`
 	}
-	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests", nil, loginResponse.Data.AccessToken, http.StatusOK, &questsAfterSecondRun)
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests", nil, token, http.StatusOK, &questsAfterSecondRun)
 
 	completed := false
 	for _, quest := range questsAfterSecondRun.Data.Quests {
@@ -1518,42 +1413,17 @@ func TestNightmareDungeonQuestRequiresChoiceBeforeCompletion(t *testing.T) {
 
 func TestHardDeliveryQuestRequiresRouteConfirmation(t *testing.T) {
 	server := NewServer(config.API{Port: "8080"})
-
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
-		"bot_name": "bot-hard-delivery",
-		"password": "verysecure",
-	}), "", http.StatusOK, nil)
-
-	var loginResponse struct {
-		Data struct {
-			AccessToken string `json:"access_token"`
-		} `json:"data"`
-	}
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
-		"bot_name": "bot-hard-delivery",
-		"password": "verysecure",
-	}), "", http.StatusOK, &loginResponse)
-
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
-		"name":         "HardCourier",
-		"class":        "warrior",
-		"weapon_style": "sword_shield",
-	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
-
-	var boardResponse struct {
-		Data struct {
-			Quests []struct {
-				QuestID        string `json:"quest_id"`
-				TemplateType   string `json:"template_type"`
-				Difficulty     string `json:"difficulty"`
-				TargetRegionID string `json:"target_region_id"`
-			} `json:"quests"`
-		} `json:"data"`
-	}
-	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests", nil, loginResponse.Data.AccessToken, http.StatusOK, &boardResponse)
+	token, boardResponse := createCharacterWithBoard(t, server, "bot-hard-delivery", "HardCourier", func(quests []boardQuestView) bool {
+		for _, quest := range quests {
+			if quest.TemplateType == "deliver_supplies" && quest.Difficulty == "hard" && quest.TargetRegionID == "whispering_forest" {
+				return true
+			}
+		}
+		return false
+	})
 
 	var hardQuestID string
-	for _, quest := range boardResponse.Data.Quests {
+	for _, quest := range boardResponse {
 		if quest.TemplateType == "deliver_supplies" && quest.Difficulty == "hard" && quest.TargetRegionID == "whispering_forest" {
 			hardQuestID = quest.QuestID
 			break
@@ -1563,8 +1433,6 @@ func TestHardDeliveryQuestRequiresRouteConfirmation(t *testing.T) {
 		t.Fatal("expected hard deliver_supplies quest targeting whispering_forest")
 	}
 
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/quests/"+hardQuestID+"/accept", nil, loginResponse.Data.AccessToken, http.StatusOK, nil)
-
 	var detailBefore struct {
 		Data struct {
 			Runtime struct {
@@ -1572,14 +1440,14 @@ func TestHardDeliveryQuestRequiresRouteConfirmation(t *testing.T) {
 			} `json:"runtime"`
 		} `json:"data"`
 	}
-	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests/"+hardQuestID, nil, loginResponse.Data.AccessToken, http.StatusOK, &detailBefore)
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests/"+hardQuestID, nil, token, http.StatusOK, &detailBefore)
 	if detailBefore.Data.Runtime.CurrentStepKey != "confirm_route" {
 		t.Fatalf("expected hard delivery quest to start at confirm_route, got %q", detailBefore.Data.Runtime.CurrentStepKey)
 	}
 
 	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/travel", map[string]any{
 		"region_id": "whispering_forest",
-	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+	}, token, http.StatusOK, nil)
 
 	var afterFirstTravel struct {
 		Data struct {
@@ -1589,7 +1457,7 @@ func TestHardDeliveryQuestRequiresRouteConfirmation(t *testing.T) {
 			} `json:"quests"`
 		} `json:"data"`
 	}
-	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests", nil, loginResponse.Data.AccessToken, http.StatusOK, &afterFirstTravel)
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests", nil, token, http.StatusOK, &afterFirstTravel)
 	for _, quest := range afterFirstTravel.Data.Quests {
 		if quest.QuestID == hardQuestID && quest.Status == "completed" {
 			t.Fatal("expected hard delivery quest to remain incomplete before route confirmation")
@@ -1598,13 +1466,13 @@ func TestHardDeliveryQuestRequiresRouteConfirmation(t *testing.T) {
 
 	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/quests/"+hardQuestID+"/interact", map[string]any{
 		"interaction": "confirm_route",
-	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+	}, token, http.StatusOK, nil)
 	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/travel", map[string]any{
 		"region_id": "main_city",
-	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+	}, token, http.StatusOK, nil)
 	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/travel", map[string]any{
 		"region_id": "whispering_forest",
-	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+	}, token, http.StatusOK, nil)
 
 	var afterConfirmedTravel struct {
 		Data struct {
@@ -1614,7 +1482,7 @@ func TestHardDeliveryQuestRequiresRouteConfirmation(t *testing.T) {
 			} `json:"quests"`
 		} `json:"data"`
 	}
-	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests", nil, loginResponse.Data.AccessToken, http.StatusOK, &afterConfirmedTravel)
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests", nil, token, http.StatusOK, &afterConfirmedTravel)
 
 	completed := false
 	for _, quest := range afterConfirmedTravel.Data.Quests {
@@ -1630,41 +1498,17 @@ func TestHardDeliveryQuestRequiresRouteConfirmation(t *testing.T) {
 
 func TestInvestigationQuestFlowAndPlannerHints(t *testing.T) {
 	server := NewServer(config.API{Port: "8080"})
-
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
-		"bot_name": "bot-investigation",
-		"password": "verysecure",
-	}), "", http.StatusOK, nil)
-
-	var loginResponse struct {
-		Data struct {
-			AccessToken string `json:"access_token"`
-		} `json:"data"`
-	}
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
-		"bot_name": "bot-investigation",
-		"password": "verysecure",
-	}), "", http.StatusOK, &loginResponse)
-
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
-		"name":         "Investigator",
-		"class":        "mage",
-		"weapon_style": "staff",
-	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
-
-	var boardResponse struct {
-		Data struct {
-			Quests []struct {
-				QuestID      string `json:"quest_id"`
-				TemplateType string `json:"template_type"`
-				Difficulty   string `json:"difficulty"`
-			} `json:"quests"`
-		} `json:"data"`
-	}
-	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests", nil, loginResponse.Data.AccessToken, http.StatusOK, &boardResponse)
+	token, boardResponse := createCharacterWithBoard(t, server, "bot-investigation", "Investigator", func(quests []boardQuestView) bool {
+		for _, quest := range quests {
+			if quest.TemplateType == "investigate_anomaly" && quest.Difficulty == "hard" {
+				return true
+			}
+		}
+		return false
+	})
 
 	var investigationQuestID string
-	for _, quest := range boardResponse.Data.Quests {
+	for _, quest := range boardResponse {
 		if quest.TemplateType == "investigate_anomaly" && quest.Difficulty == "hard" {
 			investigationQuestID = quest.QuestID
 			break
@@ -1673,8 +1517,6 @@ func TestInvestigationQuestFlowAndPlannerHints(t *testing.T) {
 	if investigationQuestID == "" {
 		t.Fatal("expected hard investigate_anomaly quest on daily board")
 	}
-
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/quests/"+investigationQuestID+"/accept", nil, loginResponse.Data.AccessToken, http.StatusOK, nil)
 
 	var plannerResponse struct {
 		Data struct {
@@ -1690,7 +1532,7 @@ func TestInvestigationQuestFlowAndPlannerHints(t *testing.T) {
 			} `json:"quest_runtime_hints"`
 		} `json:"data"`
 	}
-	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/planner?region_id=main_city", nil, loginResponse.Data.AccessToken, http.StatusOK, &plannerResponse)
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/planner?region_id=main_city", nil, token, http.StatusOK, &plannerResponse)
 
 	foundInteractSuggestion := false
 	foundInspectHint := false
@@ -1725,9 +1567,9 @@ func TestInvestigationQuestFlowAndPlannerHints(t *testing.T) {
 			"quest_id":    investigationQuestID,
 			"interaction": "inspect_clue",
 		},
-	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+	}, token, http.StatusOK, nil)
 
-	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/planner?region_id=main_city", nil, loginResponse.Data.AccessToken, http.StatusOK, &plannerResponse)
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/planner?region_id=main_city", nil, token, http.StatusOK, &plannerResponse)
 	foundChoiceSuggestion := false
 	foundChoiceHint := false
 	for _, action := range plannerResponse.Data.SuggestedActions {
@@ -1755,11 +1597,11 @@ func TestInvestigationQuestFlowAndPlannerHints(t *testing.T) {
 			"quest_id":   investigationQuestID,
 			"choice_key": "handoff_to_guild",
 		},
-	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+	}, token, http.StatusOK, nil)
 
 	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/travel", map[string]any{
 		"region_id": "greenfield_village",
-	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+	}, token, http.StatusOK, nil)
 
 	var questsAfter struct {
 		Data struct {
@@ -1769,7 +1611,7 @@ func TestInvestigationQuestFlowAndPlannerHints(t *testing.T) {
 			} `json:"quests"`
 		} `json:"data"`
 	}
-	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests", nil, loginResponse.Data.AccessToken, http.StatusOK, &questsAfter)
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests", nil, token, http.StatusOK, &questsAfter)
 
 	completed := false
 	for _, quest := range questsAfter.Data.Quests {
@@ -1785,40 +1627,17 @@ func TestInvestigationQuestFlowAndPlannerHints(t *testing.T) {
 
 func TestQuestRuntimeActionsAppearInActionAndStateViews(t *testing.T) {
 	server := NewServer(config.API{Port: "8080"})
-
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
-		"bot_name": "bot-quest-actions",
-		"password": "verysecure",
-	}), "", http.StatusOK, nil)
-
-	var loginResponse struct {
-		Data struct {
-			AccessToken string `json:"access_token"`
-		} `json:"data"`
-	}
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
-		"bot_name": "bot-quest-actions",
-		"password": "verysecure",
-	}), "", http.StatusOK, &loginResponse)
-
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
-		"name":         "ActionSeer",
-		"class":        "mage",
-		"weapon_style": "staff",
-	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
-
-	var boardResponse struct {
-		Data struct {
-			Quests []struct {
-				QuestID      string `json:"quest_id"`
-				TemplateType string `json:"template_type"`
-			} `json:"quests"`
-		} `json:"data"`
-	}
-	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests", nil, loginResponse.Data.AccessToken, http.StatusOK, &boardResponse)
+	token, boardResponse := createCharacterWithBoard(t, server, "bot-quest-actions", "ActionSeer", func(quests []boardQuestView) bool {
+		for _, quest := range quests {
+			if quest.TemplateType == "investigate_anomaly" {
+				return true
+			}
+		}
+		return false
+	})
 
 	var investigationQuestID string
-	for _, quest := range boardResponse.Data.Quests {
+	for _, quest := range boardResponse {
 		if quest.TemplateType == "investigate_anomaly" {
 			investigationQuestID = quest.QuestID
 			break
@@ -1827,8 +1646,6 @@ func TestQuestRuntimeActionsAppearInActionAndStateViews(t *testing.T) {
 	if investigationQuestID == "" {
 		t.Fatal("expected investigate_anomaly quest")
 	}
-
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/quests/"+investigationQuestID+"/accept", nil, loginResponse.Data.AccessToken, http.StatusOK, nil)
 
 	var actionsResponse struct {
 		Data struct {
@@ -1839,7 +1656,7 @@ func TestQuestRuntimeActionsAppearInActionAndStateViews(t *testing.T) {
 			} `json:"actions"`
 		} `json:"data"`
 	}
-	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/actions", nil, loginResponse.Data.AccessToken, http.StatusOK, &actionsResponse)
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/actions", nil, token, http.StatusOK, &actionsResponse)
 
 	foundInteract := false
 	for _, action := range actionsResponse.Data.Actions {
@@ -1847,8 +1664,9 @@ func TestQuestRuntimeActionsAppearInActionAndStateViews(t *testing.T) {
 			if action.Label == "" {
 				t.Fatal("expected quest_interact label to be populated")
 			}
-			if action.ArgsSchema["suggested_interaction"] != "inspect_clue" {
-				t.Fatalf("expected suggested_interaction inspect_clue, got %#v", action.ArgsSchema["suggested_interaction"])
+			suggestedInteraction, _ := action.ArgsSchema["suggested_interaction"].(string)
+			if suggestedInteraction != "confirm_route" && suggestedInteraction != "inspect_clue" {
+				t.Fatalf("expected suggested_interaction to match investigation runtime, got %#v", action.ArgsSchema["suggested_interaction"])
 			}
 			foundInteract = true
 			break
@@ -1865,7 +1683,7 @@ func TestQuestRuntimeActionsAppearInActionAndStateViews(t *testing.T) {
 			} `json:"valid_actions"`
 		} `json:"data"`
 	}
-	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/state", nil, loginResponse.Data.AccessToken, http.StatusOK, &stateResponse)
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/state", nil, token, http.StatusOK, &stateResponse)
 
 	foundStateInteract := false
 	for _, action := range stateResponse.Data.ValidActions {
@@ -1884,9 +1702,9 @@ func TestQuestRuntimeActionsAppearInActionAndStateViews(t *testing.T) {
 			"quest_id":    investigationQuestID,
 			"interaction": "inspect_clue",
 		},
-	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+	}, token, http.StatusOK, nil)
 
-	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/actions", nil, loginResponse.Data.AccessToken, http.StatusOK, &actionsResponse)
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/actions", nil, token, http.StatusOK, &actionsResponse)
 	foundChoice := false
 	for _, action := range actionsResponse.Data.Actions {
 		if action.ActionType == "quest_choice" {
@@ -1904,21 +1722,17 @@ func TestQuestRuntimeActionsAppearInActionAndStateViews(t *testing.T) {
 
 func TestQuestE2EInvestigationFlowUsesAPIHints(t *testing.T) {
 	server := NewServer(config.API{Port: "8080"})
-	token := createQuestE2ECharacter(t, server, "bot-e2e-investigation", "E2EInvestigator")
-
-	var boardResponse struct {
-		Data struct {
-			Quests []struct {
-				QuestID      string `json:"quest_id"`
-				TemplateType string `json:"template_type"`
-				Difficulty   string `json:"difficulty"`
-			} `json:"quests"`
-		} `json:"data"`
-	}
-	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests", nil, token, http.StatusOK, &boardResponse)
+	token, boardResponse := createCharacterWithBoard(t, server, "bot-e2e-investigation", "E2EInvestigator", func(quests []boardQuestView) bool {
+		for _, quest := range quests {
+			if quest.TemplateType == "investigate_anomaly" && quest.Difficulty == "hard" {
+				return true
+			}
+		}
+		return false
+	})
 
 	var investigationQuestID string
-	for _, quest := range boardResponse.Data.Quests {
+	for _, quest := range boardResponse {
 		if quest.TemplateType == "investigate_anomaly" && quest.Difficulty == "hard" {
 			investigationQuestID = quest.QuestID
 			break
@@ -1927,8 +1741,6 @@ func TestQuestE2EInvestigationFlowUsesAPIHints(t *testing.T) {
 	if investigationQuestID == "" {
 		t.Fatal("expected hard investigate_anomaly quest on board")
 	}
-
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/quests/"+investigationQuestID+"/accept", nil, token, http.StatusOK, nil)
 
 	planner := getPlannerE2EView(t, server, token, "main_city")
 	hint := findQuestRuntimeHint(t, planner.Data.RuntimeHints, investigationQuestID)
@@ -1988,22 +1800,17 @@ func TestQuestE2EInvestigationFlowUsesAPIHints(t *testing.T) {
 
 func TestQuestE2EHardDeliveryFlowUsesAPIHints(t *testing.T) {
 	server := NewServer(config.API{Port: "8080"})
-	token := createQuestE2ECharacter(t, server, "bot-e2e-delivery", "E2ECourier")
-
-	var boardResponse struct {
-		Data struct {
-			Quests []struct {
-				QuestID        string `json:"quest_id"`
-				TemplateType   string `json:"template_type"`
-				Difficulty     string `json:"difficulty"`
-				TargetRegionID string `json:"target_region_id"`
-			} `json:"quests"`
-		} `json:"data"`
-	}
-	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests", nil, token, http.StatusOK, &boardResponse)
+	token, boardResponse := createCharacterWithBoard(t, server, "bot-e2e-delivery", "E2ECourier", func(quests []boardQuestView) bool {
+		for _, quest := range quests {
+			if quest.TemplateType == "deliver_supplies" && quest.Difficulty == "hard" {
+				return true
+			}
+		}
+		return false
+	})
 
 	var hardQuestID string
-	for _, quest := range boardResponse.Data.Quests {
+	for _, quest := range boardResponse {
 		if quest.TemplateType == "deliver_supplies" && quest.Difficulty == "hard" {
 			hardQuestID = quest.QuestID
 			break
@@ -2012,8 +1819,6 @@ func TestQuestE2EHardDeliveryFlowUsesAPIHints(t *testing.T) {
 	if hardQuestID == "" {
 		t.Fatal("expected hard delivery quest on board")
 	}
-
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/quests/"+hardQuestID+"/accept", nil, token, http.StatusOK, nil)
 
 	var questDetail struct {
 		Data struct {
@@ -2060,42 +1865,26 @@ func TestQuestE2EHardDeliveryFlowUsesAPIHints(t *testing.T) {
 
 func TestFieldEncounterProgressionFlow(t *testing.T) {
 	server := NewServer(config.API{Port: "8080"})
-
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
-		"bot_name": "bot-field-runner",
-		"password": "verysecure",
-	}), "", http.StatusOK, nil)
-
-	var loginResponse struct {
-		Data struct {
-			AccessToken string `json:"access_token"`
-		} `json:"data"`
-	}
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
-		"bot_name": "bot-field-runner",
-		"password": "verysecure",
-	}), "", http.StatusOK, &loginResponse)
-
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
-		"name":         "FieldLoop",
-		"class":        "warrior",
-		"weapon_style": "sword_shield",
-	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
-
-	var questsResponse struct {
-		Data struct {
-			Quests []struct {
-				QuestID        string `json:"quest_id"`
-				TemplateType   string `json:"template_type"`
-				TargetRegionID string `json:"target_region_id"`
-			} `json:"quests"`
-		} `json:"data"`
-	}
-	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests", nil, loginResponse.Data.AccessToken, http.StatusOK, &questsResponse)
+	token, questsResponse := createCharacterWithBoard(t, server, "bot-field-runner", "FieldLoop", func(quests []boardQuestView) bool {
+		hasKill := false
+		hasCollect := false
+		for _, quest := range quests {
+			if quest.TargetRegionID != "whispering_forest" {
+				continue
+			}
+			if quest.TemplateType == "kill_region_enemies" {
+				hasKill = true
+			}
+			if quest.TemplateType == "collect_materials" {
+				hasCollect = true
+			}
+		}
+		return hasKill && hasCollect
+	})
 
 	killQuestID := ""
 	collectQuestID := ""
-	for _, quest := range questsResponse.Data.Quests {
+	for _, quest := range questsResponse {
 		if quest.TargetRegionID != "whispering_forest" {
 			continue
 		}
@@ -2110,12 +1899,9 @@ func TestFieldEncounterProgressionFlow(t *testing.T) {
 		t.Fatal("expected whispering_forest kill and collect quests")
 	}
 
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/quests/"+killQuestID+"/accept", nil, loginResponse.Data.AccessToken, http.StatusOK, nil)
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/quests/"+collectQuestID+"/accept", nil, loginResponse.Data.AccessToken, http.StatusOK, nil)
-
 	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/travel", map[string]any{
 		"region_id": "whispering_forest",
-	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+	}, token, http.StatusOK, nil)
 
 	var fieldState struct {
 		Data struct {
@@ -2124,7 +1910,7 @@ func TestFieldEncounterProgressionFlow(t *testing.T) {
 			} `json:"valid_actions"`
 		} `json:"data"`
 	}
-	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/state", nil, loginResponse.Data.AccessToken, http.StatusOK, &fieldState)
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/state", nil, token, http.StatusOK, &fieldState)
 
 	hasHuntAction := false
 	hasGatherAction := false
@@ -2168,7 +1954,7 @@ func TestFieldEncounterProgressionFlow(t *testing.T) {
 	}
 	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/field-encounter", map[string]any{
 		"approach": "hunt",
-	}, loginResponse.Data.AccessToken, http.StatusOK, &firstEncounter)
+	}, token, http.StatusOK, &firstEncounter)
 
 	if firstEncounter.Data.ActionResult.ActionType != "resolve_field_encounter" {
 		t.Fatalf("expected dedicated endpoint to return resolve_field_encounter, got %q", firstEncounter.Data.ActionResult.ActionType)
@@ -2194,9 +1980,9 @@ func TestFieldEncounterProgressionFlow(t *testing.T) {
 		} `json:"data"`
 	}
 	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/actions", map[string]any{
-		"action_type": "resolve_field_encounter:hunt",
+		"action_type": "resolve_field_encounter:gather",
 		"action_args": map[string]any{},
-	}, loginResponse.Data.AccessToken, http.StatusOK, &secondEncounter)
+	}, token, http.StatusOK, &secondEncounter)
 
 	if secondEncounter.Data.ActionResult.ActionType != "resolve_field_encounter" {
 		t.Fatalf("expected action router to resolve field encounter, got %q", secondEncounter.Data.ActionResult.ActionType)
@@ -2210,20 +1996,39 @@ func TestFieldEncounterProgressionFlow(t *testing.T) {
 			} `json:"quests"`
 		} `json:"data"`
 	}
-	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests", nil, loginResponse.Data.AccessToken, http.StatusOK, &questsAfter)
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests", nil, token, http.StatusOK, &questsAfter)
 
-	killCompleted := false
-	collectCompleted := false
-	for _, quest := range questsAfter.Data.Quests {
-		if quest.QuestID == killQuestID && quest.Status == "completed" {
-			killCompleted = true
+	killCompleted, collectCompleted := false, false
+	for attempt := 0; attempt < 3; attempt++ {
+		killCompleted = false
+		collectCompleted = false
+		for _, quest := range questsAfter.Data.Quests {
+			if quest.QuestID == killQuestID && quest.Status == "completed" {
+				killCompleted = true
+			}
+			if quest.QuestID == collectQuestID && quest.Status == "completed" {
+				collectCompleted = true
+			}
 		}
-		if quest.QuestID == collectQuestID && quest.Status == "completed" {
-			collectCompleted = true
+		if killCompleted && collectCompleted {
+			break
 		}
+		if !killCompleted {
+			doJSONRequest(t, server, http.MethodPost, "/api/v1/me/actions", map[string]any{
+				"action_type": "resolve_field_encounter:hunt",
+				"action_args": map[string]any{},
+			}, token, http.StatusOK, &secondEncounter)
+		}
+		if !collectCompleted {
+			doJSONRequest(t, server, http.MethodPost, "/api/v1/me/actions", map[string]any{
+				"action_type": "resolve_field_encounter:gather",
+				"action_args": map[string]any{},
+			}, token, http.StatusOK, &secondEncounter)
+		}
+		doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests", nil, token, http.StatusOK, &questsAfter)
 	}
 	if !killCompleted || !collectCompleted {
-		t.Fatalf("expected both field quests to complete after two hunt encounters, got kill=%v collect=%v", killCompleted, collectCompleted)
+		t.Fatalf("expected field loop to complete both quests, got kill=%v collect=%v", killCompleted, collectCompleted)
 	}
 
 	var eventsResponse struct {
@@ -2238,7 +2043,7 @@ func TestFieldEncounterProgressionFlow(t *testing.T) {
 
 	foundFieldEvent := false
 	for _, item := range eventsResponse.Data.Items {
-		if item.ActorName == "FieldLoop" && item.EventType == "field.encounter_resolved" {
+		if strings.HasPrefix(item.ActorName, "FieldLoop") && item.EventType == "field.encounter_resolved" {
 			foundFieldEvent = true
 			break
 		}
@@ -2248,33 +2053,33 @@ func TestFieldEncounterProgressionFlow(t *testing.T) {
 	}
 }
 
-func TestCurioEncounterCreatesFollowupQuest(t *testing.T) {
+func TestCurioEncounterDoesNotOverflowFixedDailyBoard(t *testing.T) {
 	server := NewServer(config.API{Port: "8080"})
-
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
-		"bot_name": "bot-curio-runner",
-		"password": "verysecure",
-	}), "", http.StatusOK, nil)
-
-	var loginResponse struct {
-		Data struct {
-			AccessToken string `json:"access_token"`
-		} `json:"data"`
+	token, initialBoard := createCharacterWithBoard(t, server, "bot-curio-runner", "CurioLoop", func(quests []boardQuestView) bool {
+		for _, quest := range quests {
+			if quest.TemplateType == "deliver_supplies" && quest.TargetRegionID == "greenfield_village" {
+				return true
+			}
+		}
+		return false
+	})
+	deliveryQuestID := ""
+	for _, quest := range initialBoard {
+		if quest.TemplateType == "deliver_supplies" && quest.TargetRegionID == "greenfield_village" {
+			deliveryQuestID = quest.QuestID
+			break
+		}
 	}
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
-		"bot_name": "bot-curio-runner",
-		"password": "verysecure",
-	}), "", http.StatusOK, &loginResponse)
-
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
-		"name":         "CurioLoop",
-		"class":        "mage",
-		"weapon_style": "staff",
-	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
-
+	if deliveryQuestID == "" {
+		t.Fatal("expected greenfield delivery contract before curio test")
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/travel", map[string]any{
+		"region_id": "greenfield_village",
+	}, token, http.StatusOK, nil)
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/quests/"+deliveryQuestID+"/submit", nil, token, http.StatusOK, nil)
 	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/travel", map[string]any{
 		"region_id": "whispering_forest",
-	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+	}, token, http.StatusOK, nil)
 
 	var encounterResponse struct {
 		Data struct {
@@ -2282,19 +2087,13 @@ func TestCurioEncounterCreatesFollowupQuest(t *testing.T) {
 				IsCurio       bool   `json:"is_curio"`
 				CurioLabel    string `json:"curio_label"`
 				CurioOutcome  string `json:"curio_outcome"`
-				FollowupQuest struct {
-					QuestID        string `json:"quest_id"`
-					TemplateType   string `json:"template_type"`
-					Status         string `json:"status"`
-					Title          string `json:"title"`
-					TargetRegionID string `json:"target_region_id"`
-				} `json:"followup_quest"`
+				FollowupQuest any    `json:"followup_quest"`
 			} `json:"result"`
 		} `json:"data"`
 	}
 	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/field-encounter", map[string]any{
 		"approach": "curio",
-	}, loginResponse.Data.AccessToken, http.StatusOK, &encounterResponse)
+	}, token, http.StatusOK, &encounterResponse)
 
 	if !encounterResponse.Data.Result.IsCurio {
 		t.Fatal("expected curio encounter to mark result as curio")
@@ -2302,22 +2101,9 @@ func TestCurioEncounterCreatesFollowupQuest(t *testing.T) {
 	if encounterResponse.Data.Result.CurioLabel == "" || encounterResponse.Data.Result.CurioOutcome == "" {
 		t.Fatal("expected curio encounter to include curio label and outcome")
 	}
-	if encounterResponse.Data.Result.FollowupQuest.QuestID == "" {
-		t.Fatal("expected curio encounter to create a followup quest")
+	if encounterResponse.Data.Result.FollowupQuest != nil {
+		t.Fatal("expected curio encounter not to inject a fifth same-day quest")
 	}
-	if encounterResponse.Data.Result.FollowupQuest.TemplateType != "curio_followup_delivery" {
-		t.Fatalf("expected curio followup delivery quest, got %q", encounterResponse.Data.Result.FollowupQuest.TemplateType)
-	}
-	if encounterResponse.Data.Result.FollowupQuest.Status != "accepted" {
-		t.Fatalf("expected followup quest to start accepted, got %q", encounterResponse.Data.Result.FollowupQuest.Status)
-	}
-	if encounterResponse.Data.Result.FollowupQuest.TargetRegionID != "greenfield_village" {
-		t.Fatalf("expected whispering forest curio to target greenfield_village, got %q", encounterResponse.Data.Result.FollowupQuest.TargetRegionID)
-	}
-
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/travel", map[string]any{
-		"region_id": "greenfield_village",
-	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
 
 	var questsResponse struct {
 		Data struct {
@@ -2328,20 +2114,11 @@ func TestCurioEncounterCreatesFollowupQuest(t *testing.T) {
 			} `json:"quests"`
 		} `json:"data"`
 	}
-	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests", nil, loginResponse.Data.AccessToken, http.StatusOK, &questsResponse)
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests", nil, token, http.StatusOK, &questsResponse)
 
-	followupCompleted := false
-	for _, quest := range questsResponse.Data.Quests {
-		if quest.QuestID == encounterResponse.Data.Result.FollowupQuest.QuestID && quest.Status == "completed" {
-			followupCompleted = true
-			break
-		}
+	if len(questsResponse.Data.Quests) != characters.DailyQuestBoardSize {
+		t.Fatalf("expected quest board to remain at %d entries, got %d", characters.DailyQuestBoardSize, len(questsResponse.Data.Quests))
 	}
-	if !followupCompleted {
-		t.Fatal("expected curio followup quest to complete after traveling to its target region")
-	}
-
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/quests/"+encounterResponse.Data.Result.FollowupQuest.QuestID+"/submit", nil, loginResponse.Data.AccessToken, http.StatusOK, nil)
 
 	var eventsResponse struct {
 		Data struct {
@@ -2355,31 +2132,182 @@ func TestCurioEncounterCreatesFollowupQuest(t *testing.T) {
 	doJSONRequest(t, server, http.MethodGet, "/api/v1/public/events?limit=20", nil, "", http.StatusOK, &eventsResponse)
 
 	foundCurioEvent := false
-	foundCurioQuestEvent := false
 	for _, item := range eventsResponse.Data.Items {
-		if item.ActorName != "CurioLoop" {
+		if !strings.HasPrefix(item.ActorName, "CurioLoop") {
 			continue
 		}
 		if item.EventType == "field.curio_resolved" {
 			foundCurioEvent = true
 		}
-		if item.EventType == "quest.accepted" && strings.Contains(item.Summary, "Escort the Shrine Witness") {
-			foundCurioQuestEvent = true
-		}
 	}
 	if !foundCurioEvent {
 		t.Fatal("expected public events to include the resolved curio encounter")
 	}
-	if !foundCurioQuestEvent {
-		t.Fatal("expected public events to include the curio followup quest trigger")
+}
+
+func TestQuestSubmitRouteEnforcesDailyCompletionCap(t *testing.T) {
+	server := NewServer(config.API{Port: "8080"})
+	token, boardResponse := createCharacterWithBoard(t, server, "bot-quest-cap", "QuestCapper", func(quests []boardQuestView) bool {
+		for _, quest := range quests {
+			if quest.TemplateType == "deliver_supplies" && quest.TargetRegionID == "greenfield_village" {
+				return true
+			}
+		}
+		return false
+	})
+
+	deliveryQuestID := ""
+	for _, quest := range boardResponse {
+		if quest.TemplateType == "deliver_supplies" && quest.TargetRegionID == "greenfield_village" {
+			deliveryQuestID = quest.QuestID
+			break
+		}
+	}
+	if deliveryQuestID == "" {
+		t.Fatal("expected delivery quest for cap test")
+	}
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/travel", map[string]any{
+		"region_id": "greenfield_village",
+	}, token, http.StatusOK, nil)
+
+	account, err := server.authService.Authenticate(token)
+	if err != nil {
+		t.Fatal("expected token to authenticate")
+	}
+	character, exists := server.characterService.GetCharacterByAccount(account)
+	if !exists {
+		t.Fatal("expected character to exist")
+	}
+	for i := 0; i < characters.DailyQuestBoardSize; i++ {
+		if _, _, _, _, err := server.characterService.ApplyQuestSubmission(character.CharacterID, characters.QuestSummary{
+			QuestID:          "quest_cap_seed_" + strconv.Itoa(i),
+			Title:            "Cap Seed",
+			RewardGold:       0,
+			RewardReputation: 0,
+		}); err != nil {
+			t.Fatalf("seed quest completion cap: %v", err)
+		}
+	}
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/quests/"+deliveryQuestID+"/submit", nil, token, http.StatusBadRequest, nil)
+}
+
+func TestMeStateInitializesDailyQuestBoard(t *testing.T) {
+	server := NewServer(config.API{Port: "8080"})
+	token := createQuestE2ECharacter(t, server, "bot-state-board", "StateBoarder")
+
+	var stateResponse struct {
+		Data struct {
+			Objectives []boardQuestView `json:"objectives"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/state", nil, token, http.StatusOK, &stateResponse)
+
+	if len(stateResponse.Data.Objectives) != characters.DailyQuestBoardSize {
+		t.Fatalf("expected /me/state to expose %d objectives, got %d", characters.DailyQuestBoardSize, len(stateResponse.Data.Objectives))
 	}
 }
 
-func TestPublicRoutesReflectRuntimeData(t *testing.T) {
+func TestMeActionsInitializesDailyQuestBoard(t *testing.T) {
 	server := NewServer(config.API{Port: "8080"})
+	token := createQuestE2ECharacter(t, server, "bot-actions-board", "ActionBoarder")
+
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/actions", nil, token, http.StatusOK, nil)
+
+	account, err := server.authService.Authenticate(token)
+	if err != nil {
+		t.Fatalf("expected token to authenticate: %v", err)
+	}
+	character, exists := server.characterService.GetCharacterByAccount(account)
+	if !exists {
+		t.Fatal("expected character to exist")
+	}
+	if objectives := server.questService.ActiveObjectives(character.CharacterID); len(objectives) != characters.DailyQuestBoardSize {
+		t.Fatalf("expected /me/actions to initialize %d objectives, got %d", characters.DailyQuestBoardSize, len(objectives))
+	}
+}
+
+func TestSubmitQuestActionDoesNotConsumeQuestWhenCapReached(t *testing.T) {
+	server := NewServer(config.API{Port: "8080"})
+	token, boardResponse := createCharacterWithBoard(t, server, "bot-action-quest-cap", "ActionQuestCap", func(quests []boardQuestView) bool {
+		for _, quest := range quests {
+			if quest.TemplateType == "deliver_supplies" && quest.TargetRegionID == "greenfield_village" {
+				return true
+			}
+		}
+		return false
+	})
+
+	deliveryQuestID := ""
+	for _, quest := range boardResponse {
+		if quest.TemplateType == "deliver_supplies" && quest.TargetRegionID == "greenfield_village" {
+			deliveryQuestID = quest.QuestID
+			break
+		}
+	}
+	if deliveryQuestID == "" {
+		t.Fatal("expected delivery quest for action cap test")
+	}
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/travel", map[string]any{
+		"region_id": "greenfield_village",
+	}, token, http.StatusOK, nil)
+
+	account, err := server.authService.Authenticate(token)
+	if err != nil {
+		t.Fatalf("expected token to authenticate: %v", err)
+	}
+	character, exists := server.characterService.GetCharacterByAccount(account)
+	if !exists {
+		t.Fatal("expected character to exist")
+	}
+	for i := 0; i < characters.DailyQuestBoardSize; i++ {
+		if _, _, _, _, err := server.characterService.ApplyQuestSubmission(character.CharacterID, characters.QuestSummary{
+			QuestID:          "quest_action_cap_seed_" + strconv.Itoa(i),
+			Title:            "Cap Seed",
+			RewardGold:       0,
+			RewardReputation: 0,
+		}); err != nil {
+			t.Fatalf("seed quest completion cap: %v", err)
+		}
+	}
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/actions", map[string]any{
+		"action_type": "submit_quest",
+		"action_args": map[string]any{"quest_id": deliveryQuestID},
+	}, token, http.StatusBadRequest, nil)
+
+	var boardAfter struct {
+		Data struct {
+			Quests []boardQuestView `json:"quests"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests", nil, token, http.StatusOK, &boardAfter)
+
+	for _, quest := range boardAfter.Data.Quests {
+		if quest.QuestID == deliveryQuestID {
+			if quest.Status != "completed" {
+				t.Fatalf("expected quest to remain completed after capped action submit, got %s", quest.Status)
+			}
+			return
+		}
+	}
+	t.Fatalf("expected quest %s to remain on board after capped action submit", deliveryQuestID)
+}
+
+func TestPublicBotDetailUsesBusinessDayResetForTodayHistory(t *testing.T) {
+	server := NewServer(config.API{Port: "8080"})
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		t.Fatalf("load location: %v", err)
+	}
+	server.worldService.SetClock(func() time.Time {
+		return time.Date(2026, 4, 7, 2, 0, 0, 0, loc)
+	})
 
 	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
-		"bot_name": "bot-public",
+		"bot_name": "bot-business-day",
 		"password": "verysecure",
 	}), "", http.StatusOK, nil)
 
@@ -2389,29 +2317,91 @@ func TestPublicRoutesReflectRuntimeData(t *testing.T) {
 		} `json:"data"`
 	}
 	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
-		"bot_name": "bot-public",
+		"bot_name": "bot-business-day",
 		"password": "verysecure",
 	}), "", http.StatusOK, &loginResponse)
 
 	doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
-		"name":         "PublicRunner",
-		"class":        "priest",
-		"weapon_style": "holy_tome",
+		"name":         "BusinessDayBot",
+		"class":        "warrior",
+		"weapon_style": "sword_shield",
 	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
 
-	var boardResponse struct {
+	account, err := server.authService.Authenticate(loginResponse.Data.AccessToken)
+	if err != nil {
+		t.Fatal("expected access token to authenticate")
+	}
+	character, exists := server.characterService.GetCharacterByAccount(account)
+	if !exists {
+		t.Fatal("expected character to exist")
+	}
+
+	eventTime := time.Date(2026, 4, 6, 23, 30, 0, 0, loc).Format(time.RFC3339)
+	if err := server.characterService.AppendEvents(character.CharacterID,
+		world.WorldEvent{
+			EventID:          "evt_business_quest",
+			EventType:        "quest.submitted",
+			Visibility:       "public",
+			ActorCharacterID: character.CharacterID,
+			ActorName:        character.Name,
+			RegionID:         "greenfield_village",
+			Summary:          character.Name + " submitted a late-night contract.",
+			Payload: map[string]any{
+				"quest_id":          "quest_business",
+				"quest_title":       "Late Contract",
+				"reward_gold":       100,
+				"reward_reputation": 20,
+			},
+			OccurredAt: eventTime,
+		},
+		world.WorldEvent{
+			EventID:          "evt_business_dungeon",
+			EventType:        "dungeon.loot_granted",
+			Visibility:       "public",
+			ActorCharacterID: character.CharacterID,
+			ActorName:        character.Name,
+			RegionID:         "ancient_catacomb",
+			Summary:          character.Name + " claimed a dungeon chest before reset.",
+			Payload: map[string]any{
+				"run_id":      "run_business",
+				"dungeon_id":  "ancient_catacomb_v1",
+				"reward_gold": 180,
+				"rating":      "A",
+			},
+			OccurredAt: eventTime,
+		},
+	); err != nil {
+		t.Fatalf("AppendEvents failed: %v", err)
+	}
+
+	var publicBotDetail struct {
 		Data struct {
-			Quests []struct {
-				QuestID        string `json:"quest_id"`
-				TemplateType   string `json:"template_type"`
-				TargetRegionID string `json:"target_region_id"`
-			} `json:"quests"`
+			CompletedQuestsToday []any `json:"completed_quests_today"`
+			DungeonRunsToday     []any `json:"dungeon_runs_today"`
 		} `json:"data"`
 	}
-	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests", nil, loginResponse.Data.AccessToken, http.StatusOK, &boardResponse)
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/public/bots/"+character.CharacterID, nil, "", http.StatusOK, &publicBotDetail)
+	if len(publicBotDetail.Data.CompletedQuestsToday) == 0 {
+		t.Fatal("expected pre-4am quest submission to still count for today's business-day history")
+	}
+	if len(publicBotDetail.Data.DungeonRunsToday) == 0 {
+		t.Fatal("expected pre-4am dungeon claim to still count for today's business-day history")
+	}
+}
+
+func TestPublicRoutesReflectRuntimeData(t *testing.T) {
+	server := NewServer(config.API{Port: "8080"})
+	token, boardResponse := createCharacterWithBoard(t, server, "bot-public", "PublicRunner", func(quests []boardQuestView) bool {
+		for _, quest := range quests {
+			if quest.TemplateType == "deliver_supplies" && quest.TargetRegionID == "greenfield_village" {
+				return true
+			}
+		}
+		return false
+	})
 
 	deliveryQuestID := ""
-	for _, quest := range boardResponse.Data.Quests {
+	for _, quest := range boardResponse {
 		if quest.TemplateType == "deliver_supplies" && quest.TargetRegionID == "greenfield_village" {
 			deliveryQuestID = quest.QuestID
 			break
@@ -2421,23 +2411,22 @@ func TestPublicRoutesReflectRuntimeData(t *testing.T) {
 		t.Fatal("expected a greenfield delivery quest for runtime public data test")
 	}
 
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/quests/"+deliveryQuestID+"/accept", nil, loginResponse.Data.AccessToken, http.StatusOK, nil)
 	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/travel", map[string]any{
 		"region_id": "greenfield_village",
-	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/quests/"+deliveryQuestID+"/submit", nil, loginResponse.Data.AccessToken, http.StatusOK, nil)
+	}, token, http.StatusOK, nil)
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/quests/"+deliveryQuestID+"/submit", nil, token, http.StatusOK, nil)
 
 	var enterResponse struct {
 		Data struct {
 			RunID string `json:"run_id"`
 		} `json:"data"`
 	}
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/dungeons/ancient_catacomb_v1/enter", dungeonEnterPayload(""), loginResponse.Data.AccessToken, http.StatusOK, &enterResponse)
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/dungeons/ancient_catacomb_v1/enter", dungeonEnterPayload(""), token, http.StatusOK, &enterResponse)
 	if enterResponse.Data.RunID == "" {
 		t.Fatal("expected dungeon run id for public history test")
 	}
 
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/runs/"+enterResponse.Data.RunID+"/claim", nil, loginResponse.Data.AccessToken, http.StatusOK, nil)
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/runs/"+enterResponse.Data.RunID+"/claim", nil, token, http.StatusOK, nil)
 
 	var worldStateResponse struct {
 		Data struct {
@@ -2447,8 +2436,8 @@ func TestPublicRoutesReflectRuntimeData(t *testing.T) {
 	}
 	doJSONRequest(t, server, http.MethodGet, "/api/v1/public/world-state", nil, "", http.StatusOK, &worldStateResponse)
 
-	if worldStateResponse.Data.ActiveBotCount != 1 {
-		t.Fatalf("expected active bot count 1, got %d", worldStateResponse.Data.ActiveBotCount)
+	if worldStateResponse.Data.ActiveBotCount < 1 {
+		t.Fatalf("expected at least one active bot, got %d", worldStateResponse.Data.ActiveBotCount)
 	}
 	if worldStateResponse.Data.QuestsCompletedToday != 1 {
 		t.Fatalf("expected quests completed today 1, got %d", worldStateResponse.Data.QuestsCompletedToday)
@@ -2467,9 +2456,10 @@ func TestPublicRoutesReflectRuntimeData(t *testing.T) {
 	if len(eventsResponse.Data.Items) == 0 {
 		t.Fatal("expected runtime public events to be present")
 	}
-	if eventsResponse.Data.Items[0].ActorName != "PublicRunner" {
-		t.Fatalf("expected PublicRunner as latest public actor, got %q", eventsResponse.Data.Items[0].ActorName)
+	if !strings.HasPrefix(eventsResponse.Data.Items[0].ActorName, "PublicRunner") {
+		t.Fatalf("expected PublicRunner* as latest public actor, got %q", eventsResponse.Data.Items[0].ActorName)
 	}
+	activePublicActor := eventsResponse.Data.Items[0].ActorName
 
 	var leaderboardsResponse struct {
 		Data struct {
@@ -2484,11 +2474,11 @@ func TestPublicRoutesReflectRuntimeData(t *testing.T) {
 	}
 	doJSONRequest(t, server, http.MethodGet, "/api/v1/public/leaderboards", nil, "", http.StatusOK, &leaderboardsResponse)
 
-	if len(leaderboardsResponse.Data.Reputation) == 0 || leaderboardsResponse.Data.Reputation[0].Name != "PublicRunner" {
-		t.Fatal("expected runtime reputation leaderboard to include PublicRunner")
+	if len(leaderboardsResponse.Data.Reputation) == 0 || !strings.HasPrefix(leaderboardsResponse.Data.Reputation[0].Name, "PublicRunner") {
+		t.Fatal("expected runtime reputation leaderboard to include PublicRunner*")
 	}
-	if len(leaderboardsResponse.Data.Gold) == 0 || leaderboardsResponse.Data.Gold[0].Name != "PublicRunner" {
-		t.Fatal("expected runtime gold leaderboard to include PublicRunner")
+	if len(leaderboardsResponse.Data.Gold) == 0 || !strings.HasPrefix(leaderboardsResponse.Data.Gold[0].Name, "PublicRunner") {
+		t.Fatal("expected runtime gold leaderboard to include PublicRunner*")
 	}
 
 	var publicBotsResponse struct {
@@ -2506,11 +2496,7 @@ func TestPublicRoutesReflectRuntimeData(t *testing.T) {
 		t.Fatal("expected bot search to return PublicRunner")
 	}
 
-	botID := publicBotsResponse.Data.Items[0].CharacterSummary.CharacterID
-	if botID == "" {
-		t.Fatal("expected bot id from public bots list")
-	}
-
+	botID := ""
 	var publicBotDetail struct {
 		Data struct {
 			CompletedQuestsToday []any `json:"completed_quests_today"`
@@ -2519,12 +2505,18 @@ func TestPublicRoutesReflectRuntimeData(t *testing.T) {
 			DungeonHistory7D     []any `json:"dungeon_history_7d"`
 		} `json:"data"`
 	}
-	doJSONRequest(t, server, http.MethodGet, "/api/v1/public/bots/"+botID, nil, "", http.StatusOK, &publicBotDetail)
-	if len(publicBotDetail.Data.QuestHistory7D) == 0 {
-		t.Fatal("expected quest_history_7d in public bot detail")
+	for _, item := range publicBotsResponse.Data.Items {
+		if item.CharacterSummary.Name != activePublicActor && !strings.HasPrefix(item.CharacterSummary.Name, "PublicRunner") {
+			continue
+		}
+		doJSONRequest(t, server, http.MethodGet, "/api/v1/public/bots/"+item.CharacterSummary.CharacterID, nil, "", http.StatusOK, &publicBotDetail)
+		if len(publicBotDetail.Data.QuestHistory7D) > 0 && len(publicBotDetail.Data.DungeonHistory7D) > 0 {
+			botID = item.CharacterSummary.CharacterID
+			break
+		}
 	}
-	if len(publicBotDetail.Data.DungeonHistory7D) == 0 {
-		t.Fatal("expected dungeon_history_7d in public bot detail")
+	if botID == "" {
+		t.Fatal("expected one searched public bot to expose both quest and dungeon 7-day history")
 	}
 
 	var questHistoryResponse struct {
@@ -3344,7 +3336,7 @@ func TestActionEnterDungeonWithDifficulty(t *testing.T) {
 		"action_args": map[string]any{
 			"dungeon_id":     "ancient_catacomb_v1",
 			"difficulty":     "nightmare",
-			"potion_loadout": []string{"potion_hp_t1", "potion_atk_t1"},
+			"potion_loadout": []string{"potion_hp_t2", "potion_atk_t2"},
 		},
 	}, loginResponse.Data.AccessToken, http.StatusOK, &actionResponse)
 
@@ -3634,27 +3626,11 @@ func TestDungeonClaimGrantsItemAndClearsStagedRewards(t *testing.T) {
 func TestDungeonQuestProgressesOnEnter(t *testing.T) {
 	server := NewServer(config.API{Port: "8080"})
 
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
-		"bot_name": "bot-dungeon-quest",
-		"password": "verysecure",
-	}), "", http.StatusOK, nil)
-
 	var loginResponse struct {
 		Data struct {
 			AccessToken string `json:"access_token"`
 		} `json:"data"`
 	}
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
-		"bot_name": "bot-dungeon-quest",
-		"password": "verysecure",
-	}), "", http.StatusOK, &loginResponse)
-
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
-		"name":         "DungeonQuestor",
-		"class":        "warrior",
-		"weapon_style": "sword_shield",
-	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
-
 	var questsBefore struct {
 		Data struct {
 			Quests []struct {
@@ -3665,31 +3641,51 @@ func TestDungeonQuestProgressesOnEnter(t *testing.T) {
 			} `json:"quests"`
 		} `json:"data"`
 	}
-	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests", nil, loginResponse.Data.AccessToken, http.StatusOK, &questsBefore)
 
 	var dungeonQuestID string
 	var dungeonQuestDifficulty string
-	for _, quest := range questsBefore.Data.Quests {
-		if quest.TemplateType == "clear_dungeon" || quest.TemplateType == "kill_dungeon_elite" {
-			dungeonQuestID = quest.QuestID
-			dungeonQuestDifficulty = quest.Difficulty
-			break
+	var accessToken string
+	for attempt := 0; attempt < 8 && dungeonQuestID == ""; attempt++ {
+		botName := "bot-dungeon-quest-" + strconv.Itoa(attempt)
+		characterName := "DungeonQuestor" + strconv.Itoa(attempt)
+		doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
+			"bot_name": botName,
+			"password": "verysecure",
+		}), "", http.StatusOK, nil)
+		doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
+			"bot_name": botName,
+			"password": "verysecure",
+		}), "", http.StatusOK, &loginResponse)
+
+		doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
+			"name":         characterName,
+			"class":        "warrior",
+			"weapon_style": "sword_shield",
+		}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+		doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests", nil, loginResponse.Data.AccessToken, http.StatusOK, &questsBefore)
+
+		for _, quest := range questsBefore.Data.Quests {
+			if quest.TemplateType == "clear_dungeon" || quest.TemplateType == "kill_dungeon_elite" {
+				dungeonQuestID = quest.QuestID
+				dungeonQuestDifficulty = quest.Difficulty
+				accessToken = loginResponse.Data.AccessToken
+				break
+			}
 		}
 	}
 	if dungeonQuestID == "" {
-		t.Fatal("expected a dungeon quest template on the daily board")
+		t.Fatal("expected at least one generated daily board to include a dungeon quest")
 	}
 
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/quests/"+dungeonQuestID+"/accept", nil, loginResponse.Data.AccessToken, http.StatusOK, nil)
 	if dungeonQuestDifficulty == "nightmare" {
 		doJSONRequest(t, server, http.MethodPost, "/api/v1/me/quests/"+dungeonQuestID+"/interact", map[string]any{
 			"interaction": "inspect_clue",
-		}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+		}, accessToken, http.StatusOK, nil)
 		doJSONRequest(t, server, http.MethodPost, "/api/v1/me/quests/"+dungeonQuestID+"/choice", map[string]any{
 			"choice_key": "follow_standard_brief",
-		}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+		}, accessToken, http.StatusOK, nil)
 	}
-	doJSONRequest(t, server, http.MethodPost, "/api/v1/dungeons/ancient_catacomb_v1/enter", dungeonEnterPayload(""), loginResponse.Data.AccessToken, http.StatusOK, nil)
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/dungeons/ancient_catacomb_v1/enter", dungeonEnterPayload(""), accessToken, http.StatusOK, nil)
 
 	var questsAfter struct {
 		Data struct {
@@ -3702,7 +3698,7 @@ func TestDungeonQuestProgressesOnEnter(t *testing.T) {
 			} `json:"quests"`
 		} `json:"data"`
 	}
-	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests", nil, loginResponse.Data.AccessToken, http.StatusOK, &questsAfter)
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests", nil, accessToken, http.StatusOK, &questsAfter)
 
 	foundCompleted := false
 	for _, quest := range questsAfter.Data.Quests {
@@ -3837,10 +3833,9 @@ func TestPlannerEndpointReturnsTodayAndRegionalOptions(t *testing.T) {
 				Status       string `json:"status"`
 			} `json:"local_quests"`
 			LocalDungeons []struct {
-				DungeonID      string `json:"dungeon_id"`
-				RegionID       string `json:"region_id"`
-				CanEnter       bool   `json:"can_enter"`
-				IsRankEligible bool   `json:"is_rank_eligible"`
+				DungeonID string `json:"dungeon_id"`
+				RegionID  string `json:"region_id"`
+				CanEnter  bool   `json:"can_enter"`
 			} `json:"local_dungeons"`
 			SuggestedActions []string `json:"suggested_actions"`
 		} `json:"data"`
@@ -3861,42 +3856,24 @@ func TestPlannerEndpointReturnsTodayAndRegionalOptions(t *testing.T) {
 		t.Fatal("expected fresh character planner used counters to be 0")
 	}
 
-	foundDungeonQuest := false
-	for _, quest := range plannerResponse.Data.LocalQuests {
-		if quest.TargetRegion != "ancient_catacomb" {
-			continue
-		}
-		if quest.TemplateType == "kill_dungeon_elite" || quest.TemplateType == "clear_dungeon" {
-			foundDungeonQuest = true
-			break
-		}
-	}
-	if !foundDungeonQuest {
-		t.Fatal("expected planner local_quests to include ancient_catacomb dungeon quest")
-	}
-
 	if len(plannerResponse.Data.LocalDungeons) == 0 {
 		t.Fatal("expected planner local_dungeons for ancient_catacomb")
 	}
 	if plannerResponse.Data.LocalDungeons[0].DungeonID != "ancient_catacomb_v1" {
 		t.Fatalf("expected ancient_catacomb_v1, got %q", plannerResponse.Data.LocalDungeons[0].DungeonID)
 	}
-	if !plannerResponse.Data.LocalDungeons[0].CanEnter || !plannerResponse.Data.LocalDungeons[0].IsRankEligible {
-		t.Fatal("expected low-rank character to be able to enter ancient_catacomb_v1")
+	if !plannerResponse.Data.LocalDungeons[0].CanEnter {
+		t.Fatal("expected character to be able to enter ancient_catacomb_v1")
 	}
 
-	hasAcceptQuest := false
 	hasEnterDungeon := false
 	for _, action := range plannerResponse.Data.SuggestedActions {
-		if action == "accept_quest" {
-			hasAcceptQuest = true
-		}
 		if action == "enter_dungeon" {
 			hasEnterDungeon = true
 		}
 	}
-	if !hasAcceptQuest || !hasEnterDungeon {
-		t.Fatalf("expected suggested_actions include accept_quest and enter_dungeon, got %#v", plannerResponse.Data.SuggestedActions)
+	if !hasEnterDungeon {
+		t.Fatalf("expected suggested_actions include enter_dungeon, got %#v", plannerResponse.Data.SuggestedActions)
 	}
 
 	var fieldPlannerResponse struct {
@@ -4278,7 +4255,7 @@ func TestArenaRatingBoardUsesPanelPowerScore(t *testing.T) {
 		RewardGold:       0,
 		ProgressTarget:   1,
 	}); err != nil {
-		t.Fatalf("seed arena-eligible rank: %v", err)
+		t.Fatalf("seed arena eligibility reputation: %v", err)
 	}
 	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/state", nil, loginResponse.Data.AccessToken, http.StatusOK, &stateResponse)
 
@@ -4378,7 +4355,7 @@ func TestArenaHistoryEndpointsExposeResolvedBattles(t *testing.T) {
 		Title:            "Arena eligibility warmup",
 		RewardReputation: 250,
 	}); err != nil {
-		t.Fatalf("seed arena-eligible rank: %v", err)
+		t.Fatalf("seed arena eligibility reputation: %v", err)
 	}
 
 	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
@@ -4536,6 +4513,16 @@ type actionSchemaView struct {
 	ArgsSchema map[string]any `json:"args_schema"`
 }
 
+type boardQuestView struct {
+	QuestID        string `json:"quest_id"`
+	TemplateType   string `json:"template_type"`
+	ContractType   string `json:"contract_type"`
+	Difficulty     string `json:"difficulty"`
+	FlowKind       string `json:"flow_kind"`
+	TargetRegionID string `json:"target_region_id"`
+	Status         string `json:"status"`
+}
+
 func createQuestE2ECharacter(t *testing.T, server *Server, botName, characterName string) string {
 	t.Helper()
 
@@ -4561,6 +4548,28 @@ func createQuestE2ECharacter(t *testing.T, server *Server, botName, characterNam
 	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
 
 	return loginResponse.Data.AccessToken
+}
+
+func createCharacterWithBoard(t *testing.T, server *Server, botPrefix, characterPrefix string, matcher func([]boardQuestView) bool) (string, []boardQuestView) {
+	t.Helper()
+
+	for attempt := 0; attempt < 24; attempt++ {
+		token := createQuestE2ECharacter(t, server, botPrefix+"-"+strconv.Itoa(attempt), characterPrefix+strconv.Itoa(attempt))
+
+		var boardResponse struct {
+			Data struct {
+				Quests []boardQuestView `json:"quests"`
+			} `json:"data"`
+		}
+		doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests", nil, token, http.StatusOK, &boardResponse)
+
+		if matcher(boardResponse.Data.Quests) {
+			return token, boardResponse.Data.Quests
+		}
+	}
+
+	t.Fatalf("failed to find a quest board matching predicate for %s", botPrefix)
+	return "", nil
 }
 
 func getPlannerE2EView(t *testing.T, server *Server, token, regionID string) plannerE2EView {
@@ -4789,7 +4798,7 @@ func solveChallengePrompt(t *testing.T, prompt string) string {
 
 func dungeonEnterPayload(difficulty string) map[string]any {
 	payload := map[string]any{
-		"potion_loadout": []string{"potion_hp_t1", "potion_atk_t1"},
+		"potion_loadout": []string{"potion_hp_t2", "potion_atk_t2"},
 	}
 	if strings.TrimSpace(difficulty) != "" {
 		payload["difficulty"] = difficulty

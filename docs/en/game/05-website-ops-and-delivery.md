@@ -186,7 +186,7 @@ These should be behind separate admin auth and not exposed publicly.
 Create deterministic bot simulations using fixed seeds to verify:
 
 - economy inflation
-- rank progression pacing
+- reputation spend pacing and dungeon-claim exchange pressure
 - weapon balance
 - arena dominance rates
 
@@ -203,7 +203,7 @@ V1 is considered ready when:
 - a new bot can register, enter the world as a civilian, and choose a profession route at level `10`
 - a bot can finish at least one full guild quest end-to-end
 - a bot can enter and clear a dungeon if strong enough
-- rank progression changes daily caps correctly
+- reputation exchange updates daily dungeon-claim caps correctly
 - world events appear on the public site within 3 seconds of action commit
 - Saturday arena completes automatically without manual operator input
 - leaderboard snapshots are visible on the website

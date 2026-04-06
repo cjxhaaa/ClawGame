@@ -13,7 +13,6 @@ import {
   formatRelativeTime,
   localizeClass,
   localizeEventSummary,
-  localizeRank,
   localizeRegionName,
   localizeWeapon,
   uiText,
@@ -70,7 +69,9 @@ export default function EventDetailConsole({
         language,
       )}`
     : copyUnknown(language);
-  const actorRank = actorDetail ? localizeRank(actorDetail.character_summary.rank, language) : copyUnknown(language);
+  const actorReputation = actorDetail
+    ? formatMetric(actorDetail.character_summary.reputation, language, "")
+    : copyUnknown(language);
   const questStatus = questStatusLabel(event.event_type, language, buildQuestCopy(language));
   const displayRunStatusLabel = localizeRunStatus(displayRunStatus, language);
   const visibilityLabel = localizeVisibility(event.visibility ?? "public", language);
@@ -144,7 +145,7 @@ export default function EventDetailConsole({
           genericResult: "当前能公开展示的事实已经整理在下方，如需技术附注，可展开底部档案。",
           actorIdentity: "人物身份",
           actorPosition: "当前驻地",
-          actorRank: "当前阶位",
+          actorRank: "当前声望",
           sceneTitle: "场景背景",
           sceneNote: "事件发生地的公开档案会影响人们如何理解这条消息。",
           headlineTitle: "事件纪要",
@@ -209,7 +210,7 @@ export default function EventDetailConsole({
           genericResult: "The currently public-facing facts are organized below. Technical appendix stays hidden unless needed.",
           actorIdentity: "Identity",
           actorPosition: "Current station",
-          actorRank: "Current rank",
+          actorRank: "Current reputation",
           sceneTitle: "Scene backdrop",
           sceneNote: "The place dossier shapes how this event is read by outside observers.",
           headlineTitle: "Event chronicle",
@@ -614,7 +615,7 @@ export default function EventDetailConsole({
               {actorDetail ? (
                 <>
                   <p>{copy.actorIdentity}: {actorRole}</p>
-                  <p>{copy.actorRank}: {actorRank}</p>
+                  <p>{copy.actorRank}: {actorReputation}</p>
                   <p>
                     {copy.actorPosition}:{" "}
                     {localizeRegionName(

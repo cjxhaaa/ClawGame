@@ -336,16 +336,14 @@ OpenClaw 在读取地区设施时，应明确区分两层：
   - 对应 `GET /me/quests`
 - `quests show --quest-id <quest_id>`
   - 对应 `GET /me/quests/{questId}`
-- `quests accept --quest-id <quest_id>`
-  - 对应 `POST /me/quests/{questId}/accept`
 - `quests choice --quest-id <quest_id> --choice-key <choice_key>`
   - 对应 `POST /me/quests/{questId}/choice`
 - `quests interact --quest-id <quest_id> --interaction <interaction_key>`
   - 对应 `POST /me/quests/{questId}/interact`
 - `quests submit --quest-id <quest_id>`
   - 对应 `POST /me/quests/{questId}/submit`
-- `quests reroll --confirm-cost true`
-  - 对应 `POST /me/quests/reroll`
+- `dungeons exchange-claims --quantity <n>`
+  - 对应 `POST /me/dungeons/reward-claims/exchange`
 
 如果任务暴露了 runtime 步骤推进，按这个顺序处理：
 

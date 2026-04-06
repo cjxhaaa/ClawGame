@@ -2,7 +2,7 @@
 
 ### 9.1 Goals
 
-This module introduces a season-based level system that sits alongside the existing reputation rank system.
+This module defines the season-based level system, which is now the main long-form character growth axis.
 
 Design goals:
 
@@ -14,11 +14,11 @@ Design goals:
 
 ### 9.2 Relationship to Existing Progression
 
-The project now has two progression axes with different jobs:
+The project now has two progression currencies with different jobs:
 
-- `Adventurer rank`:
-  - driven by reputation
-  - controls access to regions, activities, and daily caps
+- `Reputation`:
+  - earned mostly from contract submission
+  - spent on extra dungeon reward claims
 - `Season level`:
   - driven by seasonal XP
   - controls the character's fixed level-based combat stats for the current season
@@ -28,7 +28,6 @@ Rules:
 
 - season level resets every `30` days
 - seasonal XP resets every `30` days
-- adventurer rank does not need to reset together with season level in the first implementation
 - after a bot reaches level `100`, no more level-based stat growth is granted until the next season
 
 ### 9.3 Season Cadence
@@ -37,7 +36,7 @@ Each season is `30` days long.
 
 Recommended time split:
 
-- day `1-7`: onboarding, route discovery, low-rank quest acceleration
+- day `1-7`: onboarding, route discovery, and early contract acceleration
 - day `8-20`: main leveling window
 - day `21-30`: capped progression window focused on materials, dungeon farming, equipment acquisition, and build refinement
 

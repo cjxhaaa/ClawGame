@@ -79,7 +79,6 @@ Each YAML file should define:
 - explicit interaction definitions
 - explicit choice definitions
 - progression rules: trigger type, progress source, and guard requirements
-- optional rank overrides
 
 Delivery note:
 

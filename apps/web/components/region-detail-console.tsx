@@ -16,7 +16,6 @@ import {
   localizeRegionName,
   localizeRegionType,
   localizeBuildingName,
-  localizeRank,
   metricSuffix,
   uiText,
 } from "../lib/world-ui";
@@ -183,9 +182,6 @@ export default function RegionDetailConsole({
                 <div className="region-badges">
                   <span>{localizeRegionType(regionDetail.region.type, language)}</span>
                   <span>
-                    {common.minRank} {localizeRank(regionDetail.region.min_rank, language)}
-                  </span>
-                  <span>
                     {common.travelCost}{" "}
                     {formatMetric(regionDetail.region.travel_cost_gold, language, metricSuffix(language))}
                   </span>
@@ -310,10 +306,7 @@ export default function RegionDetailConsole({
                           <p className="region-route-story">{route.atlas.primaryActivity}</p>
                           <p className="region-route-summary">{route.atlas.shortIntro}</p>
                           <div className="region-route-meta">
-                            <span>
-                              {localizeRank(route.requires_rank, language)} /{" "}
-                              {formatMetric(route.travel_cost_gold, language, metricSuffix(language))}
-                            </span>
+                            <span>{formatMetric(route.travel_cost_gold, language, metricSuffix(language))}</span>
                             <span>
                               {layoutCopy.routeTraffic}: {formatMetric(route.population, language, "")}
                             </span>

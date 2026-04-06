@@ -26,8 +26,8 @@ type powerItemScore struct {
 
 func buildCombatPower(summary characters.Summary, stats characters.StatsSnapshot, inv inventory.InventoryView, dungeonService *dungeons.Service) (characters.CombatPowerSummary, []powerItemScore) {
 	effectiveLevel := estimateLevel(summary)
-	rankCoeff := rankCoeff(summary.Rank)
-	baseGrowth := computeBaseGrowthScore(summary, stats, effectiveLevel, rankCoeff)
+	progressionCoeff := progressionCoeff()
+	baseGrowth := computeBaseGrowthScore(summary, stats, effectiveLevel, progressionCoeff)
 	itemScores := scoreInventoryItems(summary, inv)
 	equipmentScore := 0
 	equippedCount := 0
@@ -45,13 +45,13 @@ func buildCombatPower(summary characters.Summary, stats characters.StatsSnapshot
 	view := characters.CombatPowerSummary{
 		FormulaVersion:     powerFormulaVersion,
 		EffectiveLevel:     effectiveLevel,
-		RankCoeff:          rankCoeff,
+		ProgressionCoeff:   progressionCoeff,
 		BaseGrowthScore:    baseGrowth,
 		EquipmentScore:     equipmentScore,
 		BuildModifierScore: buildModifier,
 		PanelPowerScore:    panel,
 		PowerTier:          powerTier(panel),
-		ArenaPreview:       buildArenaPreview(panel, summary.Rank),
+		ArenaPreview:       buildArenaPreview(panel),
 		DungeonPreviews:    buildDungeonPreviews(panel, dungeonService),
 	}
 	return view, itemScores
@@ -65,22 +65,11 @@ func estimateLevel(summary characters.Summary) int {
 		return summary.SeasonLevel
 	}
 	level := 1 + summary.Reputation/80
-	switch strings.ToLower(strings.TrimSpace(summary.Rank)) {
-	case "high":
-		if level < 70 {
-			level = 70
-		}
-	case "mid":
-		if level < 40 {
-			level = 40
-		}
-		if level > 69 {
-			level = 69
-		}
-	default:
-		if level > 39 {
-			level = 39
-		}
+	if level < 40 {
+		level = 40
+	}
+	if level > 69 {
+		level = 69
 	}
 	if level < 1 {
 		level = 1
@@ -91,15 +80,8 @@ func estimateLevel(summary characters.Summary) int {
 	return level
 }
 
-func rankCoeff(rank string) float64 {
-	switch strings.ToLower(strings.TrimSpace(rank)) {
-	case "high":
-		return 1.75
-	case "mid":
-		return 1.35
-	default:
-		return 1.00
-	}
+func progressionCoeff() float64 {
+	return 1.35
 }
 
 func computeBaseGrowthScore(summary characters.Summary, stats characters.StatsSnapshot, level int, coeff float64) int {
@@ -245,29 +227,15 @@ func computeBuildModifier(stats characters.StatsSnapshot, summary characters.Sum
 	if strings.EqualFold(summary.Class, "priest") && stats.HealingPower >= 20 {
 		modifier += 35
 	}
-	// Potion readiness: +40 to +140 by rank per doc 17.
-	// Proxy via DefaultPotionBag rank tiers since potion inventory is not yet persisted.
-	switch strings.ToLower(strings.TrimSpace(summary.Rank)) {
-	case "high":
-		modifier += 120
-	case "mid":
-		modifier += 80
-	default:
-		modifier += 40
-	}
-	// Critical weakness penalties: speed and combined defense below rank thresholds.
-	speedThreshold := map[string]int{"low": 11, "mid": 15, "high": 20}[strings.ToLower(strings.TrimSpace(summary.Rank))]
-	if speedThreshold == 0 {
-		speedThreshold = 11
-	}
+	// Potion readiness uses the standard baseline bag in the current runtime.
+	modifier += 80
+	// Critical weakness penalties use a single open-era baseline threshold.
+	speedThreshold := 15
 	if stats.Speed < speedThreshold {
 		modifier -= (speedThreshold - stats.Speed) * 12
 	}
 	defSum := stats.PhysicalDefense + stats.MagicDefense
-	defThreshold := map[string]int{"low": 24, "mid": 34, "high": 46}[strings.ToLower(strings.TrimSpace(summary.Rank))]
-	if defThreshold == 0 {
-		defThreshold = 24
-	}
+	defThreshold := 34
 	if defSum < defThreshold {
 		modifier -= (defThreshold - defSum) * 8
 	}
@@ -293,8 +261,8 @@ func powerTier(panel int) string {
 	}
 }
 
-func buildArenaPreview(panel int, rank string) characters.ArenaPowerPreview {
-	reference := arenaReferencePower(rank)
+func buildArenaPreview(panel int) characters.ArenaPowerPreview {
+	reference := arenaReferencePower()
 	delta := panel - reference
 	band := "close"
 	tier := "balanced"
@@ -323,23 +291,16 @@ func buildArenaPreview(panel int, rank string) characters.ArenaPowerPreview {
 	}
 }
 
-func arenaReferencePower(rank string) int {
-	switch strings.ToLower(strings.TrimSpace(rank)) {
-	case "high":
-		return 9800
-	case "mid":
-		return 6200
-	default:
-		return 3200
-	}
+func arenaReferencePower() int {
+	return 6200
 }
 
 func buildDungeonPreviews(panel int, dungeonService *dungeons.Service) []characters.DungeonPowerPreview {
 	definitions := dungeonService.ListDungeonDefinitions()
 	items := make([]characters.DungeonPowerPreview, 0, len(definitions))
 	for _, def := range definitions {
-		minPower := recommendedPowerForLevel(def.RecommendedLevelMin, def.MinRank)
-		maxPower := recommendedPowerForLevel(def.RecommendedLevelMax, def.MinRank)
+		minPower := recommendedPowerForLevel(def.RecommendedLevelMin)
+		maxPower := recommendedPowerForLevel(def.RecommendedLevelMax)
 		if maxPower < minPower {
 			maxPower = minPower
 		}
@@ -360,11 +321,10 @@ func buildDungeonPreviews(panel int, dungeonService *dungeons.Service) []charact
 	return items
 }
 
-func recommendedPowerForLevel(level int, rank string) int {
+func recommendedPowerForLevel(level int) int {
 	if level < 1 {
 		level = 1
 	}
-	coeff := rankCoeff(rank)
 	primary := 12 + level*3
 	secondary := 8 + level*2
 	pdef := 10 + level*2
@@ -381,7 +341,7 @@ func recommendedPowerForLevel(level int, rank string) int {
 			5.0*float64(mdef) +
 			4.0*float64(speed) +
 			4.0*float64(heal)
-	base := int(coeff * (levelScore + statScore))
+	base := int(levelScore + statScore)
 	equipment := level * 35
 	build := 80
 	return base + equipment + build

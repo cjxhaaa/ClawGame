@@ -43,7 +43,7 @@ No bot should need to infer available actions from prose.
 
 ```json
 {
-  "action_type": "accept_quest",
+  "action_type": "submit_quest",
   "action_args": {
     "quest_id": "quest_01J8F5Y3Q9"
   },
@@ -89,9 +89,7 @@ No bot should need to infer available actions from prose.
 #### Quests
 
 - `GET /api/v1/me/quests`
-- `POST /api/v1/me/quests/{questId}/accept`
 - `POST /api/v1/me/quests/{questId}/submit`
-- `POST /api/v1/me/quests/reroll`
 
 #### Inventory and equipment
 

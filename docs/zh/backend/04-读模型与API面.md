@@ -162,11 +162,11 @@
 - `in_progress` 表示资格赛轮次与 64 强主赛正在自动结算
 - `completed` 表示当日整套竞技场赛事已完成，冠军与战报均可查询
 
-### 11.4 角色阶位升级规则
+### 11.4 声望与每日限制
 
-- 声望达到门槛后立即升级
-- 阶位变化应影响每日限制上限
-- 阶位升级应产生 `character.rank_up` 事件
+- 声望主要来自合同提交
+- 声望可用于购买额外副本领奖次数
+- 当前运行时已经没有冒险者阶位晋升链路
 
 ## 12. API 面
 
@@ -441,9 +441,8 @@
 - `resolve_field_encounter:hunt`
 - `resolve_field_encounter:gather`
 - `resolve_field_encounter:curio`
-- `accept_quest`
 - `submit_quest`
-- `reroll_quests`
+- `exchange_dungeon_reward_claims`
 - `equip_item`
 - `unequip_item`
 - `sell_item`
@@ -578,7 +577,6 @@
 校验：
 
 - 目标区域存在且已激活
-- 阶位满足要求
 - 金币足够支付旅行费用
 
 副作用：
@@ -752,57 +750,25 @@
 - `state_json` 当前承载 `selected_choice_key`、`selected_choice_label`、已发现标记与模板驱动辅助字段
 - OpenClaw 在决定下一步时，应优先读取 `current_step_label` 与 `current_step_hint`，而不是解析 `description`
 
-#### `POST /api/v1/me/quests/{questId}/accept`
-
-校验：
-
-- 任务属于当前角色与当前任务板
-- 任务状态为 `available`
-
-副作用：
-
-- 标记为 `accepted`
-- 产生 `quest.accepted`
-- 返回中会附带最新 `quests` 与 `limits` 快照
-
 #### `POST /api/v1/me/quests/{questId}/submit`
 
 校验：
 
 - 状态必须为 `completed`
-- 每日提交上限不能超出
-
 副作用：
 
 - 状态变为 `submitted`
 - 增加金币
 - 增加声望
-- 如跨过门槛则升级阶位
 - 递增每日任务提交计数
 - 产生 `quest.submitted`
-- 若升级则追加 `character.rank_up`
 
 当前实现补充：
 
 - 提交只负责消耗 `completed -> submitted`
 - 真正发奖与声望结算由角色服务应用
-- 若已达到每日提交上限，返回 `QUEST_COMPLETION_CAP_REACHED`
-
-#### `POST /api/v1/me/quests/reroll`
-
-请求：
-
-```json
-{
-  "confirm_cost": true
-}
-```
-
-行为：
-
-- 必须显式确认成本
-- 扣除洗任务费用
-- 使未完成任务失效
+- 每日任务板会在重置后的首次查询时自动补满到 4 个合同
+- 合同生成后立即激活，不再提供 accept 或 reroll 接口
 - 生成替换任务
 
 当前实现补充：
@@ -845,9 +811,8 @@
 
 任务相关动作补充：
 
-- `accept_quest`
 - `submit_quest`
-- `reroll_quests`
+- `exchange_dungeon_reward_claims`
 - `resolve_field_encounter`
 - `resolve_field_encounter:hunt`
 - `resolve_field_encounter:gather`
@@ -906,6 +871,8 @@
 - 当前装备
 - 背包
 - 装备评分
+- 副本装备在适用时应暴露 `set_id`
+- 当前激活的赛季套装进度应汇总在 `equipped_set_bonuses`
 - `upgrade_hints`
 - `potion_loadout_options`
 

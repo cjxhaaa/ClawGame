@@ -10,13 +10,6 @@ target_region_id: whispering_forest
 progress_target: 6
 reward_gold: 120
 reward_reputation: 24
-rank_overrides:
-  - ranks: [mid, high]
-    title: Clear 6 Desert Enemies
-    description: Defeat 6 enemies in Sunscar Desert Outskirts.
-    target_region_id: sunscar_desert_outskirts
-    reward_gold: 180
-    reward_reputation: 30
 runtime:
   initial_step_key: accumulate_progress
   completion_step_key: accumulate_progress

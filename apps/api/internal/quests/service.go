@@ -3,7 +3,7 @@ package quests
 import (
 	"errors"
 	"fmt"
-	"slices"
+	"hash/fnv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -15,16 +15,13 @@ import (
 
 const (
 	businessTimezone = "Asia/Shanghai"
-	rerollCostGold   = 20
 )
 
 var (
-	ErrQuestNotFound              = errors.New("quest not found")
-	ErrQuestInvalidState          = errors.New("quest invalid state")
-	ErrQuestCompletionCapReached  = errors.New("quest completion cap reached")
-	ErrQuestRerollConfirmRequired = errors.New("quest reroll confirmation required")
-	ErrQuestChoiceNotAvailable    = errors.New("quest choice not available")
-	ErrQuestInteractionInvalid    = errors.New("quest interaction invalid")
+	ErrQuestNotFound           = errors.New("quest not found")
+	ErrQuestInvalidState       = errors.New("quest invalid state")
+	ErrQuestChoiceNotAvailable = errors.New("quest choice not available")
+	ErrQuestInteractionInvalid = errors.New("quest interaction invalid")
 )
 
 type QuestChoice struct {
@@ -128,17 +125,6 @@ type questTemplateDefinition struct {
 	RewardGold       int
 	RewardReputation int
 	Spec             questRuntimeSpec
-	RankOverrides    []questTemplateRankOverride
-}
-
-type questTemplateRankOverride struct {
-	Ranks            []string `yaml:"ranks"`
-	Title            string   `yaml:"title"`
-	Description      string   `yaml:"description"`
-	TargetRegionID   string   `yaml:"target_region_id"`
-	ProgressTarget   int      `yaml:"progress_target"`
-	RewardGold       int      `yaml:"reward_gold"`
-	RewardReputation int      `yaml:"reward_reputation"`
 }
 
 type BoardView struct {
@@ -148,14 +134,6 @@ type BoardView struct {
 	ActiveQuestCount int                       `json:"active_quest_count"`
 	Quests           []characters.QuestSummary `json:"quests"`
 	Limits           characters.DailyLimits    `json:"limits"`
-}
-
-type QuestRewardResult struct {
-	Character    characters.Summary     `json:"character"`
-	RankChanged  bool                   `json:"rank_changed"`
-	PreviousRank string                 `json:"previous_rank"`
-	CurrentRank  string                 `json:"current_rank"`
-	Limits       characters.DailyLimits `json:"limits"`
 }
 
 type StoredQuestRuntime struct {
@@ -266,10 +244,6 @@ func NewServiceWithRepository(repo Repository) (*Service, error) {
 	return service, nil
 }
 
-func RerollCostGold() int {
-	return rerollCostGold
-}
-
 func difficultyFromRarity(rarity string) string {
 	switch strings.TrimSpace(rarity) {
 	case "challenge":
@@ -358,7 +332,7 @@ func (s *Service) EnsureDailyQuestBoard(character characters.Summary) BoardView 
 	defer s.mu.Unlock()
 
 	board := s.ensureBoardLocked(character)
-	return buildBoardView(board, characters.LimitsForRank(character.Rank, s.nextReset(), 0, 0))
+	return buildBoardView(board, characters.BuildDailyLimits(s.nextReset(), 0, 0, 0))
 }
 
 func (s *Service) ListQuests(character characters.Summary, limits characters.DailyLimits) BoardView {
@@ -452,6 +426,9 @@ func (s *Service) AcceptQuest(character characters.Summary, questID string, limi
 	}
 
 	quest := board.quests[index]
+	if quest.Status == "accepted" || quest.Status == "completed" {
+		return buildBoardView(board, limits), enrichQuestSummary(quest), nil
+	}
 	if quest.Status != "available" {
 		return BoardView{}, characters.QuestSummary{}, ErrQuestInvalidState
 	}
@@ -468,6 +445,14 @@ func (s *Service) AcceptQuest(character characters.Summary, questID string, limi
 }
 
 func (s *Service) SubmitQuest(character characters.Summary, questID string, limits characters.DailyLimits) (characters.QuestSummary, error) {
+	quest, err := s.PrepareQuestSubmission(character, questID, limits)
+	if err != nil {
+		return characters.QuestSummary{}, err
+	}
+	return s.FinalizeQuestSubmission(character.CharacterID, quest.QuestID)
+}
+
+func (s *Service) PrepareQuestSubmission(character characters.Summary, questID string, limits characters.DailyLimits) (characters.QuestSummary, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -481,17 +466,36 @@ func (s *Service) SubmitQuest(character characters.Summary, questID string, limi
 	if quest.Status != "completed" {
 		return characters.QuestSummary{}, ErrQuestInvalidState
 	}
-	if limits.QuestCompletionUsed >= limits.QuestCompletionCap {
-		return characters.QuestSummary{}, ErrQuestCompletionCapReached
+
+	return enrichQuestSummary(quest), nil
+}
+
+func (s *Service) FinalizeQuestSubmission(characterID, questID string) (characters.QuestSummary, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	board, ok := s.boardByCharacter[characterID]
+	if !ok {
+		return characters.QuestSummary{}, ErrQuestNotFound
+	}
+
+	index := findQuestIndex(board.quests, questID)
+	if index < 0 {
+		return characters.QuestSummary{}, ErrQuestNotFound
+	}
+
+	quest := board.quests[index]
+	if quest.Status != "completed" {
+		return characters.QuestSummary{}, ErrQuestInvalidState
 	}
 
 	quest.Status = "submitted"
 	quest = enrichQuestSummary(quest)
 	board.quests[index] = quest
-	if err := s.saveBoardLocked(character.CharacterID, board); err != nil {
+	if err := s.saveBoardLocked(characterID, board); err != nil {
 		return characters.QuestSummary{}, err
 	}
-	s.boardByCharacter[character.CharacterID] = board
+	s.boardByCharacter[characterID] = board
 
 	return quest, nil
 }
@@ -664,38 +668,7 @@ func (s *Service) ApplyQuestTrigger(character characters.Summary, trigger Trigge
 }
 
 func (s *Service) RerollQuestBoard(character characters.Summary, limits characters.DailyLimits, confirmCost bool) (BoardView, error) {
-	if !confirmCost {
-		return BoardView{}, ErrQuestRerollConfirmRequired
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	board := s.ensureBoardLocked(character)
-	board.rerollCount++
-
-	kept := make([]characters.QuestSummary, 0, len(board.quests))
-	for _, quest := range board.quests {
-		switch quest.Status {
-		case "submitted", "completed":
-			kept = append(kept, quest)
-		default:
-			quest.Status = "expired"
-			kept = append(kept, quest)
-		}
-	}
-
-	replacements := generateQuestTemplates(character, board.boardID, board.rerollCount)
-	for index := range replacements {
-		replacements[index].BoardID = board.boardID
-	}
-	board.quests = mergeActiveBoard(kept, replacements)
-	if err := s.saveBoardLocked(character.CharacterID, board); err != nil {
-		return BoardView{}, err
-	}
-	s.boardByCharacter[character.CharacterID] = board
-
-	return buildBoardView(board, limits), nil
+	return BoardView{}, ErrQuestInvalidState
 }
 
 func (s *Service) ProgressTravelQuests(character characters.Summary, targetRegionID string, limits characters.DailyLimits) (BoardView, []characters.QuestSummary) {
@@ -711,6 +684,11 @@ func (s *Service) EnsureCurioFollowupQuest(character characters.Summary, seed wo
 	defer s.mu.Unlock()
 
 	board := s.ensureBoardLocked(character)
+	if len(board.quests) >= characters.DailyQuestBoardSize {
+		view := buildBoardView(board, limits)
+		return view, nil, nil
+	}
+
 	for _, quest := range board.quests {
 		if quest.TemplateType != seed.TemplateType {
 			continue
@@ -721,10 +699,21 @@ func (s *Service) EnsureCurioFollowupQuest(character characters.Summary, seed wo
 		if quest.Title != seed.Title {
 			continue
 		}
-		if quest.Status == "accepted" || quest.Status == "completed" {
+		if quest.Status == "accepted" || quest.Status == "completed" || quest.Status == "submitted" {
 			view := buildBoardView(board, limits)
 			return view, nil, nil
 		}
+	}
+
+	activeCount := 0
+	for _, quest := range board.quests {
+		if quest.Status == "accepted" || quest.Status == "completed" {
+			activeCount++
+		}
+	}
+	if activeCount >= characters.DailyQuestBoardSize {
+		view := buildBoardView(board, limits)
+		return view, nil, nil
 	}
 
 	quest := characters.QuestSummary{
@@ -807,19 +796,28 @@ func (s *Service) ensureBoardLocked(character characters.Summary) boardRecord {
 		return board
 	}
 
-	board := boardRecord{
-		boardID:     nextID("board"),
-		resetDate:   businessDate,
-		status:      "active",
-		rerollCount: 0,
-		quests:      generateQuestTemplates(character, nextID("boardseed"), 0),
+	board, exists := s.boardByCharacter[character.CharacterID]
+	if !exists {
+		board = boardRecord{
+			boardID:     nextID("board"),
+			status:      "active",
+			rerollCount: 0,
+			quests:      []characters.QuestSummary{},
+		}
 	}
 
-	for index := range board.quests {
-		board.quests[index].BoardID = board.boardID
+	carried := carryOverDailyQuests(board.quests)
+	deficit := maxInt(0, characters.DailyQuestBoardSize-len(carried))
+	if deficit > 0 {
+		carried = append(carried, generateQuestTemplates(character, board.boardID, businessDate, deficit, carried)...)
 	}
 
-	s.runtimeByQuest[character.CharacterID] = make(map[string]*questRuntimeState)
+	board.resetDate = businessDate
+	board.quests = carried
+
+	if _, ok := s.runtimeByQuest[character.CharacterID]; !ok {
+		s.runtimeByQuest[character.CharacterID] = make(map[string]*questRuntimeState)
+	}
 	_ = s.saveBoardLocked(character.CharacterID, board)
 	s.boardByCharacter[character.CharacterID] = board
 	return board
@@ -877,63 +875,36 @@ func supplementalQuestDefinitions() []questTemplateDefinition {
 	return items
 }
 
-func instantiateQuest(definition questTemplateDefinition, character characters.Summary, boardID string) characters.QuestSummary {
-	quest := characters.QuestSummary{
+func instantiateQuest(definition questTemplateDefinition, _ characters.Summary, boardID string, seed string) characters.QuestSummary {
+	rewardGold, rewardReputation := rollQuestRewards(definition, seed)
+	contractType := "normal"
+	progressTarget := definition.ProgressTarget
+	if isBountyContract(seed) {
+		contractType = "bounty"
+		rewardGold *= 2
+		rewardReputation *= 2
+		if definition.FlowKind == "counter" {
+			progressTarget += maxInt(1, progressTarget/2)
+		}
+	}
+
+	return characters.QuestSummary{
 		QuestID:          nextID("quest"),
 		BoardID:          boardID,
 		TemplateType:     definition.TemplateType,
+		ContractType:     contractType,
 		Difficulty:       definition.Difficulty,
 		FlowKind:         definition.FlowKind,
 		Rarity:           definition.Rarity,
-		Status:           "available",
+		Status:           "accepted",
 		Title:            definition.Title,
 		Description:      definition.Description,
 		TargetRegionID:   definition.TargetRegionID,
 		ProgressCurrent:  0,
-		ProgressTarget:   definition.ProgressTarget,
-		RewardGold:       definition.RewardGold,
-		RewardReputation: definition.RewardReputation,
+		ProgressTarget:   progressTarget,
+		RewardGold:       rewardGold,
+		RewardReputation: rewardReputation,
 	}
-	applyQuestRankOverrides(&quest, definition.RankOverrides, character.Rank)
-	return quest
-}
-
-func applyQuestRankOverrides(quest *characters.QuestSummary, overrides []questTemplateRankOverride, rank string) {
-	for _, override := range overrides {
-		if !rankMatchesOverride(rank, override.Ranks) {
-			continue
-		}
-		if strings.TrimSpace(override.Title) != "" {
-			quest.Title = override.Title
-		}
-		if strings.TrimSpace(override.Description) != "" {
-			quest.Description = override.Description
-		}
-		if strings.TrimSpace(override.TargetRegionID) != "" {
-			quest.TargetRegionID = override.TargetRegionID
-		}
-		if override.ProgressTarget > 0 {
-			quest.ProgressTarget = override.ProgressTarget
-		}
-		if override.RewardGold > 0 {
-			quest.RewardGold = override.RewardGold
-		}
-		if override.RewardReputation > 0 {
-			quest.RewardReputation = override.RewardReputation
-		}
-	}
-}
-
-func rankMatchesOverride(rank string, ranks []string) bool {
-	if len(ranks) == 0 {
-		return false
-	}
-	for _, candidate := range ranks {
-		if strings.EqualFold(strings.TrimSpace(candidate), strings.TrimSpace(rank)) {
-			return true
-		}
-	}
-	return false
 }
 
 func findQuestDefinition(quest characters.QuestSummary) (questTemplateDefinition, bool) {
@@ -969,33 +940,125 @@ func allQuestDefinitions() []questTemplateDefinition {
 	return items
 }
 
-func generateQuestTemplates(character characters.Summary, seed string, rerollCount int) []characters.QuestSummary {
-	_ = seed
+func generateQuestTemplates(character characters.Summary, boardID, dayKey string, count int, existing []characters.QuestSummary) []characters.QuestSummary {
 	definitions := dailyQuestDefinitions()
-	quests := make([]characters.QuestSummary, 0, len(definitions))
-	for _, definition := range definitions {
-		quests = append(quests, instantiateQuest(definition, character, ""))
+	if count <= 0 || len(definitions) == 0 {
+		return []characters.QuestSummary{}
 	}
 
-	if rerollCount%2 == 1 {
-		slices.Reverse(quests[:3])
+	used := make(map[string]struct{}, len(existing))
+	for _, quest := range existing {
+		used[quest.TemplateType] = struct{}{}
+	}
+
+	available := make([]questTemplateDefinition, 0, len(definitions))
+	for _, definition := range definitions {
+		if _, ok := used[definition.TemplateType]; ok {
+			continue
+		}
+		available = append(available, definition)
+	}
+	if len(available) == 0 {
+		available = definitions
+	}
+
+	quests := make([]characters.QuestSummary, 0, minInt(count, len(available)))
+	baseSeed := fmt.Sprintf("%s|%s|%s", character.CharacterID, boardID, dayKey)
+	for slot := 0; slot < count && len(available) > 0; slot++ {
+		index := deterministicIndex(fmt.Sprintf("%s|template|%d", baseSeed, slot), len(available))
+		definition := available[index]
+		available = append(available[:index], available[index+1:]...)
+		quests = append(quests, instantiateQuest(definition, character, boardID, fmt.Sprintf("%s|quest|%d|%s", baseSeed, slot, definition.TemplateType)))
 	}
 
 	return quests
 }
 
-func mergeActiveBoard(previous []characters.QuestSummary, replacements []characters.QuestSummary) []characters.QuestSummary {
-	active := make([]characters.QuestSummary, 0, len(previous)+len(replacements))
-	for _, quest := range previous {
-		active = append(active, quest)
-	}
-	for _, quest := range replacements {
-		if quest.Status == "available" {
+func carryOverDailyQuests(quests []characters.QuestSummary) []characters.QuestSummary {
+	active := make([]characters.QuestSummary, 0, len(quests))
+	for _, quest := range quests {
+		switch quest.Status {
+		case "accepted", "completed", "available":
+			if quest.Status == "available" {
+				quest.Status = "accepted"
+			}
 			active = append(active, quest)
+		case "submitted":
+			continue
+		default:
+			continue
 		}
 	}
 
 	return active
+}
+
+type questRewardRange struct {
+	GoldMin       int
+	GoldMax       int
+	ReputationMin int
+	ReputationMax int
+}
+
+func rewardRangeForTemplate(definition questTemplateDefinition) questRewardRange {
+	switch strings.TrimSpace(definition.TemplateType) {
+	case "kill_region_enemies":
+		return questRewardRange{GoldMin: 90, GoldMax: 130, ReputationMin: 16, ReputationMax: 20}
+	case "collect_materials":
+		return questRewardRange{GoldMin: 80, GoldMax: 120, ReputationMin: 14, ReputationMax: 18}
+	case "deliver_supplies":
+		if strings.EqualFold(strings.TrimSpace(definition.Difficulty), "hard") {
+			return questRewardRange{GoldMin: 110, GoldMax: 150, ReputationMin: 20, ReputationMax: 24}
+		}
+		return questRewardRange{GoldMin: 85, GoldMax: 125, ReputationMin: 15, ReputationMax: 19}
+	case "investigate_anomaly":
+		return questRewardRange{GoldMin: 125, GoldMax: 170, ReputationMin: 22, ReputationMax: 28}
+	case "clear_dungeon":
+		return questRewardRange{GoldMin: 155, GoldMax: 210, ReputationMin: 28, ReputationMax: 36}
+	default:
+		return questRewardRange{GoldMin: 90, GoldMax: 130, ReputationMin: 16, ReputationMax: 20}
+	}
+}
+
+func rollQuestRewards(definition questTemplateDefinition, seed string) (int, int) {
+	rewardRange := rewardRangeForTemplate(definition)
+	gold := rewardRange.GoldMin + deterministicIndex(seed+"|gold", rewardRange.GoldMax-rewardRange.GoldMin+1)
+	reputation := rewardRange.ReputationMin + deterministicIndex(seed+"|reputation", rewardRange.ReputationMax-rewardRange.ReputationMin+1)
+	return gold, reputation
+}
+
+func isBountyContract(seed string) bool {
+	return deterministicUnitFloat(seed+"|bounty") < 0.15
+}
+
+func deterministicUnitFloat(seed string) float64 {
+	hasher := fnv.New32a()
+	_, _ = hasher.Write([]byte(seed))
+	value := hasher.Sum32()
+	return float64(value%1000000) / 1000000.0
+}
+
+func deterministicIndex(seed string, size int) int {
+	if size <= 1 {
+		return 0
+	}
+	hasher := fnv.New32a()
+	_, _ = hasher.Write([]byte(seed))
+	return int(hasher.Sum32() % uint32(size))
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func findQuestIndex(quests []characters.QuestSummary, questID string) int {
@@ -1089,13 +1152,6 @@ func completedQuestsFromChanges(changes []ProgressChange) []characters.QuestSumm
 		}
 	}
 	return completed
-}
-
-func maxInt(left, right int) int {
-	if left > right {
-		return left
-	}
-	return right
 }
 
 func (s *Service) questRuntimeStateLocked(characterID, questID string) *questRuntimeState {

@@ -147,7 +147,9 @@ This spec is written for the four-dungeon seasonal model:
 Detailed room-by-room balance sheets are currently only available for the first batch:
 
 - `ancient_catacomb_v1`
-- `sandworm_den_v1`
+- `thorned_hollow_v1`
+- `sunscar_warvault_v1`
+- `obsidian_spire_v1`
 
 Each dungeon must provide:
 

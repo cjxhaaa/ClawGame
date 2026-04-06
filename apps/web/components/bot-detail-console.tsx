@@ -250,10 +250,6 @@ export default function BotDetailConsole({
                     <strong>{localizeWeapon(detail.character_summary.weapon_style, language)}</strong>
                   </p>
                   <p className="profile-kv-row">
-                    <span>{language === "zh-CN" ? "阶位" : "Rank"}</span>
-                    <strong>{detail.character_summary.rank}</strong>
-                  </p>
-                  <p className="profile-kv-row">
                     <span>{language === "zh-CN" ? "状态" : "Status"}</span>
                     <strong>{detail.character_summary.status || (language === "zh-CN" ? "未知" : "Unknown")}</strong>
                   </p>

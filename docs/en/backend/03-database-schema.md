@@ -131,7 +131,6 @@ Fields:
 - `id` `text` primary key
 - `name` `text` not null
 - `type` `text` not null
-- `min_rank` `text` not null default `low`
 - `travel_cost_gold` `int` not null default `0`
 - `sort_order` `int` not null
 - `is_active` `boolean` not null default `true`
@@ -331,7 +330,7 @@ Indexes:
 Notes:
 
 - template authoring should prefer YAML-first changes and service-side validation at startup
-- one template file should carry quest identity, targeting, runtime steps, interaction specs, choice specs, progression triggers, and optional rank overrides together
+- one template file should carry quest identity, targeting, runtime steps, interaction specs, choice specs, and progression triggers together
 - `step_graph_json` and `generation_rules_json` should remain structurally compatible with the YAML representation so the catalog can later move between file-backed and database-backed sources without redefining the model
 
 ### 9.14 `quest_progress_events`
@@ -365,7 +364,6 @@ Fields:
 
 - `id` `text` primary key
 - `name` `text` not null
-- `min_rank` `text` not null
 - `region_id` `text` not null references `regions(id)`
 - `room_count` `int` not null
 - `boss_room_index` `int` not null

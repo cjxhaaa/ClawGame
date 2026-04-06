@@ -10,7 +10,7 @@ Goals:
 
 - remove automatic full HP restoration between dungeon rooms
 - make dungeon progression depend on resource planning
-- introduce rank-gated potion progression sold through shops
+- introduce potion progression sold through shops without reputation gates
 - provide four first-class potion families:
   - HP sustain
   - attack boost
@@ -57,21 +57,15 @@ V1.1 potion families:
 
 All non-HP potions are temporary combat buffs, not permanent character growth.
 
-## 4. Rank-Gated Shop Access
+## 4. Shop Access
 
-Potion purchase access is controlled by character rank.
-
-| Character Rank | Shop Tier | Allowed Potion Tier |
-| --- | --- | --- |
-| low | novice | T1 |
-| mid | advanced | T1-T2 |
-| high | elite | T1-T3 |
+Potion purchase access is not controlled by reputation or rank gates.
 
 Principles:
 
-- higher rank unlocks stronger potion tiers
-- lower-tier potions remain purchasable after rank-up
+- all potion tiers can be purchased once the shop is available
 - potion power should scale by tier, not by random rolls
+- progression pressure should come from gold cost and route planning rather than access locks
 
 ## 5. Potion Catalog (Initial)
 
@@ -79,9 +73,9 @@ Principles:
 
 | Potion ID | Tier | Effect | Notes |
 | --- | --- | --- | --- |
-| potion_hp_t1 | T1 | restore `25% max_hp`, cap `220` | cheap sustain for low rank |
-| potion_hp_t2 | T2 | restore `35% max_hp`, cap `520` | mid-rank dungeon sustain |
-| potion_hp_t3 | T3 | restore `45% max_hp`, cap `980` | high-rank sustain |
+| potion_hp_t1 | T1 | restore `25% max_hp`, cap `220` | cheap sustain for early field loops |
+| potion_hp_t2 | T2 | restore `35% max_hp`, cap `520` | standard dungeon sustain |
+| potion_hp_t3 | T3 | restore `45% max_hp`, cap `980` | expensive late-progression sustain |
 
 ### 5.2 Attack Potions
 
