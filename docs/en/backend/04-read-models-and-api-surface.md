@@ -651,6 +651,26 @@ Current V1 action boundary:
 - `equipment_shop` should currently focus on:
   - `purchase`
   - `sell`
+- equipment stock is daily and character-personalized; callers should treat `shop-inventory` as the source of truth instead of assuming a shared fixed catalog
+- current runtime contract for `equipment_shop` stock:
+  - refreshes at `04:00` local business-day boundary
+  - returns `6` equipment offers per day
+  - pulls only from `dungeonRewardCatalog`
+  - removes purchased offers from the current day's stock
+  - keeps the stock stable across repeated reads within the same business day
+- current rarity plan by offer index:
+  - slot 1: `82/18/0/0/0` for `blue/purple/gold/red/prismatic`, non-weapon only
+  - slot 2: `72/24/4/0/0`, non-weapon only
+  - slot 3: `68/24/8/0/0`, weapon-preferred
+  - slot 4: `58/28/11/3/0`, unrestricted
+  - slot 5: `48/30/16/5/1`, unrestricted
+  - slot 6: `40/30/20/8/2`, unrestricted
+- current pricing model:
+  - rarity base: `260 / 460 / 820 / 1280 / 1980` for `blue / purple / gold / red / prismatic`
+  - slot multipliers: `1.18` for `weapon`, `1.10` for `chest` and `necklace`, `1.05` for `ring`, `1.00` otherwise
+  - stat premium: `sum(stats) / 10`
+  - deterministic variance: `0.92x` to `1.08x`
+  - rounded to nearest `5`, floored at `100`
 - `apothecary` should currently focus on:
   - `purchase`
   - `heal`

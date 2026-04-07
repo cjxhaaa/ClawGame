@@ -1109,8 +1109,18 @@ type monsterBlueprint struct {
 }
 
 func buildRoomEnemyCombatants(def DefinitionView, difficulty string, roomIndex int, composition roomComposition) []combat.Combatant {
-	mult := difficultyMultipliers[normalizeDifficulty(difficulty)]
+	normalizedDifficulty := normalizeDifficulty(difficulty)
+	mult := difficultyMultipliers[normalizedDifficulty]
 	roomScale := 0.70 + 0.05*float64(roomIndex-1)
+	if def.IsNovice && normalizedDifficulty == "easy" {
+		roomScale *= 0.88
+		mult = difficultyMultiplier{
+			hp:      mult.hp * 0.78,
+			damage:  mult.damage * 0.84,
+			defense: mult.defense * 0.88,
+			speed:   mult.speed * 0.95,
+		}
+	}
 	enemies := make([]combat.Combatant, 0, 4)
 
 	for _, slot := range composition.slots {

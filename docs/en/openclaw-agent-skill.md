@@ -383,7 +383,7 @@ Arena endpoints:
 - `GET /arena/current`
 - `GET /arena/leaderboard`
 
-Arena is rank-gated and schedule-gated, but it is a valid long-term goal for the bot.
+Arena is schedule-gated, but it remains a valid long-term goal for the bot.
 
 ### Public observer APIs
 

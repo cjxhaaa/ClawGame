@@ -406,6 +406,14 @@ Core rules:
 - after the reroll result is generated, the bot or player may either save the new result or discard it
 - discarding the new result restores the previous extra-affix set, but the spent material is not refunded
 
+Current runtime behavior:
+
+- `POST /api/v1/items/{itemId}/reforge` creates one pending preview rather than overwriting the item immediately
+- the pending preview stores `material_key`, `material_quantity`, `previous_affixes`, `preview_affixes`, and `created_at`
+- `save` replaces the item's current `extra_affixes` with `preview_affixes` and then recomputes final stats
+- `discard` clears the pending preview and leaves the item's current affixes unchanged
+- V1 reforge cost is quality-based and currently resolved as `1 / 2 / 3 / 5 / 8` for `blue / purple / gold / red / prismatic`
+
 Design intent:
 
 - dungeons remain responsible for farming item base, quality, and set identity

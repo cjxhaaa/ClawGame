@@ -2409,6 +2409,36 @@ func (s *Server) ListenAndServe() error {
 	return s.httpServer.ListenAndServe()
 }
 
+func (s *Server) Handler() http.Handler {
+	return s.httpServer.Handler
+}
+
+func (s *Server) GrantSeasonXP(accessToken string, amount int) error {
+	account, err := s.authService.Authenticate(strings.TrimSpace(accessToken))
+	if err != nil {
+		return err
+	}
+	character, ok := s.characterService.GetCharacterByAccount(account)
+	if !ok {
+		return characters.ErrCharacterNotFound
+	}
+	_, err = s.characterService.GrantSeasonXP(character.CharacterID, amount)
+	return err
+}
+
+func (s *Server) GrantGold(accessToken string, amount int) error {
+	account, err := s.authService.Authenticate(strings.TrimSpace(accessToken))
+	if err != nil {
+		return err
+	}
+	character, ok := s.characterService.GetCharacterByAccount(account)
+	if !ok {
+		return characters.ErrCharacterNotFound
+	}
+	_, err = s.characterService.GrantGold(character.CharacterID, amount)
+	return err
+}
+
 func writeEnvelope(w http.ResponseWriter, r *http.Request, status int, data any) {
 	writeJSON(w, status, map[string]any{
 		"request_id": requestID(r),

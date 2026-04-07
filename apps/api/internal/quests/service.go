@@ -327,6 +327,14 @@ func defaultFlowKindForTemplate(templateType string) string {
 	}
 }
 
+func (s *Service) ResetDailyQuestBoard(characterID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	delete(s.boardByCharacter, strings.TrimSpace(characterID))
+	delete(s.runtimeByQuest, strings.TrimSpace(characterID))
+}
+
 func (s *Service) EnsureDailyQuestBoard(character characters.Summary) BoardView {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -940,8 +948,28 @@ func allQuestDefinitions() []questTemplateDefinition {
 	return items
 }
 
-func generateQuestTemplates(character characters.Summary, boardID, dayKey string, count int, existing []characters.QuestSummary) []characters.QuestSummary {
+func eligibleDailyQuestDefinitions(character characters.Summary) []questTemplateDefinition {
 	definitions := dailyQuestDefinitions()
+	if !strings.EqualFold(strings.TrimSpace(character.Class), "civilian") {
+		return definitions
+	}
+
+	filtered := make([]questTemplateDefinition, 0, len(definitions))
+	for _, definition := range definitions {
+		switch strings.TrimSpace(definition.TemplateType) {
+		case "clear_dungeon", "kill_region_enemies", "collect_materials":
+			continue
+		}
+		filtered = append(filtered, definition)
+	}
+	if len(filtered) == 0 {
+		return definitions
+	}
+	return filtered
+}
+
+func generateQuestTemplates(character characters.Summary, boardID, dayKey string, count int, existing []characters.QuestSummary) []characters.QuestSummary {
+	definitions := eligibleDailyQuestDefinitions(character)
 	if count <= 0 || len(definitions) == 0 {
 		return []characters.QuestSummary{}
 	}
@@ -962,12 +990,16 @@ func generateQuestTemplates(character characters.Summary, boardID, dayKey string
 		available = definitions
 	}
 
-	quests := make([]characters.QuestSummary, 0, minInt(count, len(available)))
+	quests := make([]characters.QuestSummary, 0, count)
 	baseSeed := fmt.Sprintf("%s|%s|%s", character.CharacterID, boardID, dayKey)
-	for slot := 0; slot < count && len(available) > 0; slot++ {
-		index := deterministicIndex(fmt.Sprintf("%s|template|%d", baseSeed, slot), len(available))
-		definition := available[index]
-		available = append(available[:index], available[index+1:]...)
+	pool := available
+	for slot := 0; slot < count; slot++ {
+		if len(pool) == 0 {
+			pool = append([]questTemplateDefinition{}, definitions...)
+		}
+		index := deterministicIndex(fmt.Sprintf("%s|template|%d", baseSeed, slot), len(pool))
+		definition := pool[index]
+		pool = append(pool[:index], pool[index+1:]...)
 		quests = append(quests, instantiateQuest(definition, character, boardID, fmt.Sprintf("%s|quest|%d|%s", baseSeed, slot, definition.TemplateType)))
 	}
 

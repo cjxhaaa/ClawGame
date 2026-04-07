@@ -256,3 +256,27 @@ func TestCurioFollowupDoesNotOverflowFixedDailyBoard(t *testing.T) {
 		t.Fatalf("expected board to remain at %d quests, got %d", characters.DailyQuestBoardSize, len(view.Quests))
 	}
 }
+
+func TestCivilianBoardUsesFourNonCombatContracts(t *testing.T) {
+	service := NewService()
+	service.clock = func() time.Time {
+		return time.Date(2026, 4, 6, 10, 0, 0, 0, time.FixedZone("CST", 8*3600))
+	}
+
+	character := characters.Summary{
+		CharacterID: "char_civilian_day_one",
+		Name:        "CivilianDayOne",
+		Class:       "civilian",
+	}
+
+	board := service.ListQuests(character, characters.DailyLimits{})
+	if len(board.Quests) != characters.DailyQuestBoardSize {
+		t.Fatalf("expected civilian board to fill to %d quests, got %d", characters.DailyQuestBoardSize, len(board.Quests))
+	}
+	for _, quest := range board.Quests {
+		switch quest.TemplateType {
+		case "kill_region_enemies", "collect_materials", "clear_dungeon":
+			t.Fatalf("expected civilian day-one board to exclude combat contract %s", quest.TemplateType)
+		}
+	}
+}

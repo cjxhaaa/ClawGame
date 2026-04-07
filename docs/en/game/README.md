@@ -33,7 +33,7 @@ Files:
 - `14-first-batch-dungeon-balance-sheets.md`
   Complete 6-room easy/hard/nightmare composition tables for Ancient Catacomb and Sandworm Den, with full monster stats, boss phase specs, nightmare threshold guidance, and validation checklist
 - `15-battle-consumable-and-potion-system.md`
-  Removes full HP refill between dungeon rooms and defines rank-gated HP/attack/defense/speed potion progression
+  Removes full HP refill between dungeon rooms and defines the current ungated HP/attack/defense/speed potion economy
 - `16-battle-auto-resolution-flow.md`
   Step-by-step runtime flow for automatic battle simulation, from initialization to round loop, action resolution, logging, and terminal settlement
 - `17-combat-power-evaluation-and-preview-system.md`

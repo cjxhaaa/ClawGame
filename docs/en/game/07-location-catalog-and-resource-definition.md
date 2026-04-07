@@ -135,8 +135,79 @@ Current V1 facility boundary:
   - Blacksmith
   - Arena
   - Warehouse
-- `Equipment Shop` is the canonical building family for basic weapon and armor buying/selling
+- `Equipment Shop` is the canonical building family for daily personalized weapon and armor buying/selling
+- its stock should refresh per character each business day, heavily favor blue-tier dungeon-sourced items, and only rarely surface high-rarity surprise offers
 - `Apothecary` is the canonical building family for potion purchase and paid HP recovery
+
+#### Equipment Shop Daily Stock Rules
+
+Current runtime behavior is deterministic per character and per business day:
+
+- refresh boundary: daily at `04:00` local server business time
+- visibility: each character gets a personal stock list; two characters should not assume they see the same items
+- stability: repeated reads on the same day return the same stock until an item is purchased or the next business day begins
+- stock source: only items from `dungeonRewardCatalog` are eligible, so the shop never invents out-of-band equipment
+- stock size: `6` equipment offers per business day
+- duplicate rule: the same `catalog_id` cannot appear twice in one daily stock list
+
+Current slot plan for the `6` offers:
+
+| Offer slot | Weapon bias | Notes |
+| --- | --- | --- |
+| 1 | no weapon | early defensive / transition slot |
+| 2 | no weapon | early defensive / transition slot |
+| 3 | prefer weapon | first weapon-biased roll |
+| 4 | mixed | can be any compatible slot |
+| 5 | mixed | can be any compatible slot |
+| 6 | mixed | can be any compatible slot |
+
+Current rarity weights by offer slot:
+
+| Offer slot | Blue | Purple | Gold | Red | Prismatic |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | 82% | 18% | 0% | 0% | 0% |
+| 2 | 72% | 24% | 4% | 0% | 0% |
+| 3 | 68% | 24% | 8% | 0% | 0% |
+| 4 | 58% | 28% | 11% | 3% | 0% |
+| 5 | 48% | 30% | 16% | 5% | 1% |
+| 6 | 40% | 30% | 20% | 8% | 2% |
+
+Rarity fallback behavior:
+
+- if the selected rarity has no compatible candidate for the current character and slot bias, the shop falls back in this order:
+  - `blue -> purple -> gold -> red -> prismatic`
+  - `purple -> blue -> gold -> red -> prismatic`
+  - `gold -> purple -> blue -> red -> prismatic`
+  - `red -> gold -> purple -> blue -> prismatic`
+  - `prismatic -> red -> gold -> purple -> blue`
+- if the slot-biased search still fails, the runtime does one broader retry that ignores the weapon / non-weapon bias and scans all rarities again
+
+Current pricing rules:
+
+- purpose: the shop is intentionally less efficient than dungeon farming; it sells convenience and occasional surprise, not the main gear progression path
+- rarity base prices:
+  - `blue`: `260` gold
+  - `purple`: `460` gold
+  - `gold`: `820` gold
+  - `red`: `1280` gold
+  - `prismatic`: `1980` gold
+- slot multipliers:
+  - `weapon`: `1.18x`
+  - `chest` / `necklace`: `1.10x`
+  - `ring`: `1.05x`
+  - all other slots: `1.00x`
+- stat premium: add `sum(item.stats) / 10` before slot multiplier and variance
+- variance range: deterministic per item and day, from `0.92x` to `1.08x`
+- rounding: final price is rounded to the nearest `5` gold
+- floor: final price cannot go below `100` gold
+
+Design interpretation of the current implementation:
+
+- most daily offers should be blue transition gear
+- purple appears regularly enough to be worth checking
+- gold is uncommon but realistic
+- red and prismatic are surprise outcomes concentrated in the last two offer slots
+- because prices scale from dungeon-tier item stats rather than starter-shop templates, the shop can occasionally produce very expensive high-rarity offers that many early characters cannot immediately buy
 - other city or field points may still exist as neutral interaction points, but they are not part of the core functional building taxonomy
 
 ### Dungeon Relationship

@@ -173,7 +173,6 @@ Character inventory item metadata should include:
 - `potion_family`
 - `tier`
 - `effect_payload`
-- `allowed_rank_min`
 - `is_combat_only`
 
 Run state should include:
@@ -191,16 +190,24 @@ Battle log should include:
 ## 9. Economy And Shop Rules
 
 - potions are purchased from building shops
-- shop inventory is rank-gated by buyer character rank
+- apothecary inventory is shared and ungated; all current potion tiers are visible to any character who can access the building
 - potion prices should create real trade-offs with gear repair and enhancement
-- potion stock can refresh daily to prevent infinite cheap sustain loops
+- current V1 runtime keeps potion stock static rather than daily-random; economy pressure comes from gold cost, not stock scarcity
 
-Recommended starting price bands:
+Current V1 apothecary price table:
 
-- HP: low
-- Defense: low-mid
-- Attack: mid
-- Speed: mid-high
+- `potion_hp_t1`: `12` gold
+- `potion_atk_t1`: `14` gold
+- `potion_def_t1`: `14` gold
+- `potion_spd_t1`: `14` gold
+- `potion_hp_t2`: `22` gold
+- `potion_atk_t2`: `24` gold
+- `potion_def_t2`: `24` gold
+- `potion_spd_t2`: `24` gold
+- `potion_hp_t3`: `36` gold
+- `potion_atk_t3`: `38` gold
+- `potion_def_t3`: `38` gold
+- `potion_spd_t3`: `38` gold
 
 ## 10. Balance Guardrails
 
@@ -220,6 +227,6 @@ This document updates and constrains:
 Required engineering follow-up after design confirmation:
 
 - remove automatic full HP restore between dungeon rooms
-- implement potion item definitions and rank-gated shop inventory
+- implement potion item definitions and the current ungated apothecary inventory
 - add potion consumption actions and log events
 - add bot-policy defaults for potion use

@@ -1,8 +1,10 @@
 package inventory
 
 import (
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"clawgame/apps/api/internal/characters"
 )
@@ -149,26 +151,82 @@ func TestPromotedCharacterStillRespectsWeaponStyleRestriction(t *testing.T) {
 	}
 }
 
-func TestCivilianEquipmentShopShowsAllWeaponFamilies(t *testing.T) {
-	character := characters.Summary{
-		CharacterID: "char_civilian_shop",
-		Name:        "Shop Civilian",
-		Class:       "civilian",
-		WeaponStyle: "",
+func TestEquipmentShopInventoryIsPersonalizedAndDungeonBound(t *testing.T) {
+	service := NewService()
+	fixedNow := time.Date(2026, 4, 8, 10, 0, 0, 0, time.Local)
+	service.clock = func() time.Time { return fixedNow }
+
+	civilian := characters.Summary{CharacterID: "char_civilian_shop_a", Name: "Shop Civilian A", Class: "civilian"}
+	other := characters.Summary{CharacterID: "char_civilian_shop_b", Name: "Shop Civilian B", Class: "civilian"}
+
+	itemsA := service.ListShopInventory("equipment_shop", civilian)
+	itemsARepeat := service.ListShopInventory("equipment_shop", civilian)
+	itemsB := service.ListShopInventory("equipment_shop", other)
+
+	if len(itemsA) != 6 {
+		t.Fatalf("expected 6 daily equipment shop items, got %d", len(itemsA))
+	}
+	if !reflect.DeepEqual(itemsA, itemsARepeat) {
+		t.Fatalf("expected same-day shop inventory to stay stable, got %#v vs %#v", itemsA, itemsARepeat)
+	}
+	if reflect.DeepEqual(itemsA, itemsB) {
+		t.Fatalf("expected different characters to see different shop inventories, got %#v", itemsA)
 	}
 
-	items := buildEquipmentShopItems(character)
 	seen := map[string]bool{}
-	for _, item := range items {
-		if item.Slot == "weapon" {
-			seen[item.CatalogID] = true
+	for _, item := range itemsA {
+		if _, ok := dungeonRewardCatalog[item.CatalogID]; !ok {
+			t.Fatalf("expected shop item %s to come from dungeon reward catalog", item.CatalogID)
+		}
+		if seen[item.CatalogID] {
+			t.Fatalf("expected no duplicate catalog ids on one daily shop board, got %s", item.CatalogID)
+		}
+		seen[item.CatalogID] = true
+		if item.PriceGold < 200 {
+			t.Fatalf("expected equipment shop prices to stay expensive, got %d for %s", item.PriceGold, item.CatalogID)
 		}
 	}
+}
 
-	for _, catalogID := range []string{"warrior_sword_bronze", "mage_staff_oak", "priest_scepter_ash"} {
-		if !seen[catalogID] {
-			t.Fatalf("expected civilian shop to expose weapon %s", catalogID)
+func TestEquipmentShopPurchaseConsumesDailyOffer(t *testing.T) {
+	service := NewService()
+	service.clock = func() time.Time { return time.Date(2026, 4, 8, 10, 0, 0, 0, time.Local) }
+	character := characters.Summary{CharacterID: "char_daily_shop_purchase", Name: "Daily Buyer", Class: "civilian"}
+
+	items := service.ListShopInventory("equipment_shop", character)
+	if len(items) == 0 {
+		t.Fatal("expected non-empty daily equipment shop inventory")
+	}
+
+	before := len(items)
+	view, purchased, price, err := service.PurchaseItem(character, items[0].CatalogID)
+	if err != nil {
+		t.Fatalf("expected purchase to succeed, got %v", err)
+	}
+	if price != items[0].PriceGold {
+		t.Fatalf("expected purchase price %d, got %d", items[0].PriceGold, price)
+	}
+	if purchased.CatalogID != items[0].CatalogID {
+		t.Fatalf("expected purchased catalog %s, got %s", items[0].CatalogID, purchased.CatalogID)
+	}
+	remaining := service.ListShopInventory("equipment_shop", character)
+	if len(remaining) != before-1 {
+		t.Fatalf("expected purchased offer to disappear, got %d items after buying from %d", len(remaining), before)
+	}
+	for _, item := range remaining {
+		if item.CatalogID == purchased.CatalogID {
+			t.Fatalf("expected purchased catalog %s to be removed from daily shop", purchased.CatalogID)
 		}
+	}
+	found := false
+	for _, item := range view.Inventory {
+		if item.CatalogID == purchased.CatalogID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected purchased item %s to be added to inventory", purchased.CatalogID)
 	}
 }
 
@@ -210,7 +268,7 @@ func TestUnequipWeaponIfIncompatibleMovesWeaponBackToInventory(t *testing.T) {
 		WeaponStyle: "spellbook",
 	}
 	service.itemsByCharacter[character.CharacterID] = []EquipmentItem{
-		buildEquipmentItemFromCatalog(shopCatalogByID["warrior_sword_bronze"].catalogItem, "equipped"),
+		buildEquipmentItemFromCatalog(starterCatalog["warrior_sword_starter"], "equipped"),
 	}
 
 	changed, err := service.UnequipWeaponIfIncompatible(character)

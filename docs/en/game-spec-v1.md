@@ -104,6 +104,7 @@ Every V1 adventurer now passes through two gameplay stages.
 - civilians do not choose a class at character creation
 - civilians use the basic attack plus unlocked universal skills in combat
 - civilians can clear early quests and level normally before specialization
+- first-day civilian daily boards focus on delivery and investigation contracts, while gear progression starts in the novice equipment dungeon
 - character creation does not grant a profession starter weapon
 - civilians may equip any weapon or armor piece before specialization
 
@@ -128,6 +129,7 @@ Reputation is a spendable contract currency, not an adventurer rank ladder.
 Rules:
 
 - daily contracts auto-fill to `4` active slots on the first board query after daily reset
+- civilian first-day boards avoid field-combat and dungeon-clear contracts so the onboarding loop can finish before specialization
 - unsubmitted contracts can carry into the next day, and the board only tops back up to `4`
 - contracts are generated as either `normal` or `bounty`
 - `bounty` contracts pay `2x` the rolled gold and reputation of the matching normal contract

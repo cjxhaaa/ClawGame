@@ -3626,55 +3626,26 @@ func TestDungeonClaimGrantsItemAndClearsStagedRewards(t *testing.T) {
 func TestDungeonQuestProgressesOnEnter(t *testing.T) {
 	server := NewServer(config.API{Port: "8080"})
 
-	var loginResponse struct {
-		Data struct {
-			AccessToken string `json:"access_token"`
-		} `json:"data"`
-	}
-	var questsBefore struct {
-		Data struct {
-			Quests []struct {
-				QuestID      string `json:"quest_id"`
-				TemplateType string `json:"template_type"`
-				Difficulty   string `json:"difficulty"`
-				Status       string `json:"status"`
-			} `json:"quests"`
-		} `json:"data"`
-	}
+	accessToken, boardResponse := createCharacterWithBoard(t, server, "bot-dungeon-quest", "DungeonQuestor", func(quests []boardQuestView) bool {
+		for _, quest := range quests {
+			if quest.TemplateType == "clear_dungeon" || quest.TemplateType == "kill_dungeon_elite" {
+				return true
+			}
+		}
+		return false
+	})
 
 	var dungeonQuestID string
 	var dungeonQuestDifficulty string
-	var accessToken string
-	for attempt := 0; attempt < 8 && dungeonQuestID == ""; attempt++ {
-		botName := "bot-dungeon-quest-" + strconv.Itoa(attempt)
-		characterName := "DungeonQuestor" + strconv.Itoa(attempt)
-		doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
-			"bot_name": botName,
-			"password": "verysecure",
-		}), "", http.StatusOK, nil)
-		doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
-			"bot_name": botName,
-			"password": "verysecure",
-		}), "", http.StatusOK, &loginResponse)
-
-		doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
-			"name":         characterName,
-			"class":        "warrior",
-			"weapon_style": "sword_shield",
-		}, loginResponse.Data.AccessToken, http.StatusOK, nil)
-		doJSONRequest(t, server, http.MethodGet, "/api/v1/me/quests", nil, loginResponse.Data.AccessToken, http.StatusOK, &questsBefore)
-
-		for _, quest := range questsBefore.Data.Quests {
-			if quest.TemplateType == "clear_dungeon" || quest.TemplateType == "kill_dungeon_elite" {
-				dungeonQuestID = quest.QuestID
-				dungeonQuestDifficulty = quest.Difficulty
-				accessToken = loginResponse.Data.AccessToken
-				break
-			}
+	for _, quest := range boardResponse {
+		if quest.TemplateType == "clear_dungeon" || quest.TemplateType == "kill_dungeon_elite" {
+			dungeonQuestID = quest.QuestID
+			dungeonQuestDifficulty = quest.Difficulty
+			break
 		}
 	}
 	if dungeonQuestID == "" {
-		t.Fatal("expected at least one generated daily board to include a dungeon quest")
+		t.Fatal("expected generated quest board to include a dungeon quest")
 	}
 
 	if dungeonQuestDifficulty == "nightmare" {
@@ -4040,6 +4011,17 @@ func TestBuildingActionsApplyEconomyEffects(t *testing.T) {
 		"class":        "warrior",
 		"weapon_style": "sword_shield",
 	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+	account, err := server.authService.Authenticate(loginResponse.Data.AccessToken)
+	if err != nil {
+		t.Fatalf("failed to authenticate building test account: %v", err)
+	}
+	summary, ok := server.characterService.GetCharacterByAccount(account)
+	if !ok {
+		t.Fatal("expected building test character to exist")
+	}
+	if _, err := server.characterService.GrantGold(summary.CharacterID, 3000); err != nil {
+		t.Fatalf("failed to grant gold for building purchase test: %v", err)
+	}
 
 	var shopInventory struct {
 		Data struct {
@@ -4082,8 +4064,8 @@ func TestBuildingActionsApplyEconomyEffects(t *testing.T) {
 	if purchaseResponse.Data.Result.PriceGold != purchasePrice {
 		t.Fatalf("expected purchase price %d, got %d", purchasePrice, purchaseResponse.Data.Result.PriceGold)
 	}
-	if purchaseResponse.Data.State.Character.Gold != 100-purchasePrice {
-		t.Fatalf("expected gold %d after purchase, got %d", 100-purchasePrice, purchaseResponse.Data.State.Character.Gold)
+	if purchaseResponse.Data.State.Character.Gold != 3100-purchasePrice {
+		t.Fatalf("expected gold %d after purchase, got %d", 3100-purchasePrice, purchaseResponse.Data.State.Character.Gold)
 	}
 
 	var sellResponse struct {
@@ -4725,10 +4707,28 @@ func createQuestE2ECharacter(t *testing.T, server *Server, botName, characterNam
 	}), "", http.StatusOK, &loginResponse)
 
 	doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
-		"name":         characterName,
-		"class":        "mage",
-		"weapon_style": "staff",
+		"name": characterName,
 	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+
+	account, err := server.authService.Authenticate(loginResponse.Data.AccessToken)
+	if err != nil {
+		t.Fatalf("failed to authenticate quest e2e helper token: %v", err)
+	}
+	summary, ok := server.characterService.GetCharacterByAccount(account)
+	if !ok {
+		t.Fatal("expected helper character to exist")
+	}
+	if _, err := server.characterService.GrantSeasonXP(summary.CharacterID, 5000); err != nil {
+		t.Fatalf("failed to grant season xp for quest e2e helper: %v", err)
+	}
+	if _, err := server.characterService.GrantGold(summary.CharacterID, characters.ProfessionChangeGoldCost); err != nil {
+		t.Fatalf("failed to grant profession change gold for quest e2e helper: %v", err)
+	}
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/profession-route", map[string]any{
+		"route_id": "aoe_burst",
+	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+	server.questService.ResetDailyQuestBoard(summary.CharacterID)
 
 	return loginResponse.Data.AccessToken
 }

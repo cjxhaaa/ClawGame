@@ -142,6 +142,16 @@ type ShopItem struct {
 	EffectSummary  string         `json:"effect_summary,omitempty"`
 }
 
+type dailyEquipmentShopOffer struct {
+	CatalogID string
+	PriceGold int
+}
+
+type dailyEquipmentShopState struct {
+	BusinessDate string
+	Offers       []dailyEquipmentShopOffer
+}
+
 type ConsumableStack struct {
 	CatalogID     string `json:"catalog_id"`
 	Name          string `json:"name"`
@@ -184,6 +194,9 @@ type Service struct {
 	itemsByCharacter       map[string][]EquipmentItem
 	consumablesByCharacter map[string]map[string]int
 	slotEnhancementsByChar map[string]map[string]int
+	dailyEquipmentShopByCh map[string]dailyEquipmentShopState
+	clock                  func() time.Time
+	loc                    *time.Location
 }
 
 var itemCounter uint64
@@ -193,6 +206,9 @@ func NewService() *Service {
 		itemsByCharacter:       make(map[string][]EquipmentItem),
 		consumablesByCharacter: make(map[string]map[string]int),
 		slotEnhancementsByChar: make(map[string]map[string]int),
+		dailyEquipmentShopByCh: make(map[string]dailyEquipmentShopState),
+		clock:                  time.Now,
+		loc:                    time.Local,
 	}
 }
 
@@ -202,7 +218,7 @@ func (s *Service) GetInventory(character characters.Summary) InventoryView {
 
 	items := s.ensureCharacterItemsLocked(character)
 	consumables := s.ensureConsumablesForCharacterLocked(character)
-	return buildView(character, items, consumables, s.ensureSlotEnhancementsLocked(character.CharacterID))
+	return s.buildViewLocked(character, items, consumables, s.ensureSlotEnhancementsLocked(character.CharacterID))
 }
 
 func (s *Service) EquipItem(character characters.Summary, itemID string) (InventoryView, error) {
@@ -231,7 +247,7 @@ func (s *Service) EquipItem(character characters.Summary, itemID string) (Invent
 
 	items[index].State = "equipped"
 	s.itemsByCharacter[character.CharacterID] = items
-	return buildView(character, items, s.ensureConsumablesForCharacterLocked(character), s.ensureSlotEnhancementsLocked(character.CharacterID)), nil
+	return s.buildViewLocked(character, items, s.ensureConsumablesForCharacterLocked(character), s.ensureSlotEnhancementsLocked(character.CharacterID)), nil
 }
 
 func (s *Service) UnequipItem(character characters.Summary, slot string) (InventoryView, error) {
@@ -243,7 +259,7 @@ func (s *Service) UnequipItem(character characters.Summary, slot string) (Invent
 		if items[i].State == "equipped" && items[i].Slot == slot {
 			items[i].State = "inventory"
 			s.itemsByCharacter[character.CharacterID] = items
-			return buildView(character, items, s.ensureConsumablesForCharacterLocked(character), s.ensureSlotEnhancementsLocked(character.CharacterID)), nil
+			return s.buildViewLocked(character, items, s.ensureConsumablesForCharacterLocked(character), s.ensureSlotEnhancementsLocked(character.CharacterID)), nil
 		}
 	}
 
@@ -291,30 +307,18 @@ func (s *Service) ComputeEquipmentScore(character characters.Summary) int {
 }
 
 func (s *Service) ListShopInventory(buildingType string, character characters.Summary) []ShopItem {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	items := make([]ShopItem, 0)
-	for _, entry := range shopCatalog {
-		if len(entry.BuildingTypes) > 0 && !containsString(entry.BuildingTypes, buildingType) {
-			continue
+	if buildingType == "equipment_shop" {
+		for _, offer := range s.ensureDailyEquipmentShopLocked(character) {
+			template, ok := dungeonRewardCatalog[offer.CatalogID]
+			if !ok {
+				continue
+			}
+			items = append(items, buildShopItemFromCatalog(template, offer.PriceGold))
 		}
-
-		if strings.TrimSpace(entry.Item.RequiredClass) != "" && entry.Item.RequiredClass != character.Class {
-			continue
-		}
-		if strings.TrimSpace(entry.Item.RequiredWeaponStyle) != "" && entry.Item.RequiredWeaponStyle != character.WeaponStyle {
-			continue
-		}
-
-		items = append(items, ShopItem{
-			CatalogID:      entry.Item.CatalogID,
-			Name:           entry.Item.Name,
-			ItemType:       "equipment",
-			Slot:           entry.Item.Slot,
-			Rarity:         entry.Item.Rarity,
-			PriceGold:      entry.Item.PriceGold,
-			RequiredClass:  entry.Item.RequiredClass,
-			RequiredWeapon: entry.Item.RequiredWeaponStyle,
-			Stats:          copyStats(entry.Item.Stats),
-		})
 	}
 
 	for _, entry := range consumableShopCatalog {
@@ -344,7 +348,7 @@ func (s *Service) ListShopInventory(buildingType string, character characters.Su
 }
 
 func (s *Service) PurchaseShopItem(character characters.Summary, catalogID string) (InventoryView, *EquipmentItem, *ConsumableStack, int, error) {
-	if _, ok := shopCatalogByID[strings.TrimSpace(catalogID)]; ok {
+	if _, ok := consumableShopCatalogByID[strings.TrimSpace(catalogID)]; !ok {
 		view, purchased, price, err := s.PurchaseItem(character, catalogID)
 		if err != nil {
 			return InventoryView{}, nil, nil, 0, err
@@ -365,40 +369,47 @@ func (s *Service) PurchaseShopItem(character characters.Summary, catalogID strin
 	consumables[entry.CatalogID]++
 	s.consumablesByCharacter[character.CharacterID] = consumables
 
-	view := buildView(character, items, consumables, s.ensureSlotEnhancementsLocked(character.CharacterID))
+	view := s.buildViewLocked(character, items, consumables, s.ensureSlotEnhancementsLocked(character.CharacterID))
 	stack := buildConsumableStack(entry, consumables[entry.CatalogID])
 	return view, nil, &stack, entry.PriceGold, nil
 }
 
 func (s *Service) PurchaseItem(character characters.Summary, catalogID string) (InventoryView, EquipmentItem, int, error) {
-	entry, ok := shopCatalogByID[strings.TrimSpace(catalogID)]
-	if !ok {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	offers := s.ensureDailyEquipmentShopLocked(character)
+	selectedIndex := -1
+	var selected dailyEquipmentShopOffer
+	for index, offer := range offers {
+		if strings.TrimSpace(offer.CatalogID) == strings.TrimSpace(catalogID) {
+			selectedIndex = index
+			selected = offer
+			break
+		}
+	}
+	if selectedIndex < 0 {
 		return InventoryView{}, EquipmentItem{}, 0, ErrCatalogNotFound
 	}
 
-	template := entry
+	template, ok := dungeonRewardCatalog[selected.CatalogID]
+	if !ok {
+		return InventoryView{}, EquipmentItem{}, 0, ErrCatalogNotFound
+	}
 	if !itemCompatible(character, EquipmentItem{RequiredClass: template.RequiredClass, RequiredWeaponStyle: template.RequiredWeaponStyle}) {
 		return InventoryView{}, EquipmentItem{}, 0, ErrItemNotEquippable
 	}
 
-	purchased := buildEquipmentItemFromCatalog(catalogItem{
-		CatalogID:           template.CatalogID,
-		Name:                template.Name,
-		Slot:                template.Slot,
-		Rarity:              template.Rarity,
-		RequiredClass:       template.RequiredClass,
-		RequiredWeaponStyle: template.RequiredWeaponStyle,
-		Stats:               copyStats(template.Stats),
-	}, "inventory")
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	purchased := buildEquipmentItemFromCatalog(template, "inventory")
 
 	items := s.ensureCharacterItemsLocked(character)
 	items = append(items, purchased)
 	s.itemsByCharacter[character.CharacterID] = items
 
-	return buildView(character, items, s.ensureConsumablesForCharacterLocked(character), s.ensureSlotEnhancementsLocked(character.CharacterID)), purchased, template.PriceGold, nil
+	offers = append(offers[:selectedIndex], offers[selectedIndex+1:]...)
+	s.dailyEquipmentShopByCh[character.CharacterID] = dailyEquipmentShopState{BusinessDate: s.businessDateLocked(), Offers: offers}
+
+	return s.buildViewLocked(character, items, s.ensureConsumablesForCharacterLocked(character), s.ensureSlotEnhancementsLocked(character.CharacterID)), purchased, selected.PriceGold, nil
 }
 
 func (s *Service) GrantItemFromCatalog(character characters.Summary, catalogID string) (InventoryView, EquipmentItem, error) {
@@ -416,7 +427,7 @@ func (s *Service) GrantItemFromCatalog(character characters.Summary, catalogID s
 	items = append(items, reward)
 	s.itemsByCharacter[character.CharacterID] = items
 
-	return buildView(character, items, s.ensureConsumablesForCharacterLocked(character), s.ensureSlotEnhancementsLocked(character.CharacterID)), reward, nil
+	return s.buildViewLocked(character, items, s.ensureConsumablesForCharacterLocked(character), s.ensureSlotEnhancementsLocked(character.CharacterID)), reward, nil
 }
 
 func (s *Service) SellItem(character characters.Summary, itemID string) (InventoryView, EquipmentItem, int, error) {
@@ -438,7 +449,7 @@ func (s *Service) SellItem(character characters.Summary, itemID string) (Invento
 	items = append(items[:index], items[index+1:]...)
 	s.itemsByCharacter[character.CharacterID] = items
 
-	return buildView(character, items, s.ensureConsumablesForCharacterLocked(character), s.ensureSlotEnhancementsLocked(character.CharacterID)), target, price, nil
+	return s.buildViewLocked(character, items, s.ensureConsumablesForCharacterLocked(character), s.ensureSlotEnhancementsLocked(character.CharacterID)), target, price, nil
 }
 
 func (s *Service) SalvageItem(character characters.Summary, itemID string) (InventoryView, EquipmentItem, []map[string]any, error) {
@@ -461,7 +472,7 @@ func (s *Service) SalvageItem(character characters.Summary, itemID string) (Inve
 		"material_key": EnhancementMaterialKey,
 		"quantity":     salvageYieldFor(target),
 	}}
-	return buildView(character, items, s.ensureConsumablesForCharacterLocked(character), s.ensureSlotEnhancementsLocked(character.CharacterID)), target, drops, nil
+	return s.buildViewLocked(character, items, s.ensureConsumablesForCharacterLocked(character), s.ensureSlotEnhancementsLocked(character.CharacterID)), target, drops, nil
 }
 
 func (s *Service) GetEnhancementQuote(character characters.Summary, itemID, slot string) (EquipmentItem, EnhancementQuote, error) {
@@ -516,7 +527,7 @@ func (s *Service) EnhanceItem(character characters.Summary, itemID, slot string)
 	s.slotEnhancementsByChar[character.CharacterID] = slotEnhancements
 
 	enhanced := applySlotEnhancement(item, slotEnhancements[targetSlot])
-	return buildView(character, items, s.ensureConsumablesForCharacterLocked(character), slotEnhancements), enhanced, nil
+	return s.buildViewLocked(character, items, s.ensureConsumablesForCharacterLocked(character), slotEnhancements), enhanced, nil
 }
 
 func (s *Service) ReforgeItem(character characters.Summary, itemID string) (InventoryView, EquipmentItem, error) {
@@ -544,7 +555,7 @@ func (s *Service) ReforgeItem(character characters.Summary, itemID string) (Inve
 		CreatedAt:        time.Now().Format(time.RFC3339),
 	}
 	s.itemsByCharacter[character.CharacterID] = items
-	view := buildView(character, items, s.ensureConsumablesForCharacterLocked(character), s.ensureSlotEnhancementsLocked(character.CharacterID))
+	view := s.buildViewLocked(character, items, s.ensureConsumablesForCharacterLocked(character), s.ensureSlotEnhancementsLocked(character.CharacterID))
 	reforged := findItemByID(view.Equipped, view.Inventory, item.ItemID)
 	return view, reforged, nil
 }
@@ -596,7 +607,7 @@ func (s *Service) SaveReforge(character characters.Summary, itemID string) (Inve
 	items[index].PendingReforge = nil
 	items[index] = recomputeItemStats(items[index])
 	s.itemsByCharacter[character.CharacterID] = items
-	view := buildView(character, items, s.ensureConsumablesForCharacterLocked(character), s.ensureSlotEnhancementsLocked(character.CharacterID))
+	view := s.buildViewLocked(character, items, s.ensureConsumablesForCharacterLocked(character), s.ensureSlotEnhancementsLocked(character.CharacterID))
 	reforged := findItemByID(view.Equipped, view.Inventory, itemID)
 	return view, reforged, nil
 }
@@ -616,7 +627,7 @@ func (s *Service) DiscardReforge(character characters.Summary, itemID string) (I
 
 	items[index].PendingReforge = nil
 	s.itemsByCharacter[character.CharacterID] = items
-	view := buildView(character, items, s.ensureConsumablesForCharacterLocked(character), s.ensureSlotEnhancementsLocked(character.CharacterID))
+	view := s.buildViewLocked(character, items, s.ensureConsumablesForCharacterLocked(character), s.ensureSlotEnhancementsLocked(character.CharacterID))
 	reforged := findItemByID(view.Equipped, view.Inventory, itemID)
 	return view, reforged, nil
 }
@@ -1015,7 +1026,7 @@ func ProfessionStarterCatalogID(routeID string) string {
 	}
 }
 
-func buildView(character characters.Summary, items []EquipmentItem, consumables map[string]int, slotEnhancements map[string]int) InventoryView {
+func (s *Service) buildViewLocked(character characters.Summary, items []EquipmentItem, consumables map[string]int, slotEnhancements map[string]int) InventoryView {
 	equipped := make([]EquipmentItem, 0)
 	bag := make([]EquipmentItem, 0)
 	for _, item := range items {
@@ -1048,7 +1059,7 @@ func buildView(character characters.Summary, items []EquipmentItem, consumables 
 		EquippedSetBonuses:   setBonuses,
 		Consumables:          buildConsumableStacks(consumables),
 		SlotEnhancements:     buildSlotEnhancementViews(slotEnhancements),
-		UpgradeHints:         buildUpgradeHints(character, equipped, bag),
+		UpgradeHints:         s.buildUpgradeHintsLocked(character, equipped, bag),
 		PotionLoadoutOptions: buildPotionLoadoutOptions(character, consumables),
 	}
 }
@@ -1068,7 +1079,7 @@ func buildSlotEnhancementViews(slotEnhancements map[string]int) []characters.Slo
 	return items
 }
 
-func buildUpgradeHints(character characters.Summary, equipped []EquipmentItem, bag []EquipmentItem) []UpgradeHint {
+func (s *Service) buildUpgradeHintsLocked(character characters.Summary, equipped []EquipmentItem, bag []EquipmentItem) []UpgradeHint {
 	equippedBySlot := make(map[string]EquipmentItem, len(equipped))
 	for _, item := range equipped {
 		equippedBySlot[item.Slot] = item
@@ -1087,20 +1098,11 @@ func buildUpgradeHints(character characters.Summary, equipped []EquipmentItem, b
 		if delta <= 0 {
 			continue
 		}
-		hints = append(hints, UpgradeHint{
-			Source:            "inventory",
-			ItemID:            candidate.ItemID,
-			CatalogID:         candidate.CatalogID,
-			Name:              candidate.Name,
-			Slot:              slot,
-			ScoreDelta:        delta,
-			Affordable:        true,
-			DirectlyEquipable: itemCompatible(character, candidate),
-		})
+		hints = append(hints, UpgradeHint{Source: "inventory", ItemID: candidate.ItemID, CatalogID: candidate.CatalogID, Name: candidate.Name, Slot: slot, ScoreDelta: delta, Affordable: true, DirectlyEquipable: itemCompatible(character, candidate)})
 	}
 
 	bestShopBySlot := make(map[string]ShopItem)
-	for _, item := range buildEquipmentShopItems(character) {
+	for _, item := range s.buildEquipmentShopItemsLocked(character) {
 		current, ok := bestShopBySlot[item.Slot]
 		if !ok || shopItemScore(item) > shopItemScore(current) {
 			bestShopBySlot[item.Slot] = item
@@ -1111,16 +1113,7 @@ func buildUpgradeHints(character characters.Summary, equipped []EquipmentItem, b
 		if delta <= 0 {
 			continue
 		}
-		hints = append(hints, UpgradeHint{
-			Source:            "shop",
-			CatalogID:         candidate.CatalogID,
-			Name:              candidate.Name,
-			Slot:              slot,
-			ScoreDelta:        delta,
-			PriceGold:         candidate.PriceGold,
-			Affordable:        character.Gold >= candidate.PriceGold,
-			DirectlyEquipable: true,
-		})
+		hints = append(hints, UpgradeHint{Source: "shop", CatalogID: candidate.CatalogID, Name: candidate.Name, Slot: slot, ScoreDelta: delta, PriceGold: candidate.PriceGold, Affordable: character.Gold >= candidate.PriceGold, DirectlyEquipable: true})
 	}
 
 	sort.Slice(hints, func(i, j int) bool {
@@ -1139,6 +1132,173 @@ func buildUpgradeHints(character characters.Summary, equipped []EquipmentItem, b
 		hints = hints[:8]
 	}
 	return hints
+}
+
+func buildShopItemFromCatalog(item catalogItem, priceGold int) ShopItem {
+	return ShopItem{CatalogID: item.CatalogID, Name: item.Name, ItemType: "equipment", Slot: item.Slot, Rarity: item.Rarity, PriceGold: priceGold, RequiredClass: item.RequiredClass, RequiredWeapon: item.RequiredWeaponStyle, Stats: copyStats(item.Stats)}
+}
+
+type dailyShopPlan struct {
+	allowedRarities []string
+	preferWeapon    bool
+	excludeWeapon   bool
+}
+
+type rarityWeight struct {
+	rarity string
+	weight int
+}
+
+func (s *Service) ensureDailyEquipmentShopLocked(character characters.Summary) []dailyEquipmentShopOffer {
+	businessDate := s.businessDateLocked()
+	if state, ok := s.dailyEquipmentShopByCh[character.CharacterID]; ok && state.BusinessDate == businessDate {
+		return append([]dailyEquipmentShopOffer(nil), state.Offers...)
+	}
+	offers := generateDailyEquipmentShopOffers(character, businessDate)
+	s.dailyEquipmentShopByCh[character.CharacterID] = dailyEquipmentShopState{BusinessDate: businessDate, Offers: offers}
+	return append([]dailyEquipmentShopOffer(nil), offers...)
+}
+
+func (s *Service) businessDateLocked() string {
+	now := s.clock().In(s.loc)
+	resetToday := time.Date(now.Year(), now.Month(), now.Day(), 4, 0, 0, 0, now.Location())
+	if now.Before(resetToday) {
+		now = now.Add(-24 * time.Hour)
+	}
+	return now.Format("2006-01-02")
+}
+
+func generateDailyEquipmentShopOffers(character characters.Summary, businessDate string) []dailyEquipmentShopOffer {
+	plans := []dailyShopPlan{
+		{allowedRarities: weightedRarityRoll(character.CharacterID, businessDate, 0, []rarityWeight{{"blue", 82}, {"purple", 18}}), excludeWeapon: true},
+		{allowedRarities: weightedRarityRoll(character.CharacterID, businessDate, 1, []rarityWeight{{"blue", 72}, {"purple", 24}, {"gold", 4}}), excludeWeapon: true},
+		{allowedRarities: weightedRarityRoll(character.CharacterID, businessDate, 2, []rarityWeight{{"blue", 68}, {"purple", 24}, {"gold", 8}}), preferWeapon: true},
+		{allowedRarities: weightedRarityRoll(character.CharacterID, businessDate, 3, []rarityWeight{{"blue", 58}, {"purple", 28}, {"gold", 11}, {"red", 3}})},
+		{allowedRarities: weightedRarityRoll(character.CharacterID, businessDate, 4, []rarityWeight{{"blue", 48}, {"purple", 30}, {"gold", 16}, {"red", 5}, {"prismatic", 1}})},
+		{allowedRarities: weightedRarityRoll(character.CharacterID, businessDate, 5, []rarityWeight{{"blue", 40}, {"purple", 30}, {"gold", 20}, {"red", 8}, {"prismatic", 2}})},
+	}
+	used := map[string]bool{}
+	offers := make([]dailyEquipmentShopOffer, 0, len(plans))
+	for index, plan := range plans {
+		item, ok := pickDailyEquipmentOffer(character, businessDate, index, plan, used)
+		if !ok {
+			continue
+		}
+		used[item.CatalogID] = true
+		offers = append(offers, dailyEquipmentShopOffer{CatalogID: item.CatalogID, PriceGold: dailyEquipmentShopPrice(item, character.CharacterID, businessDate, index)})
+	}
+	return offers
+}
+
+func weightedRarityRoll(characterID, businessDate string, offset int, weights []rarityWeight) []string {
+	if len(weights) == 0 {
+		return []string{"blue", "purple", "gold", "red", "prismatic"}
+	}
+	total := 0
+	for _, weight := range weights {
+		total += maxInt(0, weight.weight)
+	}
+	if total <= 0 {
+		return []string{"blue", "purple", "gold", "red", "prismatic"}
+	}
+	roll := int(deterministicFloat(characterID, businessDate, offset) * float64(total))
+	selected := weights[len(weights)-1].rarity
+	cursor := 0
+	for _, weight := range weights {
+		cursor += maxInt(0, weight.weight)
+		if roll < cursor {
+			selected = weight.rarity
+			break
+		}
+	}
+	return rarityFallbackOrder(selected)
+}
+
+func rarityFallbackOrder(selected string) []string {
+	switch strings.ToLower(strings.TrimSpace(selected)) {
+	case "prismatic":
+		return []string{"prismatic", "red", "gold", "purple", "blue"}
+	case "red":
+		return []string{"red", "gold", "purple", "blue", "prismatic"}
+	case "gold":
+		return []string{"gold", "purple", "blue", "red", "prismatic"}
+	case "purple":
+		return []string{"purple", "blue", "gold", "red", "prismatic"}
+	default:
+		return []string{"blue", "purple", "gold", "red", "prismatic"}
+	}
+}
+
+func pickDailyEquipmentOffer(character characters.Summary, businessDate string, offset int, plan dailyShopPlan, used map[string]bool) (catalogItem, bool) {
+	for _, rarity := range plan.allowedRarities {
+		if item, ok := pickDailyEquipmentOfferByFilter(character, businessDate, offset, rarity, plan, used); ok {
+			return item, true
+		}
+	}
+	for _, rarity := range []string{"blue", "purple", "gold", "red", "prismatic"} {
+		if item, ok := pickDailyEquipmentOfferByFilter(character, businessDate, offset+17, rarity, dailyShopPlan{}, used); ok {
+			return item, true
+		}
+	}
+	return catalogItem{}, false
+}
+
+func pickDailyEquipmentOfferByFilter(character characters.Summary, businessDate string, offset int, rarity string, plan dailyShopPlan, used map[string]bool) (catalogItem, bool) {
+	candidates := make([]catalogItem, 0)
+	for _, item := range dungeonRewardCatalog {
+		if used[item.CatalogID] || !strings.EqualFold(item.Rarity, rarity) {
+			continue
+		}
+		if plan.preferWeapon && item.Slot != "weapon" {
+			continue
+		}
+		if plan.excludeWeapon && item.Slot == "weapon" {
+			continue
+		}
+		if !itemCompatible(character, EquipmentItem{RequiredClass: item.RequiredClass, RequiredWeaponStyle: item.RequiredWeaponStyle}) {
+			continue
+		}
+		candidates = append(candidates, item)
+	}
+	if len(candidates) == 0 {
+		return catalogItem{}, false
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		left := deterministicFloat(candidates[i].CatalogID, character.CharacterID+"|"+businessDate, offset)
+		right := deterministicFloat(candidates[j].CatalogID, character.CharacterID+"|"+businessDate, offset)
+		if left == right {
+			return candidates[i].CatalogID < candidates[j].CatalogID
+		}
+		return left < right
+	})
+	return candidates[0], true
+}
+
+func dailyEquipmentShopPrice(item catalogItem, characterID, businessDate string, offset int) int {
+	baseByRarity := map[string]int{"blue": 260, "purple": 460, "gold": 820, "red": 1280, "prismatic": 1980}
+	base := baseByRarity[strings.ToLower(strings.TrimSpace(item.Rarity))]
+	if base <= 0 {
+		base = 260
+	}
+	slotMultiplier := 1.0
+	switch item.Slot {
+	case "weapon":
+		slotMultiplier = 1.18
+	case "chest", "necklace":
+		slotMultiplier = 1.10
+	case "ring":
+		slotMultiplier = 1.05
+	}
+	statPremium := 0
+	for _, value := range item.Stats {
+		statPremium += value
+	}
+	variance := 0.92 + deterministicFloat(item.CatalogID, characterID+"|"+businessDate, offset+53)*0.16
+	price := int(math.Round((float64(base+statPremium/10)*slotMultiplier*variance)/5.0)) * 5
+	if price < 100 {
+		return 100
+	}
+	return price
 }
 
 func buildPotionLoadoutOptions(character characters.Summary, consumables map[string]int) []PotionLoadoutOption {
@@ -1276,29 +1436,14 @@ func shopItemScore(item ShopItem) int {
 	return score
 }
 
-func buildEquipmentShopItems(character characters.Summary) []ShopItem {
-	items := make([]ShopItem, 0, len(shopCatalog))
-	for _, entry := range shopCatalog {
-		if len(entry.BuildingTypes) > 0 && !containsString(entry.BuildingTypes, "equipment_shop") {
+func (s *Service) buildEquipmentShopItemsLocked(character characters.Summary) []ShopItem {
+	items := make([]ShopItem, 0)
+	for _, offer := range s.ensureDailyEquipmentShopLocked(character) {
+		template, ok := dungeonRewardCatalog[offer.CatalogID]
+		if !ok {
 			continue
 		}
-		if !itemCompatible(character, EquipmentItem{
-			RequiredClass:       entry.Item.RequiredClass,
-			RequiredWeaponStyle: entry.Item.RequiredWeaponStyle,
-		}) {
-			continue
-		}
-		items = append(items, ShopItem{
-			CatalogID:      entry.Item.CatalogID,
-			Name:           entry.Item.Name,
-			ItemType:       "equipment",
-			Slot:           entry.Item.Slot,
-			Rarity:         entry.Item.Rarity,
-			PriceGold:      entry.Item.PriceGold,
-			RequiredClass:  entry.Item.RequiredClass,
-			RequiredWeapon: entry.Item.RequiredWeaponStyle,
-			Stats:          copyStats(entry.Item.Stats),
-		})
+		items = append(items, buildShopItemFromCatalog(template, offer.PriceGold))
 	}
 	return items
 }
