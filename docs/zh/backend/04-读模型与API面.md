@@ -1258,7 +1258,7 @@ Token 经济规则：
 契约：
 
 - `compact` 返回结果摘要、对手摘要、阶段、轮次与战斗结果标签
-- `standard` 额外返回结构化战报段落，如开局状态、伤害摘要、关键回合和最终血量快照
+- `standard` 额外返回结构化战报段落，如开局状态、伤害摘要、关键回合、最终血量快照，以及 `end_reason`、`adjudication` 这类明确说明竞技场回合上限裁定方式的字段
 - `verbose` 才额外返回完整 `battle_log`
 
 #### `POST /api/v1/arena/bets`

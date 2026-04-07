@@ -7,8 +7,12 @@ import (
 )
 
 const (
-	maxTurnsDefault    = 24
-	RunPotionCapPerRun = 3
+	maxTurnsDefault              = 24
+	dungeonBattleMaxTurnsDefault = 10
+	RunPotionCapPerRun           = 3
+
+	periodicTriggerOwnerTurnStart = "owner_turn_start"
+	periodicTriggerRoundEnd       = "round_end"
 )
 
 // Combatant represents one fighter in a battle.
@@ -37,42 +41,44 @@ type Combatant struct {
 	MagicMastery    float64
 
 	// Runtime state. CurrentHP must be set by caller; others start at zero.
-	CurrentHP      int
-	ShieldHP       int
-	BurstCD        int
-	HealCD         int
-	EquippedSkills []SkillAction
-	SkillCooldowns map[string]int
-	ActiveBuffs    []StatusBuff
-	PotionBag      []PotionItem
-	SummonSkillID  string
-	SummonTurns    int
-	SummonStrike   float64
-	SummonMend     float64
-	BasicSkillID   string
+	CurrentHP       int
+	ShieldHP        int
+	BurstCD         int
+	HealCD          int
+	EquippedSkills  []SkillAction
+	SkillCooldowns  map[string]int
+	ActiveBuffs     []StatusBuff
+	PotionBag       []PotionItem
+	SummonSkillID   string
+	SummonTurns     int
+	SummonStrike    float64
+	SummonMend      float64
+	SummonTickPhase string
+	BasicSkillID    string
 }
 
 type SkillAction struct {
-	SkillID        string
-	ActionKind     string
-	DamageType     string
-	Tier           string
-	CooldownRounds int
-	PowerScale     float64
-	HealScale      float64
-	TargetPattern  string
-	BuffFamily     string
-	BuffValue      float64
-	DebuffFamily   string
-	DebuffValue    float64
-	ShieldScale    float64
-	RegenScale     float64
-	SilenceRounds  int
-	SummonTurns    int
-	SummonStrike   float64
-	SummonMend     float64
-	Level          int
-	HalfHPOnly     bool
+	SkillID         string
+	ActionKind      string
+	DamageType      string
+	Tier            string
+	CooldownRounds  int
+	PowerScale      float64
+	HealScale       float64
+	TargetPattern   string
+	BuffFamily      string
+	BuffValue       float64
+	DebuffFamily    string
+	DebuffValue     float64
+	ShieldScale     float64
+	RegenScale      float64
+	SilenceRounds   int
+	SummonTurns     int
+	SummonStrike    float64
+	SummonMend      float64
+	Level           int
+	HalfHPOnly      bool
+	PeriodicTrigger string
 }
 
 // StatusBuff is a temporary combat buff (applied by a potion).
@@ -81,6 +87,7 @@ type StatusBuff struct {
 	PotionID  string
 	Value     float64 // multiplicative bonus, e.g. 0.16 = +16 %
 	Remaining int     // rounds until expiry, decremented at round end
+	TickPhase string  // "" for non-periodic statuses; otherwise owner_turn_start or round_end
 }
 
 // PotionItem is one potion type with a remaining quantity.
@@ -188,6 +195,41 @@ func BaselineCombatant(class string) Combatant {
 	}
 }
 
+func resolveMaxTurns(battleType string, configured int) int {
+	if configured > 0 {
+		return configured
+	}
+	switch battleType {
+	case "dungeon_wave":
+		return dungeonBattleMaxTurnsDefault
+	case "arena_duel":
+		return dungeonBattleMaxTurnsDefault
+	default:
+		return maxTurnsDefault
+	}
+}
+
+func normalizedPeriodicTrigger(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case periodicTriggerOwnerTurnStart:
+		return periodicTriggerOwnerTurnStart
+	case periodicTriggerRoundEnd:
+		return periodicTriggerRoundEnd
+	default:
+		return ""
+	}
+}
+
+func resolveSkillPeriodicTrigger(skill SkillAction) string {
+	if trigger := normalizedPeriodicTrigger(skill.PeriodicTrigger); trigger != "" {
+		return trigger
+	}
+	if skill.ActionKind == "summon" || skill.RegenScale > 0 {
+		return periodicTriggerRoundEnd
+	}
+	return ""
+}
+
 // SimulateBattle runs a complete auto-resolved battle and returns the result.
 func SimulateBattle(cfg BattleConfig) BattleResult {
 	a := cfg.SideA
@@ -200,10 +242,7 @@ func SimulateBattle(cfg BattleConfig) BattleResult {
 		b.CurrentHP = b.MaxHP
 	}
 
-	maxTurns := cfg.MaxTurns
-	if maxTurns <= 0 {
-		maxTurns = maxTurnsDefault
-	}
+	maxTurns := resolveMaxTurns(cfg.BattleType, cfg.MaxTurns)
 
 	potionConsumedA := 0
 	potionConsumedB := 0
@@ -274,6 +313,8 @@ func SimulateBattle(cfg BattleConfig) BattleResult {
 		if a.CurrentHP <= 0 || b.CurrentHP <= 0 {
 			break
 		}
+
+		log = applyRoundEndEffectsInOrder(&a, &b, cfg, turn, aFirst, log)
 
 		// Tick status buff durations, decrement cooldowns.
 		tickStatusBuffs(&a)
@@ -357,10 +398,7 @@ func SimulateSkirmish(cfg SkirmishConfig) SkirmishResult {
 		}
 	}
 
-	maxTurns := cfg.MaxTurns
-	if maxTurns <= 0 {
-		maxTurns = maxTurnsDefault
-	}
+	maxTurns := resolveMaxTurns(cfg.BattleType, cfg.MaxTurns)
 
 	potionsConsumed := 0
 	log := []map[string]any{
@@ -422,6 +460,19 @@ func SimulateSkirmish(cfg SkirmishConfig) SkirmishResult {
 			break
 		}
 
+		log = applyRoundEndEffectsMulti(&player, enemies, cfg, turn, log)
+		if player.CurrentHP > 0 && countAlive(enemies) > 0 {
+			for _, enemyIndex := range enemyInitiativeOrder(enemies) {
+				if player.CurrentHP <= 0 {
+					break
+				}
+				if !isAlive(enemies[enemyIndex]) {
+					continue
+				}
+				log = applyRoundEndEffects(&enemies[enemyIndex], &player, BattleConfig{BattleType: cfg.BattleType, RunID: cfg.RunID, RoomIndex: cfg.RoomIndex}, turn, log)
+			}
+		}
+
 		tickStatusBuffs(&player)
 		tickSummon(&player)
 		tickSkillCooldowns(&player)
@@ -456,11 +507,15 @@ func SimulateSkirmish(cfg SkirmishConfig) SkirmishResult {
 		PotionsConsumed:  potionsConsumed,
 		Log:              log,
 	}
+	roomResult := "failed"
+	if player.CurrentHP > 0 && countAlive(enemies) > 0 {
+		roomResult = "timeout"
+	}
 	log = append(log, map[string]any{
 		"step":        "room_end",
 		"event_type":  "room_end",
 		"room_index":  cfg.RoomIndex,
-		"result":      map[bool]string{true: "cleared", false: "failed"}[result.PlayerWon],
+		"result":      map[bool]string{true: "cleared", false: roomResult}[result.PlayerWon],
 		"player_hp":   result.PlayerFinalHP,
 		"enemy_count": result.EnemiesRemaining,
 		"message":     "multi-unit battle finished",
@@ -487,10 +542,7 @@ func SimulateRaidBoss(cfg RaidBossConfig) RaidBossResult {
 		boss.SkillCooldowns = map[string]int{}
 	}
 
-	maxTurns := cfg.MaxTurns
-	if maxTurns <= 0 {
-		maxTurns = maxTurnsDefault
-	}
+	maxTurns := resolveMaxTurns(cfg.BattleType, cfg.MaxTurns)
 
 	potionsConsumed := make(map[string]int, len(players))
 	damageByPlayer := make(map[string]int, len(players))
@@ -550,6 +602,22 @@ func SimulateRaidBoss(cfg RaidBossConfig) RaidBossResult {
 
 		if boss.CurrentHP <= 0 || alivePlayers(players) == 0 {
 			break
+		}
+
+		for _, index := range raidPlayerOrder(players) {
+			if boss.CurrentHP <= 0 {
+				break
+			}
+			if !isAlive(players[index]) {
+				continue
+			}
+			log = applyRoundEndEffects(&players[index], &boss, BattleConfig{BattleType: cfg.BattleType, RunID: cfg.RunID, RoomIndex: 1, IsBossRoom: true}, turn, log)
+		}
+		if boss.CurrentHP > 0 && alivePlayers(players) > 0 {
+			primaryIndex := chooseRaidPrimaryTarget(players)
+			if primaryIndex >= 0 {
+				log = applyRoundEndEffects(&boss, &players[primaryIndex], BattleConfig{BattleType: cfg.BattleType, RunID: cfg.RunID, RoomIndex: 1, IsBossRoom: true}, turn, log)
+			}
 		}
 
 		tickStatusBuffs(&boss)
@@ -718,8 +786,16 @@ func prioritizedEnemyIndexes(enemies []Combatant) []int {
 }
 
 func applyStartTurnEffectsMulti(actor *Combatant, enemies []Combatant, cfg SkirmishConfig, turn int, log []map[string]any) []map[string]any {
+	return applyPeriodicEffectsMulti(actor, enemies, cfg, turn, periodicTriggerOwnerTurnStart, log)
+}
+
+func applyRoundEndEffectsMulti(actor *Combatant, enemies []Combatant, cfg SkirmishConfig, turn int, log []map[string]any) []map[string]any {
+	return applyPeriodicEffectsMulti(actor, enemies, cfg, turn, periodicTriggerRoundEnd, log)
+}
+
+func applyPeriodicEffectsMulti(actor *Combatant, enemies []Combatant, cfg SkirmishConfig, turn int, triggerPhase string, log []map[string]any) []map[string]any {
 	for _, buf := range actor.ActiveBuffs {
-		if buf.Family != "regen" {
+		if buf.Family != "regen" || normalizedPeriodicTrigger(buf.TickPhase) != triggerPhase {
 			continue
 		}
 		before := actor.CurrentHP
@@ -744,7 +820,7 @@ func applyStartTurnEffectsMulti(actor *Combatant, enemies []Combatant, cfg Skirm
 		})
 	}
 
-	if actor.SummonTurns <= 0 {
+	if actor.SummonTurns <= 0 || normalizedPeriodicTrigger(actor.SummonTickPhase) != triggerPhase {
 		return log
 	}
 
@@ -829,6 +905,15 @@ func executePlayerSkirmishTurn(actor *Combatant, enemies []Combatant, cfg Skirmi
 			heal := computeSkillHeal(*actor, skill)
 			before := actor.CurrentHP
 			actor.CurrentHP = imin(actor.MaxHP, actor.CurrentHP+heal)
+			if skill.RegenScale > 0 {
+				actor.ActiveBuffs = append(actor.ActiveBuffs, StatusBuff{
+					Family:    "regen",
+					PotionID:  skill.SkillID,
+					Value:     skill.RegenScale,
+					Remaining: skillEffectDuration(skill),
+					TickPhase: resolveSkillPeriodicTrigger(skill),
+				})
+			}
 			actor.SkillCooldowns[skill.SkillID] = skill.CooldownRounds
 			return append(log, map[string]any{
 				"step":                  "action",
@@ -895,10 +980,8 @@ func executePlayerSkirmishTurn(actor *Combatant, enemies []Combatant, cfg Skirmi
 
 func executeUtilitySkillMulti(actor *Combatant, enemies []Combatant, cfg SkirmishConfig, turn int, log []map[string]any, cdBefore map[string]int, skill SkillAction) []map[string]any {
 	actor.SkillCooldowns[skill.SkillID] = skill.CooldownRounds
-	duration := 2
-	if skill.Tier == "ultimate" {
-		duration = 3
-	}
+	duration := skillEffectDuration(skill)
+	periodicTrigger := resolveSkillPeriodicTrigger(skill)
 	if skill.BuffFamily != "" && !hasActiveBuff(*actor, skill.BuffFamily) {
 		actor.ActiveBuffs = append(actor.ActiveBuffs, StatusBuff{
 			Family:    skill.BuffFamily,
@@ -913,6 +996,7 @@ func executeUtilitySkillMulti(actor *Combatant, enemies []Combatant, cfg Skirmis
 			PotionID:  skill.SkillID,
 			Value:     skill.RegenScale,
 			Remaining: duration,
+			TickPhase: periodicTrigger,
 		})
 	}
 	if skill.ShieldScale > 0 {
@@ -946,6 +1030,7 @@ func executeUtilitySkillMulti(actor *Combatant, enemies []Combatant, cfg Skirmis
 		actor.SummonTurns = skill.SummonTurns
 		actor.SummonStrike = skill.SummonStrike * skillLevelScalar(skill.Level)
 		actor.SummonMend = skill.SummonMend * skillLevelScalar(skill.Level)
+		actor.SummonTickPhase = periodicTrigger
 	}
 	return append(log, map[string]any{
 		"step":                  "action",
@@ -1551,6 +1636,7 @@ func tickSummon(c *Combatant) {
 		c.SummonSkillID = ""
 		c.SummonStrike = 0
 		c.SummonMend = 0
+		c.SummonTickPhase = ""
 		return
 	}
 	c.SummonTurns--
@@ -1559,12 +1645,36 @@ func tickSummon(c *Combatant) {
 		c.SummonSkillID = ""
 		c.SummonStrike = 0
 		c.SummonMend = 0
+		c.SummonTickPhase = ""
 	}
 }
 
 func applyStartTurnEffects(actor, opponent *Combatant, cfg BattleConfig, turn int, log []map[string]any) []map[string]any {
+	return applyPeriodicEffects(actor, opponent, cfg, turn, periodicTriggerOwnerTurnStart, log)
+}
+
+func applyRoundEndEffects(actor, opponent *Combatant, cfg BattleConfig, turn int, log []map[string]any) []map[string]any {
+	return applyPeriodicEffects(actor, opponent, cfg, turn, periodicTriggerRoundEnd, log)
+}
+
+func applyRoundEndEffectsInOrder(a, b *Combatant, cfg BattleConfig, turn int, aFirst bool, log []map[string]any) []map[string]any {
+	if aFirst {
+		log = applyRoundEndEffects(a, b, cfg, turn, log)
+		if a.CurrentHP > 0 && b.CurrentHP > 0 {
+			log = applyRoundEndEffects(b, a, cfg, turn, log)
+		}
+		return log
+	}
+	log = applyRoundEndEffects(b, a, cfg, turn, log)
+	if a.CurrentHP > 0 && b.CurrentHP > 0 {
+		log = applyRoundEndEffects(a, b, cfg, turn, log)
+	}
+	return log
+}
+
+func applyPeriodicEffects(actor, opponent *Combatant, cfg BattleConfig, turn int, triggerPhase string, log []map[string]any) []map[string]any {
 	for _, buf := range actor.ActiveBuffs {
-		if buf.Family != "regen" {
+		if buf.Family != "regen" || normalizedPeriodicTrigger(buf.TickPhase) != triggerPhase {
 			continue
 		}
 		before := actor.CurrentHP
@@ -1590,7 +1700,7 @@ func applyStartTurnEffects(actor, opponent *Combatant, cfg BattleConfig, turn in
 		})
 	}
 
-	if actor.SummonTurns > 0 {
+	if actor.SummonTurns > 0 && normalizedPeriodicTrigger(actor.SummonTickPhase) == triggerPhase {
 		if actor.SummonMend > 0 {
 			before := actor.CurrentHP
 			heal := imax(4, int(float64(actor.HealPow+imax(actor.MagAtk, actor.PhysAtk))*actor.SummonMend))
@@ -1664,6 +1774,15 @@ func executeEquippedSkill(actor, opponent *Combatant, cfg BattleConfig, turn int
 		heal := computeSkillHeal(*actor, skill)
 		before := actor.CurrentHP
 		actor.CurrentHP = imin(actor.MaxHP, actor.CurrentHP+heal)
+		if skill.RegenScale > 0 {
+			actor.ActiveBuffs = append(actor.ActiveBuffs, StatusBuff{
+				Family:    "regen",
+				PotionID:  skill.SkillID,
+				Value:     skill.RegenScale,
+				Remaining: skillEffectDuration(skill),
+				TickPhase: resolveSkillPeriodicTrigger(skill),
+			})
+		}
 		actor.SkillCooldowns[skill.SkillID] = skill.CooldownRounds
 		pHP, pEn := logHP(actor, opponent)
 		return append(log, map[string]any{
@@ -1694,10 +1813,8 @@ func executeEquippedSkill(actor, opponent *Combatant, cfg BattleConfig, turn int
 
 func executeUtilitySkill(actor, opponent *Combatant, cfg BattleConfig, turn int, log []map[string]any, cdBefore map[string]int, skill SkillAction) []map[string]any {
 	actor.SkillCooldowns[skill.SkillID] = skill.CooldownRounds
-	duration := 2
-	if skill.Tier == "ultimate" {
-		duration = 3
-	}
+	duration := skillEffectDuration(skill)
+	periodicTrigger := resolveSkillPeriodicTrigger(skill)
 	if skill.BuffFamily != "" && !hasActiveBuff(*actor, skill.BuffFamily) {
 		actor.ActiveBuffs = append(actor.ActiveBuffs, StatusBuff{
 			Family:    skill.BuffFamily,
@@ -1712,6 +1829,7 @@ func executeUtilitySkill(actor, opponent *Combatant, cfg BattleConfig, turn int,
 			PotionID:  skill.SkillID,
 			Value:     skill.RegenScale,
 			Remaining: duration,
+			TickPhase: periodicTrigger,
 		})
 	}
 	if skill.ShieldScale > 0 {
@@ -1738,6 +1856,7 @@ func executeUtilitySkill(actor, opponent *Combatant, cfg BattleConfig, turn int,
 		actor.SummonTurns = skill.SummonTurns
 		actor.SummonStrike = skill.SummonStrike * skillLevelScalar(skill.Level)
 		actor.SummonMend = skill.SummonMend * skillLevelScalar(skill.Level)
+		actor.SummonTickPhase = periodicTrigger
 	}
 	pHP, pEn := logHP(actor, opponent)
 	return append(log, map[string]any{
@@ -1900,6 +2019,13 @@ func computeSkillHeal(actor Combatant, skill SkillAction) int {
 	}
 	base := float64(actor.HealPow)*1.4 + float64(primaryAttack)*0.7
 	return imax(10, int(base*skill.HealScale*skillLevelScalar(skill.Level)))
+}
+
+func skillEffectDuration(skill SkillAction) int {
+	if skill.Tier == "ultimate" {
+		return 3
+	}
+	return 2
 }
 
 func skillLevelScalar(level int) float64 {

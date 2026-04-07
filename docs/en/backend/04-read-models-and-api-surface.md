@@ -1256,7 +1256,7 @@ Returns:
 Contract:
 
 - `compact` should return result summary, opponent summary, stage, round number, and battle outcome tags
-- `standard` should additionally return structured battle report sections such as opening state, damage summary, decisive turns, and final HP snapshot
+- `standard` should additionally return structured battle report sections such as opening state, damage summary, decisive turns, final HP snapshot, and explicit arena resolution fields like `end_reason` and `adjudication` when the winner was decided by round-cap rules
 - `verbose` may additionally include the full serialized `battle_log`
 
 #### `POST /api/v1/arena/bets`

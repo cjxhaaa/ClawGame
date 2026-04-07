@@ -30,7 +30,24 @@ const (
 	freeRatingChallengesPerDay   = 3
 	maxPurchasedChallengesPerDay = 10
 	basePurchasePriceGold        = 20
+	arenaDuelMaxTurns            = 10
 )
+
+type arenaDuelMode string
+
+const (
+	arenaDuelModeRating     arenaDuelMode = "rating"
+	arenaDuelModeKnockout   arenaDuelMode = "knockout"
+	arenaDuelModeExhibition arenaDuelMode = "exhibition"
+)
+
+type arenaDuelResolution struct {
+	Winner       Entry
+	Loser        Entry
+	WinnerHP     int
+	EndReason    string
+	Adjudication string
+}
 
 type Entry struct {
 	CharacterID     string `json:"character_id"`
@@ -370,9 +387,10 @@ func (s *Service) ResolveRatingChallenge(characterID, targetCharacterID string, 
 	matchID := fmt.Sprintf("match_weekly_%s_%s_%s", weekKey, characterID, nextChallengeSuffix(now))
 	reportID := "report_" + matchID
 	result := simulateEntryDuel(challenger, target, matchID)
+	resolution := resolveArenaDuel(challenger, target, result, arenaDuelModeRating)
 	delta := ratingDeltaForWin(challenger, target)
 	outcome := "loss"
-	if result.SideAWon {
+	if resolution.Winner.CharacterID == challenger.CharacterID {
 		outcome = "win"
 		state.Rating += delta
 		targetState := s.ratingByWeek[weekKey][targetCharacterID]
@@ -812,10 +830,8 @@ func fillNPCEntries(dayKey string, entries []Entry, target int) ([]Entry, int) {
 
 func resolveArenaMatch(dayKey, stage string, roundNumber, matchNumber int, left, right Entry) (Entry, string) {
 	result := simulateEntryDuel(left, right, arenaMatchID(dayKey, stage, roundNumber, matchNumber))
-	if result.SideAWon {
-		return left, arenaReportID(dayKey, stage, roundNumber, matchNumber)
-	}
-	return right, arenaReportID(dayKey, stage, roundNumber, matchNumber)
+	resolution := resolveArenaDuel(left, right, result, arenaDuelModeKnockout)
+	return resolution.Winner, arenaReportID(dayKey, stage, roundNumber, matchNumber)
 }
 
 func cloneEntry(entry Entry) *Entry {
@@ -1090,9 +1106,82 @@ func simulateEntryDuel(a, b Entry, runID string) combat.BattleResult {
 		BattleType: "arena_duel",
 		RunID:      runID,
 		RoomIndex:  1,
+		MaxTurns:   arenaDuelMaxTurns,
 		SideA:      combA,
 		SideB:      combB,
 	})
+}
+
+func resolveArenaDuel(a, b Entry, result combat.BattleResult, mode arenaDuelMode) arenaDuelResolution {
+	if arenaBattleTimedOut(result) {
+		if mode == arenaDuelModeRating {
+			return arenaDuelResolution{
+				Winner:       b,
+				Loser:        a,
+				WinnerHP:     result.SideBFinalHP,
+				EndReason:    "round_cap",
+				Adjudication: "challenger_loss_at_cap",
+			}
+		}
+		if result.SideAFinalHP > result.SideBFinalHP {
+			return arenaDuelResolution{
+				Winner:       a,
+				Loser:        b,
+				WinnerHP:     result.SideAFinalHP,
+				EndReason:    "round_cap",
+				Adjudication: "higher_remaining_hp",
+			}
+		}
+		if result.SideBFinalHP > result.SideAFinalHP {
+			return arenaDuelResolution{
+				Winner:       b,
+				Loser:        a,
+				WinnerHP:     result.SideBFinalHP,
+				EndReason:    "round_cap",
+				Adjudication: "higher_remaining_hp",
+			}
+		}
+		if a.CharacterID <= b.CharacterID {
+			return arenaDuelResolution{
+				Winner:       a,
+				Loser:        b,
+				WinnerHP:     result.SideAFinalHP,
+				EndReason:    "round_cap",
+				Adjudication: "lower_character_id",
+			}
+		}
+		return arenaDuelResolution{
+			Winner:       b,
+			Loser:        a,
+			WinnerHP:     result.SideBFinalHP,
+			EndReason:    "round_cap",
+			Adjudication: "lower_character_id",
+		}
+	}
+
+	if result.SideAWon {
+		return arenaDuelResolution{Winner: a, Loser: b, WinnerHP: result.SideAFinalHP, EndReason: "defeat", Adjudication: "direct_victory"}
+	}
+	if result.SideAFinalHP <= 0 && result.SideBFinalHP > 0 {
+		return arenaDuelResolution{Winner: b, Loser: a, WinnerHP: result.SideBFinalHP, EndReason: "defeat", Adjudication: "direct_victory"}
+	}
+	return arenaDuelResolution{Winner: b, Loser: a, WinnerHP: result.SideBFinalHP, EndReason: "defeat", Adjudication: "direct_victory"}
+}
+
+func arenaBattleTimedOut(result combat.BattleResult) bool {
+	for i := len(result.Log) - 1; i >= 0; i-- {
+		entry := result.Log[i]
+		if entry["event_type"] != "room_end" {
+			continue
+		}
+		value, _ := entry["result"].(string)
+		return value == "timeout"
+	}
+	return false
+}
+
+func arenaResolutionSnapshot(left, right Entry, result combat.BattleResult, mode arenaDuelMode) arenaDuelResolution {
+	return resolveArenaDuel(left, right, result, mode)
 }
 
 func buildCombatantFromEntry(entry Entry, team string) combat.Combatant {
@@ -1187,11 +1276,16 @@ func buildBattleArtifacts(match Matchup, characterID string) (map[string]any, []
 	}
 
 	result := simulateEntryDuel(*match.LeftEntry, *match.RightEntry, match.MatchID)
+	resolution := arenaResolutionSnapshot(*match.LeftEntry, *match.RightEntry, result, arenaDuelModeKnockout)
 	report := map[string]any{
 		"outcome":              historyResultForMatch(match, characterID),
 		"winner":               match.WinnerEntry,
 		"loser":                loserFromMatch(match),
 		"winner_final_hp":      winnerFinalHP(match, result),
+		"left_final_hp":        result.SideAFinalHP,
+		"right_final_hp":       result.SideBFinalHP,
+		"end_reason":           resolution.EndReason,
+		"adjudication":         resolution.Adjudication,
 		"player_power_delta":   match.LeftEntry.PanelPowerScore - match.RightEntry.PanelPowerScore,
 		"battle_length_events": len(result.Log),
 		"summary_tag":          summaryTag(match, result),
@@ -1214,11 +1308,16 @@ func buildPublicBattleArtifacts(match Matchup) (map[string]any, []map[string]any
 	}
 
 	result := simulateEntryDuel(*match.LeftEntry, *match.RightEntry, match.MatchID)
+	resolution := arenaResolutionSnapshot(*match.LeftEntry, *match.RightEntry, result, arenaDuelModeKnockout)
 	report := map[string]any{
 		"outcome":              "resolved",
 		"winner":               match.WinnerEntry,
 		"loser":                loserFromMatch(match),
 		"winner_final_hp":      winnerFinalHP(match, result),
+		"left_final_hp":        result.SideAFinalHP,
+		"right_final_hp":       result.SideBFinalHP,
+		"end_reason":           resolution.EndReason,
+		"adjudication":         resolution.Adjudication,
 		"power_delta":          match.LeftEntry.PanelPowerScore - match.RightEntry.PanelPowerScore,
 		"battle_length_events": len(result.Log),
 		"summary_tag":          publicSummaryTag(match),
@@ -1536,6 +1635,7 @@ func buildRatingHistoryDetails(weekKey string, challenger, target Entry, matchID
 }
 
 func buildRatingBattleReport(challenger, target Entry, result combat.BattleResult, outcome string, delta int) (map[string]any, []map[string]any) {
+	resolution := arenaResolutionSnapshot(challenger, target, result, arenaDuelModeRating)
 	report := map[string]any{
 		"outcome":          outcome,
 		"rating_delta":     delta,
@@ -1543,6 +1643,11 @@ func buildRatingBattleReport(challenger, target Entry, result combat.BattleResul
 		"defender":         target.CharacterName,
 		"challenger_power": challenger.PanelPowerScore,
 		"defender_power":   target.PanelPowerScore,
+		"left_final_hp":    result.SideAFinalHP,
+		"right_final_hp":   result.SideBFinalHP,
+		"winner_final_hp":  resolution.WinnerHP,
+		"end_reason":       resolution.EndReason,
+		"adjudication":     resolution.Adjudication,
 		"summary_tag":      "rating_duel",
 	}
 	if outcome != "win" {
@@ -1967,18 +2072,25 @@ func (s *Service) SimulateDuel(a, b characters.Summary) DuelResult {
 		BattleType: "arena_duel",
 		RunID:      battleID,
 		RoomIndex:  1,
+		MaxTurns:   arenaDuelMaxTurns,
 		SideA:      combA,
 		SideB:      combB,
 	})
+	resolution := resolveArenaDuel(
+		Entry{CharacterID: a.CharacterID, CharacterName: a.Name},
+		Entry{CharacterID: b.CharacterID, CharacterName: b.Name},
+		result,
+		arenaDuelModeExhibition,
+	)
 
-	if result.SideAWon {
+	if resolution.Winner.CharacterID == a.CharacterID {
 		return DuelResult{
 			BattleID:   battleID,
 			WinnerID:   a.CharacterID,
 			WinnerName: a.Name,
 			LoserID:    b.CharacterID,
 			LoserName:  b.Name,
-			WinnerHP:   result.SideAFinalHP,
+			WinnerHP:   resolution.WinnerHP,
 			BattleLog:  result.Log,
 		}
 	}
@@ -1988,7 +2100,7 @@ func (s *Service) SimulateDuel(a, b characters.Summary) DuelResult {
 		WinnerName: b.Name,
 		LoserID:    a.CharacterID,
 		LoserName:  a.Name,
-		WinnerHP:   result.SideBFinalHP,
+		WinnerHP:   resolution.WinnerHP,
 		BattleLog:  result.Log,
 	}
 }

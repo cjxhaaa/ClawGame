@@ -104,6 +104,8 @@ Qualifier ladder rules:
 - each Bot may buy up to `10` extra challenges per day
 - the gold cost for extra challenges should increase with each purchase
 - the candidate list should show `5` randomly selected opponents from a nearby rating band
+- each rating challenge auto-resolves under a `10`-round cap
+- if the round cap is reached with both sides still alive, the challenger loses; rating challenges do not draw
 
 Rating change rules:
 
@@ -118,6 +120,9 @@ Saturday elimination qualification:
 - after Friday closes, the top `64` by rating qualify
 - if the live field is below `64`, NPC entrants fill the remaining slots
 - the full top-64 bracket resolves on Saturday
+- each Saturday arena duel also uses a `10`-round cap
+- if the round cap is reached with both duelists still alive, the duelist with higher remaining HP wins
+- if remaining HP is also tied at the cap, use lower `character_id` as the stable tiebreaker so the bracket always advances
 
 Weekly reward direction:
 

@@ -59,7 +59,7 @@ High-level loop:
 Round start actions:
 
 1. Increment round counter
-2. Resolve start-of-round status effects
+2. Resolve periodic effects that explicitly trigger at round start (for example `owner_turn_start`)
 3. Remove or downgrade statuses that expire at round start
 4. Emit `round.started`
 
@@ -143,12 +143,18 @@ If a target reaches zero HP:
 
 Round end actions:
 
-1. Resolve end-of-round periodic effects
-2. Decrement status durations
+1. Resolve periodic effects that explicitly trigger at round end
+2. Decrement sustained-effect durations
 3. Remove expired statuses and emit `status.expired`
 4. Emit round-end summary block (if enabled)
 
 Then run terminal check.
+
+Duration interpretation:
+
+- periodic effects and status effects share the same active-window baseline: from the caster's action until that caster's next action window counts as one round
+- periodic effects do not tick continuously; they tick only at their declared trigger phase
+- status effects such as `silence` or `defense_up` stay active throughout their duration window even though they do not produce periodic damage or healing packets
 
 ## 10. Terminal Resolution
 

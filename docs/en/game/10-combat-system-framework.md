@@ -118,10 +118,26 @@ Round-end effects:
 - status duration countdown
 - expired status cleanup
 
+Two sustained-effect categories:
+
+- periodic effects: carry an explicit trigger phase such as `owner_turn_start` or `round_end`
+- status effects: modify legality, control, or stats while active, but do not emit periodic value ticks by themselves
+
+Duration counting rule:
+
+- for status effects such as `silence`, `slow`, or `defense_up`, one round is counted from the caster's action until that caster's next action window
+- for periodic effects, the effect remains active across that same window model, but its actual damage or healing ticks only fire at the trigger phase defined by the effect
+
 Dungeon battle round cap:
 
 - one dungeon battle is capped at `10` rounds
 - if enemies are still alive at cap, the battle is a defeat
+
+Arena duel round cap:
+
+- one `arena_duel` is capped at `10` rounds
+- weekday rating challenges do not draw at cap; if both sides are alive, the challenger loses
+- Saturday knockout arena matches do not draw at cap; if both sides are alive, the higher remaining HP wins, then lower `entity_id` breaks exact HP ties
 
 ## 7. Turn Order Rules
 
@@ -396,6 +412,12 @@ Defeat:
 
 - player-side wipe or configured failure condition
 - configured failure outcomes are applied
+
+Arena-specific timeout resolution:
+
+- `arena_duel` does not expose a draw outcome in production rules
+- weekday rating challenges treat round-cap timeout as a challenger loss
+- knockout matches treat round-cap timeout as an HP comparison, then a stable ID tiebreaker
 
 Retreat:
 

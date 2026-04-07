@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"clawgame/apps/api/internal/characters"
+	"clawgame/apps/api/internal/combat"
 	"clawgame/apps/api/internal/world"
 )
 
@@ -295,5 +296,114 @@ func TestSundayFinalizesWeeklyArenaTitlesForOneWeek(t *testing.T) {
 	}
 	if hours := expiresAt.Sub(now).Hours(); hours < 24*6.5 || hours > 24*7.5 {
 		t.Fatalf("expected one-week duration, got %.2f hours", hours)
+	}
+}
+
+func TestResolveArenaDuelRatingTimeoutCountsAsChallengerLoss(t *testing.T) {
+	left := Entry{CharacterID: "char_a", CharacterName: "Challenger"}
+	right := Entry{CharacterID: "char_b", CharacterName: "Defender"}
+	result := timeoutBattleResult(48, 52)
+
+	resolution := resolveArenaDuel(left, right, result, arenaDuelModeRating)
+	if resolution.Winner.CharacterID != right.CharacterID {
+		t.Fatalf("expected defender to win rating timeout, got %q", resolution.Winner.CharacterID)
+	}
+	if resolution.WinnerHP != result.SideBFinalHP {
+		t.Fatalf("expected defender HP %d, got %d", result.SideBFinalHP, resolution.WinnerHP)
+	}
+	if resolution.EndReason != "round_cap" {
+		t.Fatalf("expected round_cap end reason, got %q", resolution.EndReason)
+	}
+	if resolution.Adjudication != "challenger_loss_at_cap" {
+		t.Fatalf("expected challenger_loss_at_cap adjudication, got %q", resolution.Adjudication)
+	}
+}
+
+func TestResolveArenaDuelKnockoutTimeoutUsesRemainingHP(t *testing.T) {
+	left := Entry{CharacterID: "char_a", CharacterName: "Left"}
+	right := Entry{CharacterID: "char_b", CharacterName: "Right"}
+	result := timeoutBattleResult(61, 33)
+
+	resolution := resolveArenaDuel(left, right, result, arenaDuelModeKnockout)
+	if resolution.Winner.CharacterID != left.CharacterID {
+		t.Fatalf("expected higher-HP left entrant to win knockout timeout, got %q", resolution.Winner.CharacterID)
+	}
+	if resolution.WinnerHP != result.SideAFinalHP {
+		t.Fatalf("expected winner HP %d, got %d", result.SideAFinalHP, resolution.WinnerHP)
+	}
+	if resolution.EndReason != "round_cap" {
+		t.Fatalf("expected round_cap end reason, got %q", resolution.EndReason)
+	}
+	if resolution.Adjudication != "higher_remaining_hp" {
+		t.Fatalf("expected higher_remaining_hp adjudication, got %q", resolution.Adjudication)
+	}
+}
+
+func TestResolveArenaDuelKnockoutTimeoutUsesStableIDTiebreak(t *testing.T) {
+	left := Entry{CharacterID: "char_a", CharacterName: "Left"}
+	right := Entry{CharacterID: "char_b", CharacterName: "Right"}
+	result := timeoutBattleResult(40, 40)
+
+	resolution := resolveArenaDuel(left, right, result, arenaDuelModeKnockout)
+	if resolution.Winner.CharacterID != left.CharacterID {
+		t.Fatalf("expected lower character_id to win exact timeout tie, got %q", resolution.Winner.CharacterID)
+	}
+	if resolution.EndReason != "round_cap" {
+		t.Fatalf("expected round_cap end reason, got %q", resolution.EndReason)
+	}
+	if resolution.Adjudication != "lower_character_id" {
+		t.Fatalf("expected lower_character_id adjudication, got %q", resolution.Adjudication)
+	}
+}
+
+func TestBuildRatingBattleReportIncludesArenaResolutionFields(t *testing.T) {
+	challenger := Entry{CharacterID: "char_a", CharacterName: "Challenger", PanelPowerScore: 6400}
+	defender := Entry{CharacterID: "char_b", CharacterName: "Defender", PanelPowerScore: 6500}
+	result := timeoutBattleResult(41, 55)
+
+	report, _ := buildRatingBattleReport(challenger, defender, result, "loss", 18)
+
+	if report["end_reason"] != "round_cap" {
+		t.Fatalf("expected round_cap end reason in report, got %#v", report["end_reason"])
+	}
+	if report["adjudication"] != "challenger_loss_at_cap" {
+		t.Fatalf("expected challenger_loss_at_cap adjudication in report, got %#v", report["adjudication"])
+	}
+	if report["winner_final_hp"] != 55 {
+		t.Fatalf("expected winner_final_hp 55, got %#v", report["winner_final_hp"])
+	}
+	if report["rating_delta"] != 0 {
+		t.Fatalf("expected non-win report delta to be zeroed, got %#v", report["rating_delta"])
+	}
+}
+
+func TestSimulateEntryDuelUsesTenTurnCap(t *testing.T) {
+	left := Entry{CharacterID: "char_a", CharacterName: "Left", Class: "warrior", WeaponStyle: "great_axe", PanelPowerScore: 1000}
+	right := Entry{CharacterID: "char_b", CharacterName: "Right", Class: "warrior", WeaponStyle: "great_axe", PanelPowerScore: 1000}
+
+	result := simulateEntryDuel(left, right, "arena-turn-cap-test")
+
+	turnStarts := 0
+	for _, entry := range result.Log {
+		if entry["event_type"] == "turn_start" {
+			turnStarts++
+		}
+	}
+	if turnStarts > arenaDuelMaxTurns {
+		t.Fatalf("expected arena duel to stop by %d turns, got %d", arenaDuelMaxTurns, turnStarts)
+	}
+}
+
+func timeoutBattleResult(sideAFinalHP, sideBFinalHP int) combat.BattleResult {
+	return combat.BattleResult{
+		SideAWon:     false,
+		SideAFinalHP: sideAFinalHP,
+		SideBFinalHP: sideBFinalHP,
+		Log: []map[string]any{
+			{
+				"event_type": "room_end",
+				"result":     "timeout",
+			},
+		},
 	}
 }

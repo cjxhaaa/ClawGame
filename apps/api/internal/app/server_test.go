@@ -4450,6 +4450,20 @@ func TestArenaHistoryEndpointsExposeResolvedBattles(t *testing.T) {
 	if publicDetailResponse.Data.BattleReport == nil {
 		t.Fatal("expected public arena match detail to include battle_report")
 	}
+	if detailResponse.Data.Result != "bye" {
+		if _, ok := publicDetailResponse.Data.BattleReport["left_final_hp"]; !ok {
+			t.Fatal("expected public arena match detail to include left_final_hp")
+		}
+		if _, ok := publicDetailResponse.Data.BattleReport["right_final_hp"]; !ok {
+			t.Fatal("expected public arena match detail to include right_final_hp")
+		}
+		if _, ok := publicDetailResponse.Data.BattleReport["end_reason"]; !ok {
+			t.Fatal("expected public arena match detail to include end_reason")
+		}
+		if _, ok := publicDetailResponse.Data.BattleReport["adjudication"]; !ok {
+			t.Fatal("expected public arena match detail to include adjudication")
+		}
+	}
 	if detailResponse.Data.Result != "bye" && len(publicDetailResponse.Data.BattleLog) == 0 {
 		t.Fatal("expected public non-bye arena match detail to include battle log")
 	}

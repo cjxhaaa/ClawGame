@@ -288,7 +288,7 @@ func skillActionForID(skillID string, level int) combat.SkillAction {
 	case "Censer Guardian":
 		return combat.SkillAction{SkillID: skillID, ActionKind: "summon", Tier: "advanced", CooldownRounds: 2, SummonTurns: 3, SummonStrike: 0.68, ShieldScale: 0.08, Level: level}
 	case "Choir Invocation":
-		return combat.SkillAction{SkillID: skillID, ActionKind: "summon", Tier: "ultimate", CooldownRounds: 3, SummonTurns: 4, SummonStrike: 0.78, SummonMend: 0.18, Level: level}
+		return combat.SkillAction{SkillID: skillID, ActionKind: "summon", Tier: "ultimate", CooldownRounds: 3, SummonTurns: 2, SummonStrike: 0.78, SummonMend: 0.18, Level: level}
 	default:
 		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "", Tier: tierForSkill(skillID), CooldownRounds: cooldownForSkill(skillID), PowerScale: powerForSkill(skillID), Level: level}
 	}

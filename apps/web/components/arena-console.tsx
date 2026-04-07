@@ -421,7 +421,7 @@ export default function ArenaConsole({ worldState, events, arenaCurrent }: Arena
                     {Object.entries(selectedDetail.battle_report).map(([key, value]) => (
                       <article key={key} className="arena-report-item">
                         <span>{reportLabel(key, language)}</span>
-                        <strong>{reportValue(value)}</strong>
+                        <strong>{reportValue(key, value, language)}</strong>
                       </article>
                     ))}
                   </div>
@@ -564,6 +564,10 @@ function reportLabel(key: string, language: "zh-CN" | "en-US") {
     winner: { "zh-CN": "胜者", "en-US": "Winner" },
     loser: { "zh-CN": "败者", "en-US": "Loser" },
     winner_final_hp: { "zh-CN": "胜者剩余生命", "en-US": "Winner HP" },
+    left_final_hp: { "zh-CN": "左侧剩余生命", "en-US": "Left HP" },
+    right_final_hp: { "zh-CN": "右侧剩余生命", "en-US": "Right HP" },
+    end_reason: { "zh-CN": "结束原因", "en-US": "End Reason" },
+    adjudication: { "zh-CN": "裁定方式", "en-US": "Adjudication" },
     power_delta: { "zh-CN": "战力差", "en-US": "Power Delta" },
     player_power_delta: { "zh-CN": "战力差", "en-US": "Power Delta" },
     battle_length_events: { "zh-CN": "事件数", "en-US": "Event Count" },
@@ -573,9 +577,40 @@ function reportLabel(key: string, language: "zh-CN" | "en-US") {
   return labels[key]?.[language] ?? key;
 }
 
-function reportValue(value: unknown) {
+function localizedReportEnum(key: string, value: string, language: "zh-CN" | "en-US") {
+  const labels: Record<string, Record<string, { "zh-CN": string; "en-US": string }>> = {
+    outcome: {
+      win: { "zh-CN": "胜利", "en-US": "Win" },
+      loss: { "zh-CN": "失败", "en-US": "Loss" },
+      bye: { "zh-CN": "轮空", "en-US": "Bye" },
+      resolved: { "zh-CN": "已结算", "en-US": "Resolved" },
+      stable: { "zh-CN": "守擂成功", "en-US": "Defense Held" },
+    },
+    end_reason: {
+      round_cap: { "zh-CN": "达到回合上限", "en-US": "Round Cap Reached" },
+      defeat: { "zh-CN": "一方被击败", "en-US": "Defeat" },
+    },
+    adjudication: {
+      challenger_loss_at_cap: { "zh-CN": "积分挑战超回合判挑战者负", "en-US": "Challenger Loses At Cap" },
+      higher_remaining_hp: { "zh-CN": "按剩余生命裁定", "en-US": "Higher Remaining HP" },
+      lower_character_id: { "zh-CN": "按较小角色 ID 裁定", "en-US": "Lower Character ID" },
+      direct_victory: { "zh-CN": "直接击败获胜", "en-US": "Direct Victory" },
+    },
+    summary_tag: {
+      rating_duel: { "zh-CN": "积分对决", "en-US": "Rating Duel" },
+      advanced_by_bye: { "zh-CN": "轮空晋级", "en-US": "Advanced By Bye" },
+      won_clean: { "zh-CN": "优势获胜", "en-US": "Clean Win" },
+      won_close: { "zh-CN": "险胜", "en-US": "Close Win" },
+      unresolved: { "zh-CN": "未结算", "en-US": "Unresolved" },
+    },
+  };
+  return labels[key]?.[value]?.[language] ?? value;
+}
+
+function reportValue(key: string, value: unknown, language: "zh-CN" | "en-US") {
   if (value === null || value === undefined) return "-";
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
+  if (typeof value === "string") return localizedReportEnum(key, value, language);
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
   if (typeof value === "object" && value && "character_name" in value) return String((value as { character_name?: string }).character_name ?? "-");
   return JSON.stringify(value);
 }
