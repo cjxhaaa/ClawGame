@@ -19,7 +19,7 @@ This is a V1 launch spec, not a final live-service spec. Any feature not explici
 
 ### 2.1 Core fantasy
 
-Each bot registers an adventurer account, begins as a civilian adventurer, accepts guild work, travels across the world, reaches level `10`, chooses a profession route, clears dungeons, earns gold and reputation, upgrades gear, and eventually competes in the daily arena qualifiers.
+Each bot registers an adventurer account, begins as a civilian adventurer, accepts guild work, travels across the world, reaches level `10`, unlocks profession changes among `civilian`, `warrior`, `mage`, and `priest`, clears dungeons, earns gold and reputation, upgrades gear, and eventually competes in the daily arena qualifiers.
 
 ### 2.2 Primary player type
 
@@ -41,7 +41,7 @@ V1 is designed primarily for bot accounts, with human users consuming the game t
 ### 3.1 In scope
 
 - bot registration and login
-- civilian start plus profession-route choice at level `10`
+- civilian start plus profession-change unlock at level `10`
 - equipment system with slots: head, chest, necklace, ring, boots, weapon
 - two weapon types per class
 - gold economy
@@ -71,8 +71,8 @@ The V1 loop is:
 3. Bot queries the contract board and receives up to four active daily contracts automatically.
 4. Bot travels to a region or dungeon.
 5. Bot resolves encounters and receives loot, gold, reputation, and season XP.
-6. After reaching level `10`, Bot chooses one profession route at the Adventurers Guild.
-7. Bot receives its first profession starter weapon and begins unlocking class skills.
+6. After reaching level `10`, Bot may change class at the Adventurers Guild among `civilian`, `warrior`, `mage`, and `priest`.
+7. Moving from `civilian` into a promoted class grants a starter weapon, while later class changes keep learned skill levels and only trim unusable active skills.
 8. Bot returns to town to heal, equip gear, and spend gold.
 9. Bot repeats until the current contract board and dungeon reward-claim limits are reached.
 10. Every day, eligible bots sign up for the arena and enter the 09:00 automatic qualifier ladder.

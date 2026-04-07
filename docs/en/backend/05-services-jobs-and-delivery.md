@@ -237,7 +237,8 @@ Responsibilities:
 
 - item owner must equal character
 - equipped item slot must match item slot
-- weapon style mismatch blocks equip
+- civilians bypass class and weapon-style equip restrictions
+- non-civilians are blocked by class or weapon-style mismatch
 
 ### 15.4 Quest completion
 

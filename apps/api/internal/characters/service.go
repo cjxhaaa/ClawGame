@@ -16,27 +16,32 @@ import (
 const businessTimezone = "Asia/Shanghai"
 
 var (
-	ErrCharacterAlreadyExists = errors.New("character already exists")
-	ErrCharacterNotFound      = errors.New("character not found")
-	ErrCharacterInvalidClass  = errors.New("invalid class")
-	ErrCharacterInvalidWeapon = errors.New("invalid weapon style")
-	ErrCharacterInvalidRoute  = errors.New("invalid profession route")
-	ErrCharacterRouteLocked   = errors.New("profession route locked")
-	ErrCharacterNameTaken     = errors.New("character name already exists")
-	ErrCharacterInvalidName   = errors.New("invalid character name")
-	ErrSkillNotFound          = errors.New("skill not found")
-	ErrSkillLocked            = errors.New("skill locked")
-	ErrSkillMaxLevel          = errors.New("skill max level reached")
-	ErrSkillInvalidLoadout    = errors.New("skill loadout invalid")
-	ErrGoldInsufficient       = errors.New("gold insufficient")
-	ErrMaterialsInsufficient  = errors.New("materials insufficient")
-	ErrTravelInsufficientGold = errors.New("travel insufficient gold")
-	ErrTravelRegionNotFound   = errors.New("travel region not found")
-	ErrQuestCompletionCap     = errors.New("quest completion cap reached")
-	ErrDungeonRewardClaimCap  = errors.New("dungeon reward claim cap reached")
-	ErrReputationInsufficient = errors.New("reputation insufficient")
-	ErrActionNotSupported     = errors.New("action not supported")
+	ErrCharacterAlreadyExists     = errors.New("character already exists")
+	ErrCharacterNotFound          = errors.New("character not found")
+	ErrCharacterInvalidClass      = errors.New("invalid class")
+	ErrCharacterInvalidWeapon     = errors.New("invalid weapon style")
+	ErrCharacterInvalidProfession = errors.New("invalid profession")
+	ErrCharacterProfessionLocked  = errors.New("profession locked")
+	ErrCharacterProfessionGold    = errors.New("profession insufficient gold")
+	ErrCharacterInvalidRoute      = ErrCharacterInvalidProfession
+	ErrCharacterRouteLocked       = ErrCharacterProfessionLocked
+	ErrCharacterNameTaken         = errors.New("character name already exists")
+	ErrCharacterInvalidName       = errors.New("invalid character name")
+	ErrSkillNotFound              = errors.New("skill not found")
+	ErrSkillLocked                = errors.New("skill locked")
+	ErrSkillMaxLevel              = errors.New("skill max level reached")
+	ErrSkillInvalidLoadout        = errors.New("skill loadout invalid")
+	ErrGoldInsufficient           = errors.New("gold insufficient")
+	ErrMaterialsInsufficient      = errors.New("materials insufficient")
+	ErrTravelInsufficientGold     = errors.New("travel insufficient gold")
+	ErrTravelRegionNotFound       = errors.New("travel region not found")
+	ErrQuestCompletionCap         = errors.New("quest completion cap reached")
+	ErrDungeonRewardClaimCap      = errors.New("dungeon reward claim cap reached")
+	ErrReputationInsufficient     = errors.New("reputation insufficient")
+	ErrActionNotSupported         = errors.New("action not supported")
 )
+
+const ProfessionChangeGoldCost = 800
 
 const (
 	FreeDungeonRewardClaimsPerDay = 2
@@ -165,20 +170,43 @@ type SkillsStateView struct {
 	MaxActiveSlots int         `json:"max_active_slots"`
 }
 
+type ProfessionChangeResultView struct {
+	RequestedClass            string   `json:"requested_class"`
+	FromClass                 string   `json:"from_class"`
+	ToClass                   string   `json:"to_class"`
+	GoldCost                  int      `json:"gold_cost"`
+	GoldBefore                int      `json:"gold_before"`
+	GoldAfter                 int      `json:"gold_after"`
+	SkillLevelsPreserved      bool     `json:"skill_levels_preserved"`
+	ActiveLoadoutBefore       []string `json:"active_loadout_before"`
+	ActiveLoadoutAfter        []string `json:"active_loadout_after"`
+	RemovedActiveSkillIDs     []string `json:"removed_active_skill_ids,omitempty"`
+	WeaponAutoUnequipped      bool     `json:"weapon_auto_unequipped"`
+	UnequippedWeaponItemID    string   `json:"unequipped_weapon_item_id,omitempty"`
+	UnequippedWeaponCatalogID string   `json:"unequipped_weapon_catalog_id,omitempty"`
+	UnequippedWeaponName      string   `json:"unequipped_weapon_name,omitempty"`
+	StarterWeaponGranted      bool     `json:"starter_weapon_granted"`
+	StarterWeaponItemID       string   `json:"starter_weapon_item_id,omitempty"`
+	StarterWeaponCatalogID    string   `json:"starter_weapon_catalog_id,omitempty"`
+	StarterWeaponEquipped     bool     `json:"starter_weapon_equipped"`
+	Warnings                  []string `json:"warnings,omitempty"`
+}
+
 type StateView struct {
-	ServerTime       string                `json:"server_time"`
-	Account          auth.Account          `json:"account"`
-	Character        Summary               `json:"character"`
-	Stats            StatsSnapshot         `json:"stats"`
-	CombatPower      CombatPowerSummary    `json:"combat_power"`
-	Skills           SkillsStateView       `json:"skills"`
-	Limits           DailyLimits           `json:"limits"`
-	Materials        []MaterialBalance     `json:"materials"`
-	SlotEnhancements []SlotEnhancementView `json:"slot_enhancements"`
-	Objectives       []QuestSummary        `json:"objectives"`
-	DungeonDaily     DungeonDailyHint      `json:"dungeon_daily"`
-	RecentEvents     []world.WorldEvent    `json:"recent_events"`
-	ValidActions     []ValidAction         `json:"valid_actions"`
+	ServerTime             string                      `json:"server_time"`
+	Account                auth.Account                `json:"account"`
+	Character              Summary                     `json:"character"`
+	Stats                  StatsSnapshot               `json:"stats"`
+	CombatPower            CombatPowerSummary          `json:"combat_power"`
+	Skills                 SkillsStateView             `json:"skills"`
+	Limits                 DailyLimits                 `json:"limits"`
+	Materials              []MaterialBalance           `json:"materials"`
+	SlotEnhancements       []SlotEnhancementView       `json:"slot_enhancements"`
+	Objectives             []QuestSummary              `json:"objectives"`
+	DungeonDaily           DungeonDailyHint            `json:"dungeon_daily"`
+	RecentEvents           []world.WorldEvent          `json:"recent_events"`
+	ValidActions           []ValidAction               `json:"valid_actions"`
+	ProfessionChangeResult *ProfessionChangeResultView `json:"profession_change_result,omitempty"`
 }
 
 type MaterialBalance struct {
@@ -284,9 +312,10 @@ func NewServiceWithRepository(repo Repository) (*Service, error) {
 	}
 
 	for _, stored := range storedCharacters {
+		summary := normalizeSummary(stored.Summary)
 		service.characterByAccountID[stored.AccountID] = record{
-			summary:               stored.Summary,
-			stats:                 stored.Stats,
+			summary:               summary,
+			stats:                 baseStatsForSummary(summary),
 			skillLevels:           cloneSkillLevels(stored.SkillLevels),
 			skillLoadout:          cloneSkillLoadout(stored.SkillLoadout),
 			questCompletionUsed:   stored.QuestCompletionUsed,
@@ -296,7 +325,7 @@ func NewServiceWithRepository(repo Repository) (*Service, error) {
 			dailyLimitsResetDate:  strings.TrimSpace(stored.DailyLimitsResetDate),
 			recentEvents:          []world.WorldEvent{},
 		}
-		service.accountIDByName[strings.ToLower(stored.Summary.Name)] = stored.AccountID
+		service.accountIDByName[strings.ToLower(summary.Name)] = stored.AccountID
 	}
 
 	events, err := repo.LoadRecentEvents(10)
@@ -352,7 +381,7 @@ func (s *Service) CreateCharacter(account auth.Account, name, class, weaponStyle
 
 	entry := record{
 		summary:              summary,
-		stats:                civilianBaseStats,
+		stats:                baseStatsForSummary(summary),
 		skillLevels:          map[string]int{},
 		skillLoadout:         []string{},
 		materials:            map[string]int{},
@@ -389,6 +418,7 @@ func (s *Service) GrantSeasonXP(characterID string, amount int) (Summary, error)
 		return Summary{}, err
 	}
 	grantSeasonXP(&entry.summary, amount)
+	entry.stats = baseStatsForSummary(entry.summary)
 	if err := s.saveRecordLocked(accountID, entry); err != nil {
 		return Summary{}, err
 	}
@@ -397,10 +427,9 @@ func (s *Service) GrantSeasonXP(characterID string, amount int) (Summary, error)
 }
 
 func (s *Service) ChooseProfessionRoute(account auth.Account, routeID string, worldService *world.Service) (StateView, error) {
-	routeID = strings.TrimSpace(strings.ToLower(routeID))
-	route, ok := professionRoutes[routeID]
+	professionID, ok := NormalizeProfessionTarget(routeID)
 	if !ok {
-		return StateView{}, ErrCharacterInvalidRoute
+		return StateView{}, ErrCharacterInvalidProfession
 	}
 
 	s.mu.Lock()
@@ -414,23 +443,46 @@ func (s *Service) ChooseProfessionRoute(account auth.Account, routeID string, wo
 		s.mu.Unlock()
 		return StateView{}, err
 	}
-	if entry.summary.Class != "civilian" || entry.summary.ProfessionRoute != "" {
-		s.mu.Unlock()
-		return StateView{}, ErrCharacterRouteLocked
-	}
 	if entry.summary.SeasonLevel < 10 {
 		s.mu.Unlock()
-		return StateView{}, ErrCharacterRouteLocked
+		return StateView{}, ErrCharacterProfessionLocked
+	}
+	currentClass := normalizeClassID(entry.summary.Class)
+	if currentClass == professionID {
+		s.mu.Unlock()
+		return StateView{}, ErrCharacterProfessionLocked
+	}
+	if entry.summary.Gold < ProfessionChangeGoldCost {
+		s.mu.Unlock()
+		return StateView{}, ErrCharacterProfessionGold
 	}
 
-	entry.summary.ProfessionRoute = routeID
-	entry.summary.Class = route.Class
-	entry.summary.WeaponStyle = route.WeaponStyle
-	entry.stats = route.BaseStats
-	event := s.newEvent(entry.summary, "character.profession_chosen", entry.summary.LocationRegionID, fmt.Sprintf("%s chose the %s route.", entry.summary.Name, routeID), map[string]any{
-		"class":               route.Class,
-		"profession_route_id": routeID,
-		"weapon_style":        route.WeaponStyle,
+	entry.summary.Gold -= ProfessionChangeGoldCost
+	entry.summary.Class = professionID
+	if professionID == "civilian" {
+		entry.summary.ProfessionRoute = ""
+		entry.summary.WeaponStyle = ""
+	} else {
+		entry.summary.ProfessionRoute = professionID
+		entry.summary.WeaponStyle = defaultStarterWeaponStyle(professionID)
+	}
+	entry.stats = baseStatsForSummary(entry.summary)
+	entry.skillLoadout = activeLoadoutForSummary(entry.summary, entry.skillLevels, entry.skillLoadout)
+
+	message := fmt.Sprintf("%s changed profession from %s to %s.", entry.summary.Name, currentClass, professionID)
+	if currentClass == "civilian" && professionID != "civilian" {
+		message = fmt.Sprintf("%s chose the %s profession.", entry.summary.Name, professionID)
+	} else if professionID == "civilian" {
+		message = fmt.Sprintf("%s returned to the civilian class.", entry.summary.Name)
+	}
+	event := s.newEvent(entry.summary, "character.profession_changed", entry.summary.LocationRegionID, message, map[string]any{
+		"class":               professionID,
+		"profession_route_id": entry.summary.ProfessionRoute,
+		"weapon_style":        entry.summary.WeaponStyle,
+		"from_class":          currentClass,
+		"to_class":            professionID,
+		"gold_cost":           ProfessionChangeGoldCost,
+		"skills_preserved":    true,
 	})
 	entry.recentEvents = prependEvent(entry.recentEvents, event)
 
@@ -1249,173 +1301,199 @@ var allowedWeaponStyles = map[string][]string{
 	"priest":  {"scepter", "holy_tome"},
 }
 
-var civilianBaseStats = StatsSnapshot{
-	MaxHP:           96,
-	PhysicalAttack:  14,
-	MagicAttack:     14,
-	PhysicalDefense: 10,
-	MagicDefense:    10,
-	Speed:           12,
-	HealingPower:    6,
-	CritRate:        0.20,
-	CritDamage:      0.50,
-	BlockRate:       0.05,
+type growthProfile struct {
+	Base              StatsSnapshot
+	MaxHPGrowth       int
+	PhysicalAtkGrowth int
+	MagicAtkGrowth    int
+	PhysicalDefGrowth int
+	MagicDefGrowth    int
+	SpeedGrowth       int
+	HealingGrowth     int
 }
 
-var baseStatsByStyle = map[string]StatsSnapshot{
-	"sword_shield": {
-		MaxHP:           132,
-		PhysicalAttack:  24,
-		MagicAttack:     6,
-		PhysicalDefense: 18,
-		MagicDefense:    10,
-		Speed:           10,
-		HealingPower:    4,
-		CritRate:        0.20,
-		CritDamage:      0.50,
-		BlockRate:       0.05,
+var classGrowthProfiles = map[string]growthProfile{
+	"civilian": {
+		Base: StatsSnapshot{
+			MaxHP:           96,
+			PhysicalAttack:  14,
+			MagicAttack:     14,
+			PhysicalDefense: 10,
+			MagicDefense:    10,
+			Speed:           12,
+			HealingPower:    6,
+			CritRate:        0.20,
+			CritDamage:      0.50,
+			BlockRate:       0.05,
+		},
+		MaxHPGrowth:       600,
+		PhysicalAtkGrowth: 100,
+		MagicAtkGrowth:    100,
+		PhysicalDefGrowth: 75,
+		MagicDefGrowth:    75,
+		SpeedGrowth:       11,
+		HealingGrowth:     44,
 	},
-	"great_axe": {
-		MaxHP:           120,
-		PhysicalAttack:  30,
-		MagicAttack:     4,
-		PhysicalDefense: 14,
-		MagicDefense:    8,
-		Speed:           11,
-		HealingPower:    3,
-		CritRate:        0.20,
-		CritDamage:      0.50,
-		BlockRate:       0.05,
+	"warrior": {
+		Base: StatsSnapshot{
+			MaxHP:           118,
+			PhysicalAttack:  20,
+			MagicAttack:     5,
+			PhysicalDefense: 14,
+			MagicDefense:    10,
+			Speed:           10,
+			HealingPower:    3,
+			CritRate:        0.20, CritDamage: 0.50, BlockRate: 0.05,
+		},
+		MaxHPGrowth:       622,
+		PhysicalAtkGrowth: 167,
+		MagicAtkGrowth:    33,
+		PhysicalDefGrowth: 89,
+		MagicDefGrowth:    56,
+		SpeedGrowth:       11,
+		HealingGrowth:     11,
 	},
-	"staff": {
-		MaxHP:           92,
-		PhysicalAttack:  12,
-		MagicAttack:     34,
-		PhysicalDefense: 9,
-		MagicDefense:    18,
-		Speed:           16,
-		HealingPower:    8,
-		CritRate:        0.20,
-		CritDamage:      0.50,
-		BlockRate:       0.05,
+	"mage": {
+		Base: StatsSnapshot{
+			MaxHP:           90,
+			PhysicalAttack:  9,
+			MagicAttack:     29,
+			PhysicalDefense: 8,
+			MagicDefense:    16,
+			Speed:           15,
+			HealingPower:    8,
+			CritRate:        0.20, CritDamage: 0.50, BlockRate: 0.05,
+		},
+		MaxHPGrowth:       467,
+		PhysicalAtkGrowth: 33,
+		MagicAtkGrowth:    178,
+		PhysicalDefGrowth: 44,
+		MagicDefGrowth:    67,
+		SpeedGrowth:       22,
+		HealingGrowth:     22,
 	},
-	"spellbook": {
-		MaxHP:           88,
-		PhysicalAttack:  10,
-		MagicAttack:     36,
-		PhysicalDefense: 8,
-		MagicDefense:    16,
-		Speed:           15,
-		HealingPower:    10,
-		CritRate:        0.20,
-		CritDamage:      0.50,
-		BlockRate:       0.05,
-	},
-	"scepter": {
-		MaxHP:           104,
-		PhysicalAttack:  10,
-		MagicAttack:     26,
-		PhysicalDefense: 11,
-		MagicDefense:    17,
-		Speed:           14,
-		HealingPower:    20,
-		CritRate:        0.20,
-		CritDamage:      0.50,
-		BlockRate:       0.05,
-	},
-	"holy_tome": {
-		MaxHP:           98,
-		PhysicalAttack:  8,
-		MagicAttack:     22,
-		PhysicalDefense: 10,
-		MagicDefense:    20,
-		Speed:           13,
-		HealingPower:    24,
-		CritRate:        0.20,
-		CritDamage:      0.50,
-		BlockRate:       0.05,
+	"priest": {
+		Base: StatsSnapshot{
+			MaxHP:           104,
+			PhysicalAttack:  9,
+			MagicAttack:     20,
+			PhysicalDefense: 10,
+			MagicDefense:    16,
+			Speed:           13,
+			HealingPower:    16,
+			CritRate:        0.20, CritDamage: 0.50, BlockRate: 0.05,
+		},
+		MaxHPGrowth:       511,
+		PhysicalAtkGrowth: 22,
+		MagicAtkGrowth:    144,
+		PhysicalDefGrowth: 44,
+		MagicDefGrowth:    78,
+		SpeedGrowth:       11,
+		HealingGrowth:     89,
 	},
 }
 
-type professionRouteDefinition struct {
-	Class       string
-	WeaponStyle string
-	BaseStats   StatsSnapshot
+var civilianBaseStats = classGrowthProfiles["civilian"].Base
+
+func normalizeSummary(summary Summary) Summary {
+	className := normalizeClassID(summary.Class)
+	if className == "" {
+		if mapped, ok := normalizeProfessionChoice(summary.ProfessionRoute); ok {
+			className = mapped
+		} else {
+			className = "civilian"
+		}
+	}
+	summary.Class = className
+	if className == "civilian" {
+		summary.ProfessionRoute = ""
+		summary.WeaponStyle = ""
+		return summary
+	}
+	summary.ProfessionRoute = className
+	if strings.TrimSpace(summary.WeaponStyle) == "" {
+		summary.WeaponStyle = defaultStarterWeaponStyle(className)
+	}
+	return summary
 }
 
-var professionRoutes = map[string]professionRouteDefinition{
-	"tank": {
-		Class:       "warrior",
-		WeaponStyle: "sword_shield",
-		BaseStats: StatsSnapshot{
-			MaxHP: 180, PhysicalAttack: 34, MagicAttack: 8, PhysicalDefense: 26, MagicDefense: 16, Speed: 11, HealingPower: 4,
-			CritRate: 0.20, CritDamage: 0.50, BlockRate: 0.05,
-		},
-	},
-	"physical_burst": {
-		Class:       "warrior",
-		WeaponStyle: "great_axe",
-		BaseStats: StatsSnapshot{
-			MaxHP: 168, PhysicalAttack: 42, MagicAttack: 6, PhysicalDefense: 20, MagicDefense: 13, Speed: 12, HealingPower: 3,
-			CritRate: 0.20, CritDamage: 0.50, BlockRate: 0.05,
-		},
-	},
-	"magic_burst": {
-		Class:       "warrior",
-		WeaponStyle: "sword_shield",
-		BaseStats: StatsSnapshot{
-			MaxHP: 164, PhysicalAttack: 28, MagicAttack: 26, PhysicalDefense: 19, MagicDefense: 18, Speed: 11, HealingPower: 5,
-			CritRate: 0.20, CritDamage: 0.50, BlockRate: 0.05,
-		},
-	},
-	"single_burst": {
-		Class:       "mage",
-		WeaponStyle: "spellbook",
-		BaseStats: StatsSnapshot{
-			MaxHP: 128, PhysicalAttack: 12, MagicAttack: 48, PhysicalDefense: 11, MagicDefense: 21, Speed: 17, HealingPower: 11,
-			CritRate: 0.20, CritDamage: 0.50, BlockRate: 0.05,
-		},
-	},
-	"aoe_burst": {
-		Class:       "mage",
-		WeaponStyle: "staff",
-		BaseStats: StatsSnapshot{
-			MaxHP: 132, PhysicalAttack: 13, MagicAttack: 46, PhysicalDefense: 12, MagicDefense: 22, Speed: 16, HealingPower: 9,
-			CritRate: 0.20, CritDamage: 0.50, BlockRate: 0.05,
-		},
-	},
-	"control": {
-		Class:       "mage",
-		WeaponStyle: "spellbook",
-		BaseStats: StatsSnapshot{
-			MaxHP: 136, PhysicalAttack: 11, MagicAttack: 41, PhysicalDefense: 13, MagicDefense: 23, Speed: 18, HealingPower: 10,
-			CritRate: 0.20, CritDamage: 0.50, BlockRate: 0.05,
-		},
-	},
-	"healing_support": {
-		Class:       "priest",
-		WeaponStyle: "holy_tome",
-		BaseStats: StatsSnapshot{
-			MaxHP: 150, PhysicalAttack: 10, MagicAttack: 31, PhysicalDefense: 14, MagicDefense: 24, Speed: 14, HealingPower: 30,
-			CritRate: 0.20, CritDamage: 0.50, BlockRate: 0.05,
-		},
-	},
-	"curse": {
-		Class:       "priest",
-		WeaponStyle: "scepter",
-		BaseStats: StatsSnapshot{
-			MaxHP: 148, PhysicalAttack: 12, MagicAttack: 36, PhysicalDefense: 14, MagicDefense: 22, Speed: 15, HealingPower: 19,
-			CritRate: 0.20, CritDamage: 0.50, BlockRate: 0.05,
-		},
-	},
-	"summon": {
-		Class:       "priest",
-		WeaponStyle: "holy_tome",
-		BaseStats: StatsSnapshot{
-			MaxHP: 152, PhysicalAttack: 11, MagicAttack: 33, PhysicalDefense: 15, MagicDefense: 23, Speed: 14, HealingPower: 24,
-			CritRate: 0.20, CritDamage: 0.50, BlockRate: 0.05,
-		},
-	},
+func normalizeClassID(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "civilian":
+		return "civilian"
+	case "warrior":
+		return "warrior"
+	case "mage":
+		return "mage"
+	case "priest":
+		return "priest"
+	default:
+		return ""
+	}
+}
+
+func normalizeProfessionChoice(value string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "warrior", "tank", "physical_burst", "magic_burst":
+		return "warrior", true
+	case "mage", "single_burst", "aoe_burst", "control":
+		return "mage", true
+	case "priest", "healing_support", "curse", "summon":
+		return "priest", true
+	default:
+		return "", false
+	}
+}
+
+func NormalizeProfessionTarget(value string) (string, bool) {
+	if className := normalizeClassID(value); className != "" {
+		return className, true
+	}
+	return normalizeProfessionChoice(value)
+}
+
+func defaultStarterWeaponStyle(className string) string {
+	switch normalizeClassID(className) {
+	case "warrior":
+		return "sword_shield"
+	case "mage":
+		return "spellbook"
+	case "priest":
+		return "holy_tome"
+	default:
+		return ""
+	}
+}
+
+func baseStatsForSummary(summary Summary) StatsSnapshot {
+	return baseStatsForClassLevel(summary.Class, summary.SeasonLevel)
+}
+
+func baseStatsForClassLevel(className string, level int) StatsSnapshot {
+	profile, ok := classGrowthProfiles[normalizeClassID(className)]
+	if !ok {
+		profile = classGrowthProfiles["civilian"]
+	}
+	if level < 1 {
+		level = 1
+	}
+	if level > 100 {
+		level = 100
+	}
+	steps := level - 1
+	stats := profile.Base
+	stats.MaxHP = growStat(stats.MaxHP, profile.MaxHPGrowth, steps)
+	stats.PhysicalAttack = growStat(stats.PhysicalAttack, profile.PhysicalAtkGrowth, steps)
+	stats.MagicAttack = growStat(stats.MagicAttack, profile.MagicAtkGrowth, steps)
+	stats.PhysicalDefense = growStat(stats.PhysicalDefense, profile.PhysicalDefGrowth, steps)
+	stats.MagicDefense = growStat(stats.MagicDefense, profile.MagicDefGrowth, steps)
+	stats.Speed = growStat(stats.Speed, profile.SpeedGrowth, steps)
+	stats.HealingPower = growStat(stats.HealingPower, profile.HealingGrowth, steps)
+	return stats
+}
+
+func growStat(base, growthScaled, steps int) int {
+	return base + (steps*growthScaled+50)/100
 }
 
 func grantSeasonXP(summary *Summary, amount int) {
@@ -1435,29 +1513,28 @@ func seasonLevelForXP(xp int) int {
 	}
 	level := 1
 	remaining := xp
-	bands := []struct {
-		steps int
-		cost  int
-	}{
-		{steps: 19, cost: 500},
-		{steps: 20, cost: 800},
-		{steps: 20, cost: 1100},
-		{steps: 20, cost: 1400},
-		{steps: 20, cost: 1700},
-	}
-	for _, band := range bands {
-		for step := 0; step < band.steps; step++ {
-			if remaining < band.cost {
-				return level
-			}
-			remaining -= band.cost
-			level++
-			if level >= 100 {
-				return 100
-			}
+	for level < 100 {
+		cost := seasonXPToNextLevel(level)
+		if remaining < cost {
+			return level
 		}
+		remaining -= cost
+		level++
 	}
 	return 100
+}
+
+func seasonXPToNextLevel(level int) int {
+	switch {
+	case level < 1 || level >= 100:
+		return 0
+	case level < 10:
+		return 420 + 20*(level-1)
+	default:
+		n := level - 10
+		scaled := 88000 + 200*n + 5*n*n
+		return (scaled + 50) / 100
+	}
 }
 
 func xpForQuest(quest QuestSummary) int {

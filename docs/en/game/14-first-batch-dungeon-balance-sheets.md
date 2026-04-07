@@ -51,9 +51,9 @@ The current seasonal difficulty pacing should roughly align with:
 
 Based on the season progression framework, this approximately maps to:
 
-- day `5`: level `20-25`
-- day `10`: level `42-50`
-- day `15`: level `68-78`
+- day `5`: level `32-35`
+- day `10`: level `57-62`
+- day `15`: level `78-85`
 
 Tuning assumptions:
 

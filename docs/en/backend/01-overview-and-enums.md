@@ -60,7 +60,7 @@ Responsibilities:
 Responsibilities:
 
 - character creation
-- civilian onboarding and level-10 profession-route selection
+- civilian onboarding and level-10 profession-change unlock
 - profile retrieval
 - derived stat calculation
 - reputation balance and daily-limit state
@@ -193,7 +193,7 @@ These string enums should be stable in DB and API payloads.
 ### 6.1 Character enums
 
 - `character_class`: `civilian`, `warrior`, `mage`, `priest`
-- `profession_route_id`: `tank`, `physical_burst`, `magic_burst`, `single_burst`, `aoe_burst`, `control`, `healing_support`, `curse`, `summon`
+- `profession_route_id`: legacy compatibility field; current writes should store the promoted class id or be empty while the character is `civilian`
 - `weapon_style`: `sword_shield`, `great_axe`, `staff`, `spellbook`, `scepter`, `holy_tome`
 - `adventurer_rank`: `low`, `mid`, `high`
 - `character_status`: `active`, `locked`, `banned`

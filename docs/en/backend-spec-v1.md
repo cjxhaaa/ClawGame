@@ -60,7 +60,7 @@ Responsibilities:
 Responsibilities:
 
 - character creation
-- civilian onboarding and level-10 profession-route selection
+- civilian onboarding and level-10 profession-change unlock
 - profile retrieval
 - derived stat calculation
 - daily limit state retrieval
@@ -204,7 +204,7 @@ These string enums should be stable in DB and API payloads.
 ### 6.1 Character enums
 
 - `character_class`: `civilian`, `warrior`, `mage`, `priest`
-- `profession_route_id`: `tank`, `physical_burst`, `magic_burst`, `single_burst`, `aoe_burst`, `control`, `healing_support`, `curse`, `summon`
+- `profession_route_id`: legacy compatibility field; current writes should store the promoted class id or be empty while the character is `civilian`
 - `weapon_style`: `sword_shield`, `great_axe`, `staff`, `spellbook`, `scepter`, `holy_tome`
 - `character_status`: `active`, `locked`, `banned`
 
@@ -630,6 +630,7 @@ Fields:
 - `name` `text` unique not null
 - `class` `text` not null default `civilian`
 - `profession_route_id` `text` null
+  - legacy compatibility field that mirrors the chosen profession id in the current implementation
 - `weapon_style` `text` null
 - `rank` `text` not null default `low`
 - `reputation` `int` not null default `0`
@@ -1323,13 +1324,25 @@ Side effects:
 - creates or schedules daily quest board generation
 - emits `character.created`
 
-#### `POST /api/v1/me/profession-route`
+#### `POST /api/v1/me/profession`
+
+Alias:
+
+- `POST /api/v1/me/profession-route`
 
 Purpose:
 
-- choose the character's profession route after reaching season level `10`
+- choose or change the character's current class after reaching season level `10`
 
 Request:
+
+```json
+{
+  "class_id": "mage"
+}
+```
+
+Compatibility request shape:
 
 ```json
 {
@@ -1340,19 +1353,36 @@ Request:
 Validation:
 
 - character exists and belongs to caller
-- current class is `civilian`
 - season level is at least `10`
-- `route_id` is valid
-- profession route has not already been chosen this season
+- the requested class is one of `civilian`, `warrior`, `mage`, or `priest`
+- the requested class differs from the current class
+- the character has at least `800` gold
+- legacy `route_id` inputs may be accepted and normalized to one of the three professions
 
 Side effects:
 
-- sets `profession_route_id`
-- derives and stores the promoted `class`
-- stores the route's recommended starter `weapon_style`
-- grants one route-aligned starter weapon
-- recalculates promoted base stats
-- emits `character.profession_chosen`
+- sets `class`
+- mirrors the chosen promoted class into `profession_route_id` for compatibility, or clears it when the target class is `civilian`
+- stores the target class's recommended starter `weapon_style`, or clears it when the target class is `civilian`
+- deducts `800` gold
+- preserves learned skill levels
+- removes unusable entries from `skill_loadout`
+- unequips the current weapon to inventory if it is incompatible with the new class
+- grants one class-aligned starter weapon when moving from `civilian` into a promoted class
+- recalculates class base stats at the current level
+- emits `character.profession_changed`
+
+Response notes:
+
+- success returns the normal character state payload and additionally includes `profession_change_result`
+- `profession_change_result` is a bot-facing summary with:
+  - requested / previous / current class
+  - gold before / cost / after
+  - whether skill levels were preserved
+  - active-loadout entries removed by the class change
+  - whether the current weapon was auto-unequipped to inventory
+  - whether a starter weapon was granted and auto-equipped
+- error responses may include `error.details` with current class, current gold, required gold, season level, and a machine-readable `reason_hint`
 
 #### `GET /api/v1/me`
 
@@ -2067,14 +2097,16 @@ Responsibilities:
 
 - one character per account in V1
 - new characters always start as `civilian`
-- class and profession route are not chosen during character creation
+- class and profession are not chosen during character creation
 
-### 15.1.1 Profession-route choice
+### 15.1.1 Profession choice
 
-- only civilians may choose a profession route
 - season level must be at least `10`
-- chosen route must be valid
-- derived class and starter weapon style must match the route mapping
+- chosen class must be `civilian`, `warrior`, `mage`, or `priest`
+- chosen class must differ from the current class
+- gold must be at least `800`
+- legacy route ids may be normalized to the matching profession for compatibility
+- starter weapon style must match the profession mapping
 
 ### 15.2 Travel
 
@@ -2085,7 +2117,8 @@ Responsibilities:
 
 - item owner must equal character
 - equipped item slot must match item slot
-- weapon style mismatch blocks equip
+- civilians bypass class and weapon-style equip restrictions
+- non-civilians are blocked by class or weapon-style mismatch
 
 ### 15.4 Quest completion
 

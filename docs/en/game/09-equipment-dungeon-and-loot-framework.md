@@ -31,8 +31,9 @@ Each character equips the following slots:
 
 Rules:
 
-- `weapon` has class and weapon-style restrictions when equipped
-- civilians may leave the weapon slot empty until the level-10 profession choice
+- civilians may equip any weapon style and any non-weapon slot item
+- promoted characters use class and weapon-style restrictions when equipping weapons
+- civilians are not bound to any class weapon before profession choice and may freely equip any weapon style
 - drops themselves are not class-filtered
 - all non-weapon slots are universal
 - only one item may occupy each slot

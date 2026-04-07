@@ -216,7 +216,7 @@ func (s *Service) SetSkillLoadout(account auth.Account, skillIDs []string) (Skil
 
 func buildSkillsState(summary Summary, skillLevels map[string]int, skillLoadout []string) SkillsStateView {
 	levels := cloneSkillLevels(skillLevels)
-	loadout := cloneSkillLoadout(skillLoadout)
+	loadout := activeLoadoutForSummary(summary, levels, skillLoadout)
 	universal := make([]SkillView, 0, 6)
 	classSkills := make([]SkillView, 0, 16)
 
@@ -241,6 +241,25 @@ func buildSkillsState(summary Summary, skillLevels map[string]int, skillLoadout 
 		ActiveLoadout:  loadout,
 		MaxActiveSlots: maxActiveSkillSlots,
 	}
+}
+
+func activeLoadoutForSummary(summary Summary, skillLevels map[string]int, skillLoadout []string) []string {
+	candidates := cloneSkillLoadout(skillLoadout)
+	filtered := make([]string, 0, len(candidates))
+	for _, skillID := range candidates {
+		definition, ok := skillDefinitions[skillID]
+		if !ok || definition.IsBasic {
+			continue
+		}
+		if !canAccessSkill(summary, definition) || skillLevels[skillID] <= 0 {
+			continue
+		}
+		filtered = append(filtered, skillID)
+		if len(filtered) >= maxActiveSkillSlots {
+			break
+		}
+	}
+	return filtered
 }
 
 func orderedSkillDefinitions() []skillDefinition {
@@ -342,7 +361,7 @@ func validateSkillLoadout(summary Summary, skillLevels map[string]int, skillIDs 
 
 func SkillBuildingActions(actions []string) []string {
 	items := slices.Clone(actions)
-	for _, action := range []string{"view_skills", "upgrade_skill", "set_skill_loadout", "choose_profession_route"} {
+	for _, action := range []string{"view_skills", "upgrade_skill", "set_skill_loadout", "choose_profession", "choose_profession_route"} {
 		if !slices.Contains(items, action) {
 			items = append(items, action)
 		}

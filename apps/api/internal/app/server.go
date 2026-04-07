@@ -353,42 +353,90 @@ func NewServer(cfg config.API) *Server {
 			writeEnvelope(w, r, http.StatusOK, skillsState)
 		})
 
-		r.Post("/me/profession-route", func(w http.ResponseWriter, r *http.Request) {
+		handleChooseProfession := func(w http.ResponseWriter, r *http.Request) {
 			account, ok := requireAccount(w, r, authService)
 			if !ok {
 				return
 			}
+			previousSummary, hasCharacter := characterService.GetSummary(account.AccountID)
+			previousSkills := characters.SkillsStateView{}
+			previousInventory := inventory.InventoryView{}
+			if hasCharacter {
+				previousSkills, _ = characterService.SkillsState(account)
+				previousInventory = inventoryService.GetInventory(previousSummary)
+			}
 
 			var request struct {
+				ClassID string `json:"class_id"`
 				RouteID string `json:"route_id"`
 			}
 			if !decodeJSONBody(w, r, &request) {
 				return
 			}
+			choice := strings.TrimSpace(request.ClassID)
+			if choice == "" {
+				choice = request.RouteID
+			}
+			requestedClass, supportedChoice := characters.NormalizeProfessionTarget(choice)
 
-			state, err := characterService.ChooseProfessionRoute(account, request.RouteID, worldService)
+			state, err := characterService.ChooseProfessionRoute(account, choice, worldService)
 			if err != nil {
+				details := professionChangeErrorDetails(previousSummary, hasCharacter, choice, requestedClass, supportedChoice)
 				switch {
 				case errors.Is(err, characters.ErrCharacterNotFound):
-					writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character first")
-				case errors.Is(err, characters.ErrCharacterInvalidRoute):
-					writeError(w, r, http.StatusBadRequest, "CHARACTER_INVALID_ROUTE", "profession route is not supported")
-				case errors.Is(err, characters.ErrCharacterRouteLocked):
-					writeError(w, r, http.StatusBadRequest, "CHARACTER_ROUTE_LOCKED", "profession route is unavailable for the current character state")
+					writeErrorWithDetails(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character first", details)
+				case errors.Is(err, characters.ErrCharacterInvalidProfession):
+					writeErrorWithDetails(w, r, http.StatusBadRequest, "CHARACTER_INVALID_PROFESSION", "profession is not supported", details)
+				case errors.Is(err, characters.ErrCharacterProfessionLocked):
+					writeErrorWithDetails(w, r, http.StatusBadRequest, "CHARACTER_PROFESSION_LOCKED", "profession change is unavailable for the current character state", details)
+				case errors.Is(err, characters.ErrCharacterProfessionGold):
+					writeErrorWithDetails(w, r, http.StatusBadRequest, "CHARACTER_PROFESSION_GOLD_INSUFFICIENT", "not enough gold to change profession", details)
 				default:
-					writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to choose profession route")
+					writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to choose profession")
 				}
 				return
 			}
 
-			if catalogID := inventory.ProfessionStarterCatalogID(state.Character.ProfessionRoute); catalogID != "" {
-				if _, item, grantErr := inventoryService.GrantItemFromCatalog(state.Character, catalogID); grantErr != nil && !errors.Is(grantErr, inventory.ErrCatalogNotFound) {
-					writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to grant profession starter weapon")
-					return
-				} else if grantErr == nil && item.ItemID != "" {
-					if _, equipErr := inventoryService.EquipItem(state.Character, item.ItemID); equipErr != nil {
-						writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to equip profession starter weapon")
+			result := characters.ProfessionChangeResultView{
+				RequestedClass:       requestedClass,
+				FromClass:            previousSummary.Class,
+				ToClass:              state.Character.Class,
+				GoldCost:             characters.ProfessionChangeGoldCost,
+				GoldBefore:           previousSummary.Gold,
+				GoldAfter:            state.Character.Gold,
+				SkillLevelsPreserved: true,
+				ActiveLoadoutBefore:  slices.Clone(previousSkills.ActiveLoadout),
+			}
+
+			weaponAutoUnequipped, normalizeErr := inventoryService.UnequipWeaponIfIncompatible(state.Character)
+			if normalizeErr != nil {
+				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to normalize equipped weapon after profession change")
+				return
+			}
+			result.WeaponAutoUnequipped = weaponAutoUnequipped
+			if weaponAutoUnequipped {
+				if item, ok := equippedWeaponItem(previousInventory); ok {
+					result.UnequippedWeaponItemID = item.ItemID
+					result.UnequippedWeaponCatalogID = item.CatalogID
+					result.UnequippedWeaponName = item.Name
+				}
+				result.Warnings = append(result.Warnings, "equipped weapon was moved to inventory because it is incompatible with the new class")
+			}
+
+			if previousSummary.Class == "civilian" && state.Character.Class != "civilian" {
+				if catalogID := inventory.ProfessionStarterCatalogID(state.Character.Class); catalogID != "" {
+					if _, item, grantErr := inventoryService.GrantItemFromCatalog(state.Character, catalogID); grantErr != nil && !errors.Is(grantErr, inventory.ErrCatalogNotFound) {
+						writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to grant profession starter weapon")
 						return
+					} else if grantErr == nil && item.ItemID != "" {
+						result.StarterWeaponGranted = true
+						result.StarterWeaponItemID = item.ItemID
+						result.StarterWeaponCatalogID = item.CatalogID
+						if _, equipErr := inventoryService.EquipItem(state.Character, item.ItemID); equipErr != nil {
+							writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to equip profession starter weapon")
+							return
+						}
+						result.StarterWeaponEquipped = true
 					}
 				}
 			}
@@ -398,9 +446,16 @@ func NewServer(cfg config.API) *Server {
 				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to load character state")
 				return
 			}
+			result.GoldAfter = state.Character.Gold
+			result.ActiveLoadoutAfter = slices.Clone(state.Skills.ActiveLoadout)
+			result.RemovedActiveSkillIDs = removedSkillIDs(previousSkills.ActiveLoadout, state.Skills.ActiveLoadout)
+			state.ProfessionChangeResult = &result
 
 			writeEnvelope(w, r, http.StatusOK, state)
-		})
+		}
+
+		r.Post("/me/profession", handleChooseProfession)
+		r.Post("/me/profession-route", handleChooseProfession)
 
 		r.Get("/me", func(w http.ResponseWriter, r *http.Request) {
 			account, ok := requireAccount(w, r, authService)
@@ -2362,12 +2417,20 @@ func writeEnvelope(w http.ResponseWriter, r *http.Request, status int, data any)
 }
 
 func writeError(w http.ResponseWriter, r *http.Request, status int, code, message string) {
+	writeErrorWithDetails(w, r, status, code, message, nil)
+}
+
+func writeErrorWithDetails(w http.ResponseWriter, r *http.Request, status int, code, message string, details map[string]any) {
+	payload := map[string]any{
+		"code":    code,
+		"message": message,
+	}
+	if len(details) > 0 {
+		payload["details"] = details
+	}
 	writeJSON(w, status, map[string]any{
 		"request_id": requestID(r),
-		"error": map[string]string{
-			"code":    code,
-			"message": message,
-		},
+		"error":      payload,
 	})
 }
 
@@ -2379,6 +2442,66 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 
 func requestID(r *http.Request) string {
 	return fmt.Sprintf("req_%d", atomic.AddUint64(&requestCounter, 1))
+}
+
+func professionChangeErrorDetails(summary characters.Summary, hasCharacter bool, requestedRaw, requestedNormalized string, supportedChoice bool) map[string]any {
+	details := map[string]any{
+		"requested_class_raw": requestedRaw,
+		"supported_classes":   []string{"civilian", "warrior", "mage", "priest"},
+		"required_level":      10,
+		"required_gold":       characters.ProfessionChangeGoldCost,
+	}
+	if requestedNormalized != "" {
+		details["requested_class"] = requestedNormalized
+	}
+	if !hasCharacter {
+		details["reason_hint"] = "character_not_found"
+		return details
+	}
+
+	details["current_class"] = summary.Class
+	details["season_level"] = summary.SeasonLevel
+	details["current_gold"] = summary.Gold
+
+	switch {
+	case !supportedChoice:
+		details["reason_hint"] = "invalid_class"
+	case summary.SeasonLevel < 10:
+		details["reason_hint"] = "season_level_locked"
+	case requestedNormalized != "" && strings.EqualFold(summary.Class, requestedNormalized):
+		details["reason_hint"] = "already_in_requested_class"
+	case summary.Gold < characters.ProfessionChangeGoldCost:
+		details["reason_hint"] = "gold_insufficient"
+		details["gold_shortfall"] = characters.ProfessionChangeGoldCost - summary.Gold
+	default:
+		details["reason_hint"] = "request_blocked"
+	}
+
+	return details
+}
+
+func equippedWeaponItem(view inventory.InventoryView) (inventory.EquipmentItem, bool) {
+	for _, item := range view.Equipped {
+		if item.Slot == "weapon" {
+			return item, true
+		}
+	}
+	return inventory.EquipmentItem{}, false
+}
+
+func removedSkillIDs(before, after []string) []string {
+	remaining := make(map[string]struct{}, len(after))
+	for _, skillID := range after {
+		remaining[skillID] = struct{}{}
+	}
+	removed := make([]string, 0)
+	for _, skillID := range before {
+		if _, ok := remaining[skillID]; ok {
+			continue
+		}
+		removed = append(removed, skillID)
+	}
+	return removed
 }
 
 func parseLimit(r *http.Request, defaultValue, maxValue int) int {

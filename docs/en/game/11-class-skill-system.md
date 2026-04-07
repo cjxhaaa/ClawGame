@@ -13,13 +13,13 @@ Core rules:
 - the basic attack is always available and does not consume a slot
 - skills do not consume MP and are gated only by cooldowns
 - dungeon combat is fully auto-acted using explainable priority rules
-- characters start as `civilian` and choose one profession route at level `10`
+- characters start as `civilian` and unlock profession changes at level `10`
 - players and bots should be able to mix unlocked universal and class skills freely rather than being locked to one route id
 - non-basic skills are unlocked directly through gold-based upgrades at the Adventurers Guild
 - skill upgrades consume gold and increase skill effect values by a controlled percentage
 - skill upgrades use a fixed `10`-level cap instead of a character-level scaling cap
 
-The three routes per class are:
+The three internal skill tracks per class are:
 
 - Warrior: `tank`, `physical_burst`, `magic_burst`
 - Mage: `single_burst`, `aoe_burst`, `control`
@@ -169,36 +169,33 @@ Recommended unlock structure:
 | character creation | basic attack only |
 | civilian level `1-9` | the `6` universal skills may be unlocked to level `1` |
 | level `10+` after profession choice | class-specific skills for the chosen class may be unlocked |
+| level `10+` while staying civilian | continue using only universal skills |
 
 Design rule:
 
 - once a universal or class skill reaches level `1`, it may be mixed freely with other unlocked skills that the character is allowed to use
 - route labels should still exist for UI guidance, bot recommendation, and balancing analysis
 
-### 4.2 Profession Route Choice
+### 4.2 Profession Choice
 
-When a civilian reaches level `10`, it must choose one profession route at the Adventurers Guild before unlocking any class-specific skills.
+When a character reaches level `10`, it may change class at the Adventurers Guild among `civilian`, `warrior`, `mage`, and `priest`. Remaining `civilian` is valid, and later class changes are also allowed.
 
 Profession-choice rules:
 
-- the profession route determines the character's class identity
-- the choice is intended to be stable for the season in V1
-- the route grants one recommended starter weapon family at promotion time
-- route labels guide onboarding and bot planning, but do not hard-lock later skill loadouts
+- every class change costs `800` gold
+- the current class determines the character's class identity
+- learned skill levels are preserved when the class changes
+- the active loadout automatically removes skills that are unusable in the new class
+- entering a promoted class from `civilian` grants one recommended starter weapon family
+- route labels remain internal skill-track metadata inside each class and do not represent a second profession-selection layer
 
-Route-to-class mapping:
+Profession-to-starter-weapon mapping:
 
-| Route | Class | Recommended starter weapon |
-| --- | --- | --- |
-| `tank` | `warrior` | `sword_shield` |
-| `physical_burst` | `warrior` | `great_axe` |
-| `magic_burst` | `warrior` | `sword_shield` |
-| `single_burst` | `mage` | `spellbook` |
-| `aoe_burst` | `mage` | `staff` |
-| `control` | `mage` | `spellbook` |
-| `healing_support` | `priest` | `holy_tome` |
-| `curse` | `priest` | `scepter` |
-| `summon` | `priest` | `holy_tome` |
+| Profession | Recommended starter weapon |
+| --- | --- |
+| `warrior` | `sword_shield` |
+| `mage` | `spellbook` |
+| `priest` | `holy_tome` |
 
 ### 4.3 Upgrade Rules
 

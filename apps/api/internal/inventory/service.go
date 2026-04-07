@@ -250,6 +250,26 @@ func (s *Service) UnequipItem(character characters.Summary, slot string) (Invent
 	return InventoryView{}, ErrSlotNotOccupied
 }
 
+func (s *Service) UnequipWeaponIfIncompatible(character characters.Summary) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	items := s.ensureCharacterItemsLocked(character)
+	for i := range items {
+		if items[i].State != "equipped" || items[i].Slot != "weapon" {
+			continue
+		}
+		if itemCompatible(character, items[i]) {
+			return false, nil
+		}
+		items[i].State = "inventory"
+		s.itemsByCharacter[character.CharacterID] = items
+		return true, nil
+	}
+
+	return false, nil
+}
+
 func (s *Service) ComputeEquipmentScore(character characters.Summary) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -938,7 +958,7 @@ func starterItemsFor(character characters.Summary) []EquipmentItem {
 		return items
 	}
 
-	weaponCatalogID := ProfessionStarterCatalogID(character.ProfessionRoute)
+	weaponCatalogID := ProfessionStarterCatalogID(character.Class)
 
 	chestCatalogID := "starter_chest_cloth"
 	if character.Class == "warrior" {
@@ -972,14 +992,20 @@ func starterItemsFor(character characters.Summary) []EquipmentItem {
 
 func ProfessionStarterCatalogID(routeID string) string {
 	switch strings.ToLower(strings.TrimSpace(routeID)) {
+	case "warrior":
+		return "warrior_sword_starter"
 	case "tank", "magic_burst":
 		return "warrior_sword_starter"
 	case "physical_burst":
 		return "warrior_axe_starter"
+	case "mage":
+		return "mage_spellbook_starter"
 	case "aoe_burst":
 		return "mage_staff_starter"
 	case "single_burst", "control":
 		return "mage_spellbook_starter"
+	case "priest":
+		return "priest_tome_starter"
 	case "curse":
 		return "priest_scepter_starter"
 	case "healing_support", "summon":
@@ -1028,7 +1054,7 @@ func buildView(character characters.Summary, items []EquipmentItem, consumables 
 }
 
 func buildSlotEnhancementViews(slotEnhancements map[string]int) []characters.SlotEnhancementView {
-	slots := []string{"weapon", "head", "chest", "hands", "legs", "boots", "accessory"}
+	slots := []string{"head", "chest", "necklace", "ring", "boots", "weapon"}
 	items := make([]characters.SlotEnhancementView, 0, len(slots))
 	for _, slot := range slots {
 		level := slotEnhancements[slot]
@@ -1196,6 +1222,9 @@ func starterConsumablesFor() map[string]int {
 }
 
 func itemCompatible(character characters.Summary, item EquipmentItem) bool {
+	if strings.EqualFold(strings.TrimSpace(character.Class), "civilian") {
+		return true
+	}
 	if strings.TrimSpace(item.RequiredClass) != "" && item.RequiredClass != character.Class {
 		return false
 	}
@@ -1253,10 +1282,10 @@ func buildEquipmentShopItems(character characters.Summary) []ShopItem {
 		if len(entry.BuildingTypes) > 0 && !containsString(entry.BuildingTypes, "equipment_shop") {
 			continue
 		}
-		if strings.TrimSpace(entry.Item.RequiredClass) != "" && entry.Item.RequiredClass != character.Class {
-			continue
-		}
-		if strings.TrimSpace(entry.Item.RequiredWeaponStyle) != "" && entry.Item.RequiredWeaponStyle != character.WeaponStyle {
+		if !itemCompatible(character, EquipmentItem{
+			RequiredClass:       entry.Item.RequiredClass,
+			RequiredWeaponStyle: entry.Item.RequiredWeaponStyle,
+		}) {
 			continue
 		}
 		items = append(items, ShopItem{

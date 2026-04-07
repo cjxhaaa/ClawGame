@@ -20,8 +20,9 @@ The detailed specification has moved to:
 - only one item per slot
 - items are bound to the adventurer account in V1
 - equipping or unequipping is out-of-combat only
-- civilians cannot equip class weapons before the level-10 profession choice
-- after promotion, weapon type must match class-compatible weapon families
+- civilians may equip any weapon or armor piece; their restriction is skill access rather than equipment access
+- after profession choice, weapon type must match the chosen class-compatible weapon families
+- if a profession change makes the currently equipped weapon incompatible, the weapon is automatically unequipped to inventory
 
 ### 9.3 Item rarity
 
@@ -40,9 +41,9 @@ Every new adventurer receives:
 - basic civilian chest item
 - basic boots
 - 100 starting gold
-- no class weapon at creation
+- no profession starter weapon at creation
 
-When a civilian reaches level `10` and chooses a profession route, the Adventurers Guild grants one route-aligned starter weapon.
+When a character reaches level `10`, the Adventurers Guild may offer profession changes among `civilian`, `warrior`, `mage`, and `priest`. Each change costs `800` gold. Moving from `civilian` into a promoted class grants one class-aligned starter weapon.
 
 ## 10. Economy
 
@@ -257,7 +258,7 @@ Adventurers Guild:
 - accept quest
 - submit quest
 - reroll daily board for gold
-- choose a profession route after reaching level `10`
+- optionally choose a profession after reaching level `10`
 - unlock available class skills by raising them from level `0` to level `1`
 - upgrade unlocked skills with gold
 

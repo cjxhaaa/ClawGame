@@ -4497,6 +4497,175 @@ func TestRegionBuildingsExposeFunctionalAndNeutralCategories(t *testing.T) {
 	}
 }
 
+func TestProfessionChangeResponseIncludesBotFriendlySummary(t *testing.T) {
+	server := NewServer(config.API{Port: "8080"})
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "bot-prof-summary",
+		"password": "verysecure",
+	}), "", http.StatusOK, nil)
+
+	var loginResponse struct {
+		Data struct {
+			AccessToken string `json:"access_token"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "bot-prof-summary",
+		"password": "verysecure",
+	}), "", http.StatusOK, &loginResponse)
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
+		"name": "ProfSummary",
+	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+
+	account, err := server.authService.Authenticate(loginResponse.Data.AccessToken)
+	if err != nil {
+		t.Fatalf("failed to authenticate test account: %v", err)
+	}
+	summary, ok := server.characterService.GetSummary(account.AccountID)
+	if !ok {
+		t.Fatal("expected character summary")
+	}
+	if _, err := server.characterService.GrantSeasonXP(summary.CharacterID, 5000); err != nil {
+		t.Fatalf("failed to grant season xp: %v", err)
+	}
+	if _, err := server.characterService.GrantGold(summary.CharacterID, 900); err != nil {
+		t.Fatalf("failed to grant gold: %v", err)
+	}
+
+	var professionResponse struct {
+		Data struct {
+			Character struct {
+				Class       string `json:"class"`
+				WeaponStyle string `json:"weapon_style"`
+				Gold        int    `json:"gold"`
+			} `json:"character"`
+			ProfessionChangeResult struct {
+				RequestedClass        string   `json:"requested_class"`
+				FromClass             string   `json:"from_class"`
+				ToClass               string   `json:"to_class"`
+				GoldCost              int      `json:"gold_cost"`
+				GoldBefore            int      `json:"gold_before"`
+				GoldAfter             int      `json:"gold_after"`
+				SkillLevelsPreserved  bool     `json:"skill_levels_preserved"`
+				StarterWeaponGranted  bool     `json:"starter_weapon_granted"`
+				StarterWeaponEquipped bool     `json:"starter_weapon_equipped"`
+				Warnings              []string `json:"warnings"`
+			} `json:"profession_change_result"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/profession", map[string]any{
+		"class_id": "warrior",
+	}, loginResponse.Data.AccessToken, http.StatusOK, &professionResponse)
+
+	if professionResponse.Data.Character.Class != "warrior" {
+		t.Fatalf("expected warrior class after profession change, got %q", professionResponse.Data.Character.Class)
+	}
+	if professionResponse.Data.Character.WeaponStyle != "sword_shield" {
+		t.Fatalf("expected starter weapon style sword_shield, got %q", professionResponse.Data.Character.WeaponStyle)
+	}
+	if professionResponse.Data.ProfessionChangeResult.RequestedClass != "warrior" {
+		t.Fatalf("expected requested_class warrior, got %q", professionResponse.Data.ProfessionChangeResult.RequestedClass)
+	}
+	if professionResponse.Data.ProfessionChangeResult.FromClass != "civilian" || professionResponse.Data.ProfessionChangeResult.ToClass != "warrior" {
+		t.Fatalf("expected civilian -> warrior summary, got %#v", professionResponse.Data.ProfessionChangeResult)
+	}
+	if professionResponse.Data.ProfessionChangeResult.GoldCost != characters.ProfessionChangeGoldCost {
+		t.Fatalf("expected profession gold cost %d, got %d", characters.ProfessionChangeGoldCost, professionResponse.Data.ProfessionChangeResult.GoldCost)
+	}
+	if professionResponse.Data.ProfessionChangeResult.GoldBefore != 1000 || professionResponse.Data.ProfessionChangeResult.GoldAfter != 200 {
+		t.Fatalf("expected gold before/after 1000 -> 200, got %d -> %d", professionResponse.Data.ProfessionChangeResult.GoldBefore, professionResponse.Data.ProfessionChangeResult.GoldAfter)
+	}
+	if !professionResponse.Data.ProfessionChangeResult.SkillLevelsPreserved {
+		t.Fatal("expected skill preservation flag")
+	}
+	if !professionResponse.Data.ProfessionChangeResult.StarterWeaponGranted || !professionResponse.Data.ProfessionChangeResult.StarterWeaponEquipped {
+		t.Fatalf("expected starter weapon grant+equip summary, got %#v", professionResponse.Data.ProfessionChangeResult)
+	}
+	if len(professionResponse.Data.ProfessionChangeResult.Warnings) != 0 {
+		t.Fatalf("expected no warnings for first promotion, got %#v", professionResponse.Data.ProfessionChangeResult.Warnings)
+	}
+}
+
+func TestProfessionChangeErrorIncludesBotFriendlyDetails(t *testing.T) {
+	server := NewServer(config.API{Port: "8080"})
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "bot-prof-error",
+		"password": "verysecure",
+	}), "", http.StatusOK, nil)
+
+	var loginResponse struct {
+		Data struct {
+			AccessToken string `json:"access_token"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/login", withAuthChallenge(t, server, map[string]any{
+		"bot_name": "bot-prof-error",
+		"password": "verysecure",
+	}), "", http.StatusOK, &loginResponse)
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
+		"name": "ProfError",
+	}, loginResponse.Data.AccessToken, http.StatusOK, nil)
+
+	account, err := server.authService.Authenticate(loginResponse.Data.AccessToken)
+	if err != nil {
+		t.Fatalf("failed to authenticate test account: %v", err)
+	}
+	summary, ok := server.characterService.GetSummary(account.AccountID)
+	if !ok {
+		t.Fatal("expected character summary")
+	}
+	if _, err := server.characterService.GrantSeasonXP(summary.CharacterID, 5000); err != nil {
+		t.Fatalf("failed to grant season xp: %v", err)
+	}
+
+	var errorResponse struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+			Details struct {
+				RequestedClass string   `json:"requested_class"`
+				CurrentClass   string   `json:"current_class"`
+				CurrentGold    int      `json:"current_gold"`
+				RequiredGold   int      `json:"required_gold"`
+				GoldShortfall  int      `json:"gold_shortfall"`
+				SeasonLevel    int      `json:"season_level"`
+				RequiredLevel  int      `json:"required_level"`
+				ReasonHint     string   `json:"reason_hint"`
+				Supported      []string `json:"supported_classes"`
+			} `json:"details"`
+		} `json:"error"`
+	}
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/profession", map[string]any{
+		"class_id": "mage",
+	}, loginResponse.Data.AccessToken, http.StatusBadRequest, &errorResponse)
+
+	if errorResponse.Error.Code != "CHARACTER_PROFESSION_GOLD_INSUFFICIENT" {
+		t.Fatalf("expected gold-insufficient profession error, got %q", errorResponse.Error.Code)
+	}
+	if errorResponse.Error.Details.RequestedClass != "mage" || errorResponse.Error.Details.CurrentClass != "civilian" {
+		t.Fatalf("expected requested mage from civilian details, got %#v", errorResponse.Error.Details)
+	}
+	if errorResponse.Error.Details.CurrentGold != 100 || errorResponse.Error.Details.RequiredGold != characters.ProfessionChangeGoldCost {
+		t.Fatalf("expected current/required gold 100/%d, got %d/%d", characters.ProfessionChangeGoldCost, errorResponse.Error.Details.CurrentGold, errorResponse.Error.Details.RequiredGold)
+	}
+	if errorResponse.Error.Details.GoldShortfall != characters.ProfessionChangeGoldCost-100 {
+		t.Fatalf("expected shortfall %d, got %d", characters.ProfessionChangeGoldCost-100, errorResponse.Error.Details.GoldShortfall)
+	}
+	if errorResponse.Error.Details.SeasonLevel != 10 || errorResponse.Error.Details.RequiredLevel != 10 {
+		t.Fatalf("expected level details 10/10, got %d/%d", errorResponse.Error.Details.SeasonLevel, errorResponse.Error.Details.RequiredLevel)
+	}
+	if errorResponse.Error.Details.ReasonHint != "gold_insufficient" {
+		t.Fatalf("expected reason_hint gold_insufficient, got %q", errorResponse.Error.Details.ReasonHint)
+	}
+	if len(errorResponse.Error.Details.Supported) != 4 {
+		t.Fatalf("expected supported class list in details, got %#v", errorResponse.Error.Details.Supported)
+	}
+}
+
 func decodeJSON(t *testing.T, recorder *httptest.ResponseRecorder, target any) {
 	t.Helper()
 
@@ -4733,6 +4902,9 @@ func doJSONRequest(t *testing.T, server *Server, method, path string, body any, 
 		}
 		if _, err := server.characterService.GrantSeasonXP(summary.CharacterID, 5000); err != nil {
 			t.Fatalf("failed to grant season xp in legacy create flow: %v", err)
+		}
+		if _, err := server.characterService.GrantGold(summary.CharacterID, characters.ProfessionChangeGoldCost); err != nil {
+			t.Fatalf("failed to grant profession change gold in legacy create flow: %v", err)
 		}
 
 		doJSONRequest(t, server, http.MethodPost, "/api/v1/me/profession-route", map[string]any{

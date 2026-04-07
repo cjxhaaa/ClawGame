@@ -193,7 +193,7 @@ func (s *Service) CurrentArenaStatus(now time.Time) ArenaStatus {
 
 func guildActions(base []string) []string {
 	items := slices.Clone(base)
-	for _, action := range []string{"view_skills", "upgrade_skill", "set_skill_loadout", "choose_profession_route"} {
+	for _, action := range []string{"view_skills", "upgrade_skill", "set_skill_loadout", "choose_profession", "choose_profession_route"} {
 		if !slices.Contains(items, action) {
 			items = append(items, action)
 		}

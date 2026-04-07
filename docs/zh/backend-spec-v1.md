@@ -65,7 +65,7 @@ V1 后端由两个 Go 应用组成：
 职责：
 
 - 角色创建
-- 平民阶段 onboarding 与 `10` 级职业路线选择
+- 平民阶段 onboarding 与 `10` 级职业切换解锁
 - 角色档案读取
 - 派生属性计算
 - 阶位升级
@@ -214,7 +214,7 @@ V1 后端由两个 Go 应用组成：
 ### 6.1 角色相关枚举
 
 - `character_class`：`civilian`、`warrior`、`mage`、`priest`
-- `profession_route_id`：`tank`、`physical_burst`、`magic_burst`、`single_burst`、`aoe_burst`、`control`、`healing_support`、`curse`、`summon`
+- `profession_route_id`：兼容历史字段；当前写入应为当前正式职业 id，若角色是 `civilian` 则为空
 - `weapon_style`：`sword_shield`、`great_axe`、`staff`、`spellbook`、`scepter`、`holy_tome`
 - `adventurer_rank`：`low`、`mid`、`high`
 - `character_status`：`active`、`locked`、`banned`
@@ -1042,11 +1042,23 @@ V1 后端由两个 Go 应用组成：
 
 #### `POST /api/v1/me/profession-route`
 
+兼容别名：
+
+- `POST /api/v1/me/profession`
+
 用途：
 
-- 在角色达到赛季 `10` 级后选择职业路线
+- 在角色达到赛季 `10` 级后选择或切换当前职业
 
 请求：
+
+```json
+{
+  "class_id": "mage"
+}
+```
+
+兼容请求形态：
 
 ```json
 {
@@ -1057,19 +1069,36 @@ V1 后端由两个 Go 应用组成：
 校验：
 
 - 角色存在且归属于调用者
-- 当前 `class` 为 `civilian`
 - 赛季等级至少达到 `10`
-- `route_id` 合法
-- 本赛季尚未选择过职业路线
+- 请求的职业必须是 `civilian`、`warrior`、`mage`、`priest` 之一
+- 请求的职业必须与当前职业不同
+- 角色金币至少达到 `800`
+- 兼容旧 `route_id` 输入，并将其归一化为三职业之一
 
 副作用：
 
-- 写入 `profession_route_id`
-- 推导并写入转职后的 `class`
-- 写入该路线推荐的起始 `weapon_style`
-- 发放一把与路线匹配的起始职业武器
-- 重新计算转职后的基础属性
-- 产生 `character.profession_chosen`
+- 写入 `class`
+- 为兼容性将目标正式职业镜像写入 `profession_route_id`；如果目标职业是 `civilian`，则清空该字段
+- 写入目标职业推荐的 `weapon_style`；如果目标职业是 `civilian`，则清空该字段
+- 扣除 `800` 金币
+- 保留已学习的技能等级
+- 从 `skill_loadout` 中移除新职业下不可用的技能
+- 如果当前武器与新职业不兼容，则自动卸下并放回背包
+- 从 `civilian` 切入正式职业时，发放一把与职业匹配的起始武器
+- 重新计算当前等级下的职业基础属性
+- 产生 `character.profession_changed`
+
+响应说明：
+
+- 成功时返回常规角色状态结构，并额外附带 `profession_change_result`
+- `profession_change_result` 面向 Bot，总结以下关键结果：
+  - 请求职业、切换前职业、切换后职业
+  - 切换前金币、消耗金币、切换后金币
+  - 技能等级是否保留
+  - 因职业切换而被移出主动技能栏的技能
+  - 当前武器是否被自动卸下并放回背包
+  - 是否发放并自动穿戴了起始武器
+- 失败时的 `error.details` 可能包含当前职业、当前金币、所需金币、赛季等级，以及机器可读的 `reason_hint`
 
 #### `GET /api/v1/me`
 
@@ -1742,14 +1771,16 @@ V1 后端由两个 Go 应用组成：
 
 - 每账号只能有一个角色
 - 新角色创建后默认身份必须是 `civilian`
-- 创建角色时不选择职业和职业路线
+- 创建角色时不选择职业
 
-### 15.1.1 职业路线选择
+### 15.1.1 职业选择
 
-- 只有 `civilian` 才能选择职业路线
 - 赛季等级必须至少达到 `10`
-- 所选路线必须合法
-- 推导出的职业与起始武器流派必须符合路线映射
+- 所选职业必须是 `civilian`、`warrior`、`mage`、`priest` 之一
+- 所选职业必须与当前职业不同
+- 金币必须至少达到 `800`
+- 兼容旧路线 id，并将其归一化到三职业之一
+- 起始武器流派必须符合职业映射
 
 ### 15.2 旅行
 
@@ -1761,7 +1792,8 @@ V1 后端由两个 Go 应用组成：
 
 - 物品必须存在且归属于当前角色
 - 装备槽位必须兼容
-- 职业 / 武器限制必须满足
+- 平民会跳过职业 / 武器限制校验
+- 非平民仍需满足职业 / 武器限制
 
 ### 15.4 任务完成
 

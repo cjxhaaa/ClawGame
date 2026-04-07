@@ -19,7 +19,7 @@ This is a V1 launch spec, not a final live-service spec. Any feature not explici
 
 ### 2.1 Core fantasy
 
-Each bot registers an adventurer account, begins as a civilian adventurer, accepts guild work, travels across the world, reaches level `10`, chooses a profession route, clears dungeons, earns gold and reputation, upgrades gear, and eventually competes in a scheduled arena tournament.
+Each bot registers an adventurer account, begins as a civilian adventurer, accepts guild work, travels across the world, reaches level `10`, unlocks profession changes among `civilian`, `warrior`, `mage`, and `priest`, clears dungeons, earns gold and reputation, upgrades gear, and eventually competes in a scheduled arena tournament.
 
 ### 2.2 Primary player type
 
@@ -41,7 +41,7 @@ V1 is designed primarily for bot accounts, with human users consuming the game t
 ### 3.1 In scope
 
 - bot registration and login
-- civilian start plus profession-route choice at level `10`
+- civilian start plus profession-change unlock at level `10`
 - equipment system with slots: head, chest, necklace, ring, boots, weapon
 - two weapon types per class
 - gold economy
@@ -72,7 +72,7 @@ A typical V1 bot run can include the following activities, but bots may choose t
 4. query quests and receive up to four active daily contracts automatically
 5. travel between regions, buildings, and dungeons
 6. complete quests, run dungeons, improve equipment, and manage resources
-7. reach season level `10` and choose one profession route at the Adventurers Guild
+7. reach season level `10` and optionally choose `warrior`, `mage`, or `priest` at the Adventurers Guild
 8. revisit planning state and adapt strategy
 9. continue until the current contract board and dungeon reward-claim limits are exhausted, or until the bot changes goals
 10. join the arena when eligible and the signup window is open
@@ -104,29 +104,22 @@ Every V1 adventurer now passes through two gameplay stages.
 - civilians do not choose a class at character creation
 - civilians use only the basic attack plus universal non-class skills
 - civilians can clear early quests and level normally before specialization
-- civilians do not receive a class weapon at creation
+- character creation does not grant a profession starter weapon
+- civilians may equip any weapon or armor piece before specialization
 
 #### Profession stage (`level 10+`)
 
-- once a character reaches level `10`, it chooses one profession route
-- the profession route determines the character's class identity for progression and equipment rules
-- the route also grants a route-aligned starter weapon when the promotion happens at the Adventurers Guild
-- route labels shape onboarding and recommendations, but do not hard-lock skill loadouts later
+- once a character reaches level `10`, it may change to `civilian`, `warrior`, `mage`, or `priest` at the Adventurers Guild
+- each profession change costs `800` gold
+- the current class determines the character's class identity for progression and equipment rules
+- moving from `civilian` into a promoted class grants one class-aligned starter weapon
+- old route labels such as `tank` or `control` are internal skill-track tags, not a second promotion layer
 
-The available profession routes are:
+The available professions are:
 
-- Warrior:
-  - `tank`
-  - `physical_burst`
-  - `magic_burst`
-- Mage:
-  - `single_burst`
-  - `aoe_burst`
-  - `control`
-- Priest:
-  - `healing_support`
-  - `curse`
-  - `summon`
+- `warrior`
+- `mage`
+- `priest`
 
 ### 6.2 Reputation and Daily Contracts
 
@@ -148,8 +141,9 @@ V1 uses the seasonal level system as the main character power cadence.
 Key rules:
 
 - all characters begin as `civilian`
-- profession choice happens at level `10`
-- class identity, class weapon access, and class-skill unlocks only become active after the level-10 profession choice
+- profession change becomes available at level `10`
+- class identity, class-skill availability, and promoted-class weapon restrictions always follow the current class
+- learned skill levels are preserved when changing class, but the active loadout drops any skills that are not usable in the new class
 
 Reason:
 
@@ -324,7 +318,8 @@ Holy Tome:
 - only one item per slot
 - items are bound to the adventurer account in V1
 - equipping or unequipping is out-of-combat only
-- weapon type must match class-compatible weapon families
+- civilians may equip any weapon family
+- promoted characters must match class-compatible weapon families
 
 ### 9.3 Item rarity
 
@@ -366,9 +361,9 @@ Every new adventurer receives:
 - a basic civilian chest item
 - basic boots
 - 100 starting gold
-- no class weapon at creation
+- no profession starter weapon at creation
 
-When the character reaches level `10` and chooses a profession route, the Adventurers Guild grants one route-aligned starter weapon.
+When the character reaches level `10`, the Adventurers Guild may offer profession changes among `civilian`, `warrior`, `mage`, and `priest`. Each change costs `800` gold. If the new class cannot use the currently equipped weapon, that weapon is automatically moved back to inventory. Moving from `civilian` into a promoted class grants one class-aligned starter weapon.
 
 ## 10. Economy
 

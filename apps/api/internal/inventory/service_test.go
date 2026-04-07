@@ -95,3 +95,137 @@ func TestDeriveStatsAppliesEquippedSetBonuses(t *testing.T) {
 		t.Fatalf("expected 2-piece tier to be active, got %#v", view.EquippedSetBonuses[0].ActiveTiers)
 	}
 }
+
+func TestCivilianCanEquipAnyWeaponStyle(t *testing.T) {
+	service := NewService()
+	character := characters.Summary{
+		CharacterID: "char_civilian_any_weapon",
+		Name:        "Flexible Civilian",
+		Class:       "civilian",
+		WeaponStyle: "",
+	}
+
+	_, item, err := service.GrantItemFromCatalog(character, "gravewake_bastion_weapon_staff_red")
+	if err != nil {
+		t.Fatalf("expected weapon grant to succeed, got %v", err)
+	}
+
+	view, err := service.EquipItem(character, item.ItemID)
+	if err != nil {
+		t.Fatalf("expected civilian to equip any weapon style, got %v", err)
+	}
+	if len(view.Equipped) == 0 {
+		t.Fatal("expected equipped items after civilian equip")
+	}
+
+	foundWeapon := false
+	for _, equipped := range view.Equipped {
+		if equipped.ItemID == item.ItemID && equipped.Slot == "weapon" {
+			foundWeapon = true
+			break
+		}
+	}
+	if !foundWeapon {
+		t.Fatal("expected granted weapon to be equipped for civilian")
+	}
+}
+
+func TestPromotedCharacterStillRespectsWeaponStyleRestriction(t *testing.T) {
+	service := NewService()
+	character := characters.Summary{
+		CharacterID: "char_warrior_weapon_lock",
+		Name:        "Focused Warrior",
+		Class:       "warrior",
+		WeaponStyle: "sword_shield",
+	}
+
+	_, item, err := service.GrantItemFromCatalog(character, "gravewake_bastion_weapon_staff_red")
+	if err != nil {
+		t.Fatalf("expected weapon grant to succeed, got %v", err)
+	}
+
+	if _, err := service.EquipItem(character, item.ItemID); err != ErrItemNotEquippable {
+		t.Fatalf("expected non-civilian weapon-style mismatch to fail with ErrItemNotEquippable, got %v", err)
+	}
+}
+
+func TestCivilianEquipmentShopShowsAllWeaponFamilies(t *testing.T) {
+	character := characters.Summary{
+		CharacterID: "char_civilian_shop",
+		Name:        "Shop Civilian",
+		Class:       "civilian",
+		WeaponStyle: "",
+	}
+
+	items := buildEquipmentShopItems(character)
+	seen := map[string]bool{}
+	for _, item := range items {
+		if item.Slot == "weapon" {
+			seen[item.CatalogID] = true
+		}
+	}
+
+	for _, catalogID := range []string{"warrior_sword_bronze", "mage_staff_oak", "priest_scepter_ash"} {
+		if !seen[catalogID] {
+			t.Fatalf("expected civilian shop to expose weapon %s", catalogID)
+		}
+	}
+}
+
+func TestBuildSlotEnhancementViewsUsesCanonicalSixEquipmentSlots(t *testing.T) {
+	views := buildSlotEnhancementViews(map[string]int{
+		"weapon":   3,
+		"necklace": 2,
+		"ring":     1,
+	})
+
+	expected := []string{"head", "chest", "necklace", "ring", "boots", "weapon"}
+	if len(views) != len(expected) {
+		t.Fatalf("expected %d slot enhancement views, got %d", len(expected), len(views))
+	}
+
+	for i, slot := range expected {
+		if views[i].Slot != slot {
+			t.Fatalf("expected slot %d to be %s, got %s", i, slot, views[i].Slot)
+		}
+	}
+
+	if views[2].EnhancementLevel != 2 {
+		t.Fatalf("expected necklace enhancement level 2, got %d", views[2].EnhancementLevel)
+	}
+	if views[3].EnhancementLevel != 1 {
+		t.Fatalf("expected ring enhancement level 1, got %d", views[3].EnhancementLevel)
+	}
+	if views[5].EnhancementLevel != 3 {
+		t.Fatalf("expected weapon enhancement level 3, got %d", views[5].EnhancementLevel)
+	}
+}
+
+func TestUnequipWeaponIfIncompatibleMovesWeaponBackToInventory(t *testing.T) {
+	service := NewService()
+	character := characters.Summary{
+		CharacterID: "char_swap_weapon",
+		Name:        "Swap Weapon",
+		Class:       "mage",
+		WeaponStyle: "spellbook",
+	}
+	service.itemsByCharacter[character.CharacterID] = []EquipmentItem{
+		buildEquipmentItemFromCatalog(shopCatalogByID["warrior_sword_bronze"].catalogItem, "equipped"),
+	}
+
+	changed, err := service.UnequipWeaponIfIncompatible(character)
+	if err != nil {
+		t.Fatalf("expected incompatible weapon check to succeed, got %v", err)
+	}
+	if !changed {
+		t.Fatal("expected incompatible weapon to be unequipped")
+	}
+
+	view := service.GetInventory(character)
+	if len(view.Equipped) != 0 {
+		t.Fatalf("expected no equipped weapon after auto-unequip, got %#v", view.Equipped)
+	}
+	if len(view.Inventory) != 1 || view.Inventory[0].State != "inventory" {
+		t.Fatalf("expected weapon moved to inventory, got %#v", view.Inventory)
+	}
+}
