@@ -200,25 +200,25 @@ func skillActionForID(skillID string, level int) combat.SkillAction {
 	case "Tripwire Kit":
 		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "physical", Tier: "ultimate", CooldownRounds: 3, PowerScale: 1.18, DebuffFamily: "slow", DebuffValue: 0.18, Level: level}
 	case "Guard Stance":
-		return combat.SkillAction{SkillID: skillID, ActionKind: "buff", Tier: "normal", CooldownRounds: 1, BuffFamily: "def", BuffValue: 0.16, ShieldScale: 0.10, Level: level}
+		return combat.SkillAction{SkillID: skillID, ActionKind: "buff", Tier: "advanced", CooldownRounds: 2, BuffFamily: "def", BuffValue: 0.16, ShieldScale: 0.10, Level: level}
 	case "War Cry":
-		return combat.SkillAction{SkillID: skillID, ActionKind: "buff", Tier: "normal", CooldownRounds: 1, BuffFamily: "atk", BuffValue: 0.14, Level: level}
+		return combat.SkillAction{SkillID: skillID, ActionKind: "buff", Tier: "ultimate", CooldownRounds: 3, BuffFamily: "atk", BuffValue: 0.14, Level: level}
 	case "Intercept":
-		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", Tier: "advanced", CooldownRounds: 2, PowerScale: 1.02, DebuffFamily: "weaken", DebuffValue: 0.10, Level: level}
+		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", Tier: "normal", CooldownRounds: 1, PowerScale: 1.02, DebuffFamily: "weaken", DebuffValue: 0.10, Level: level}
 	case "Shield Bash":
 		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "physical", Tier: "normal", CooldownRounds: 1, PowerScale: 1.04, DebuffFamily: "slow", DebuffValue: 0.12, Level: level}
 	case "Fortified Slash":
 		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "physical", Tier: "advanced", CooldownRounds: 2, PowerScale: 1.12, BuffFamily: "def", BuffValue: 0.10, Level: level}
 	case "Bulwark Field":
-		return combat.SkillAction{SkillID: skillID, ActionKind: "buff", Tier: "advanced", CooldownRounds: 2, BuffFamily: "def", BuffValue: 0.18, ShieldScale: 0.14, Level: level}
+		return combat.SkillAction{SkillID: skillID, ActionKind: "buff", Tier: "ultimate", CooldownRounds: 3, BuffFamily: "def", BuffValue: 0.18, ShieldScale: 0.14, Level: level}
 	case "Linebreaker":
-		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "physical", Tier: "ultimate", CooldownRounds: 3, TargetPattern: "target_3", PowerScale: 1.32, DebuffFamily: "shred", DebuffValue: 0.16, Level: level}
+		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "physical", Tier: "advanced", CooldownRounds: 2, TargetPattern: "target_3", PowerScale: 1.32, DebuffFamily: "shred", DebuffValue: 0.16, Level: level}
 	case "Cleave":
 		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "physical", Tier: "normal", CooldownRounds: 1, TargetPattern: "target_3", PowerScale: 1.10, Level: level}
 	case "Blood Roar":
 		return combat.SkillAction{SkillID: skillID, ActionKind: "buff", Tier: "advanced", CooldownRounds: 2, BuffFamily: "atk", BuffValue: 0.18, Level: level}
 	case "Execution Rush":
-		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "physical", Tier: "advanced", CooldownRounds: 2, PowerScale: 1.36, Level: level}
+		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "physical", Tier: "ultimate", CooldownRounds: 3, PowerScale: 1.36, Level: level}
 	case "Rending Arc":
 		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "physical", Tier: "ultimate", CooldownRounds: 3, TargetPattern: "target_3", PowerScale: 1.42, DebuffFamily: "weaken", DebuffValue: 0.12, Level: level}
 	case "Runic Brand":
@@ -230,7 +230,7 @@ func skillActionForID(skillID string, level int) combat.SkillAction {
 	case "Astral Breaker":
 		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "magic", Tier: "ultimate", CooldownRounds: 3, PowerScale: 1.48, Level: level}
 	case "Arc Veil":
-		return combat.SkillAction{SkillID: skillID, ActionKind: "buff", Tier: "normal", CooldownRounds: 1, BuffFamily: "def", BuffValue: 0.14, ShieldScale: 0.08, Level: level}
+		return combat.SkillAction{SkillID: skillID, ActionKind: "buff", Tier: "advanced", CooldownRounds: 2, BuffFamily: "def", BuffValue: 0.14, ShieldScale: 0.08, Level: level}
 	case "Focus Pulse":
 		return combat.SkillAction{SkillID: skillID, ActionKind: "buff", Tier: "normal", CooldownRounds: 1, BuffFamily: "atk", BuffValue: 0.14, Level: level}
 	case "Disrupt Ray":
@@ -240,13 +240,13 @@ func skillActionForID(skillID string, level int) combat.SkillAction {
 	case "Seal Fracture":
 		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "magic", Tier: "advanced", CooldownRounds: 2, PowerScale: 1.16, DebuffFamily: "shred", DebuffValue: 0.14, Level: level}
 	case "Detonate Sigil":
-		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "magic", Tier: "advanced", CooldownRounds: 2, PowerScale: 1.34, Level: level}
+		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "magic", Tier: "ultimate", CooldownRounds: 3, PowerScale: 1.34, Level: level}
 	case "Star Pierce":
-		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "magic", Tier: "ultimate", CooldownRounds: 3, PowerScale: 1.52, Level: level}
+		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "magic", Tier: "advanced", CooldownRounds: 2, PowerScale: 1.52, Level: level}
 	case "Flame Burst":
-		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "magic", Tier: "normal", CooldownRounds: 1, TargetPattern: "target_3", PowerScale: 1.10, Level: level}
+		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "magic", Tier: "advanced", CooldownRounds: 2, TargetPattern: "target_3", PowerScale: 1.10, Level: level}
 	case "Meteor Shard":
-		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "magic", Tier: "advanced", CooldownRounds: 2, PowerScale: 1.28, Level: level}
+		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "magic", Tier: "ultimate", CooldownRounds: 3, PowerScale: 1.28, Level: level}
 	case "Chain Script":
 		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "magic", Tier: "advanced", CooldownRounds: 2, TargetPattern: "target_3", PowerScale: 1.20, DebuffFamily: "vulnerable", DebuffValue: 0.10, Level: level}
 	case "Ember Field":
@@ -262,23 +262,23 @@ func skillActionForID(skillID string, level int) combat.SkillAction {
 	case "Restore":
 		return combat.SkillAction{SkillID: skillID, ActionKind: "heal", Tier: "normal", CooldownRounds: 1, HealScale: 1.02, Level: level}
 	case "Sanctuary Mark":
-		return combat.SkillAction{SkillID: skillID, ActionKind: "buff", Tier: "normal", CooldownRounds: 1, BuffFamily: "def", BuffValue: 0.14, ShieldScale: 0.10, Level: level}
+		return combat.SkillAction{SkillID: skillID, ActionKind: "buff", Tier: "advanced", CooldownRounds: 2, BuffFamily: "def", BuffValue: 0.14, ShieldScale: 0.10, Level: level}
 	case "Purge":
-		return combat.SkillAction{SkillID: skillID, ActionKind: "heal", Tier: "advanced", CooldownRounds: 2, HealScale: 0.84, Level: level}
+		return combat.SkillAction{SkillID: skillID, ActionKind: "heal", Tier: "normal", CooldownRounds: 1, HealScale: 0.84, Level: level}
 	case "Grace Field":
-		return combat.SkillAction{SkillID: skillID, ActionKind: "buff", Tier: "normal", CooldownRounds: 1, RegenScale: 0.05, BuffFamily: "def", BuffValue: 0.08, Level: level}
+		return combat.SkillAction{SkillID: skillID, ActionKind: "buff", Tier: "advanced", CooldownRounds: 2, RegenScale: 0.05, BuffFamily: "def", BuffValue: 0.08, Level: level}
 	case "Purifying Wave":
-		return combat.SkillAction{SkillID: skillID, ActionKind: "heal", Tier: "advanced", CooldownRounds: 2, HealScale: 1.08, Level: level}
+		return combat.SkillAction{SkillID: skillID, ActionKind: "heal", Tier: "ultimate", CooldownRounds: 3, HealScale: 1.08, Level: level}
 	case "Prayer of Renewal":
-		return combat.SkillAction{SkillID: skillID, ActionKind: "heal", Tier: "advanced", CooldownRounds: 2, HealScale: 1.20, RegenScale: 0.04, Level: level}
+		return combat.SkillAction{SkillID: skillID, ActionKind: "heal", Tier: "ultimate", CooldownRounds: 3, HealScale: 1.20, RegenScale: 0.04, Level: level}
 	case "Bless Armor":
 		return combat.SkillAction{SkillID: skillID, ActionKind: "buff", Tier: "ultimate", CooldownRounds: 3, BuffFamily: "def", BuffValue: 0.20, ShieldScale: 0.16, Level: level}
 	case "Judged Weakness":
-		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "magic", Tier: "normal", CooldownRounds: 1, PowerScale: 1.04, DebuffFamily: "weaken", DebuffValue: 0.12, Level: level}
+		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "magic", Tier: "advanced", CooldownRounds: 2, PowerScale: 1.04, DebuffFamily: "weaken", DebuffValue: 0.12, Level: level}
 	case "Seal of Silence":
 		return combat.SkillAction{SkillID: skillID, ActionKind: "debuff", Tier: "advanced", CooldownRounds: 2, SilenceRounds: 2, Level: level}
 	case "Wither Prayer":
-		return combat.SkillAction{SkillID: skillID, ActionKind: "debuff", Tier: "advanced", CooldownRounds: 2, DebuffFamily: "vulnerable", DebuffValue: 0.14, Level: level}
+		return combat.SkillAction{SkillID: skillID, ActionKind: "debuff", Tier: "ultimate", CooldownRounds: 3, DebuffFamily: "vulnerable", DebuffValue: 0.14, Level: level}
 	case "Judgment":
 		return combat.SkillAction{SkillID: skillID, ActionKind: "damage", DamageType: "magic", Tier: "ultimate", CooldownRounds: 3, PowerScale: 1.46, Level: level}
 	case "Sanctified Blow":

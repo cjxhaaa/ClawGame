@@ -102,7 +102,7 @@ Every V1 adventurer now passes through two gameplay stages.
 
 - all new characters begin as `civilian`
 - civilians do not choose a class at character creation
-- civilians use only the basic attack plus universal non-class skills
+- civilians use the basic attack plus unlocked universal skills in combat
 - civilians can clear early quests and level normally before specialization
 - character creation does not grant a profession starter weapon
 - civilians may equip any weapon or armor piece before specialization
@@ -142,8 +142,12 @@ Key rules:
 
 - all characters begin as `civilian`
 - profession change becomes available at level `10`
+- civilians cannot learn profession skills and instead rely on the universal skill pool unless they change profession
 - class identity, class-skill availability, and promoted-class weapon restrictions always follow the current class
-- learned skill levels are preserved when changing class, but the active loadout drops any skills that are not usable in the new class
+- the universal skill pool remains available across classes, but each promoted class owns one complete class skill pool
+- promoted classes do not split access into separate class-shared and route-specific layers
+- learned skill levels are preserved when changing class, and switching back to an old class restores access to its learned skills
+- the active loadout drops any skills that are not usable in the new class
 
 Reason:
 
@@ -249,58 +253,25 @@ No hidden stacking rules:
 
 ## 8. Class Skill Kits
 
-Each class has one shared basic attack, one shared utility skill, and two weapon-specific active skills. This gives each build four active battle actions in V1.
+Class skills use one universal skill pool plus one full class pool per promoted class.
 
-### 8.1 Warrior
+Rules:
 
-Shared:
+- all characters may learn and equip universal skills
+- `civilian` relies on universal skills because it has no profession-specific skill pool
+- each promoted class owns one complete class skill pool
+- all skills inside the current class pool may be learned, upgraded, and equipped
+- promoted classes do not have a separate class-shared skill layer
+- internal track tags such as `tank`, `control`, or `summon` remain recommendation labels only
+- switching back to a previously used class restores access to that class's learned skills
 
-- `Strike`: basic physical attack, no cooldown
-- `Guard`: gain shield, 2-turn cooldown
+Class focus summary:
 
-Sword and Shield:
+- Warrior: frontline durability, physical burst, and magic-infused burst
+- Mage: single-target burst, AoE pressure, and control
+- Priest: healing support, curse utility, and summon support
 
-- `Shield Bash`: low damage, chance to stun, 3-turn cooldown
-- `Fortified Slash`: medium damage, self-defense up for 2 turns, 3-turn cooldown
-
-Great Axe:
-
-- `Cleave`: medium AoE damage, 3-turn cooldown
-- `Execution Swing`: high single-target damage, 4-turn cooldown
-
-### 8.2 Mage
-
-Shared:
-
-- `Arc Bolt`: basic magic attack, no cooldown
-- `Meditate`: recover MP, 3-turn cooldown
-
-Staff:
-
-- `Fireburst`: AoE magic damage, applies burn, 3-turn cooldown
-- `Frost Bind`: magic damage plus slow/stun-lite effect implemented as `speed_down` in V1, 4-turn cooldown
-
-Spellbook:
-
-- `Hex Mark`: apply vulnerability debuff, 3-turn cooldown
-- `Mana Lance`: high single-target magic damage, 4-turn cooldown
-
-### 8.3 Priest
-
-Shared:
-
-- `Smite`: basic holy damage, no cooldown
-- `Lesser Heal`: single-target heal, 2-turn cooldown
-
-Scepter:
-
-- `Sanctuary`: group regen, 4-turn cooldown
-- `Purifying Light`: damage plus remove one negative status, 3-turn cooldown
-
-Holy Tome:
-
-- `Bless Armor`: ally shield and defense up, 3-turn cooldown
-- `Judgment`: medium holy damage, bonus versus debuffed targets, 4-turn cooldown
+See [docs/en/game/11-class-skill-system.md](/home/cjxh/ClawGame/docs/en/game/11-class-skill-system.md) for the full skill pool breakdown.
 
 ## 9. Equipment System
 

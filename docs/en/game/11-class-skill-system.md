@@ -6,15 +6,16 @@ This document defines the class skill system used by dungeon auto-combat.
 
 Core rules:
 
-- the game provides `6` universal skills that any character may use
-- each class now has `3` clear combat tracks for skill categorization and recommended builds
-- each class also keeps a small class-specific shared skill pool
+- every new character begins as `civilian` with the basic attack and access to the universal skill pool
+- each promoted class owns one complete class skill pool
+- each class keeps `3` internal combat tracks for categorization and recommended builds
+- track tags do not gate learning, upgrading, or equipping
 - each dungeon run may equip up to `4` active skills
 - the basic attack is always available and does not consume a slot
 - skills do not consume MP and are gated only by cooldowns
 - dungeon combat is fully auto-acted using explainable priority rules
 - characters start as `civilian` and unlock profession changes at level `10`
-- players and bots should be able to mix unlocked universal and class skills freely rather than being locked to one route id
+- players and bots should be able to mix unlocked universal skills and unlocked class skills freely rather than being locked to one route id
 - non-basic skills are unlocked directly through gold-based upgrades at the Adventurers Guild
 - skill upgrades consume gold and increase skill effect values by a controlled percentage
 - skill upgrades use a fixed `10`-level cap instead of a character-level scaling cap
@@ -54,6 +55,8 @@ Track rule:
 - tracks exist to describe intended playstyle and help bot recommendations
 - tracks should not hard-lock what skills may be equipped together
 - universal skills may use `class = universal` and `route_id = universal`
+- profession skills should use `class = warrior | mage | priest`
+- `civilian` uses the universal skill pool instead of a profession-specific skill pool
 - `weapon_style` may be used as an optional flavor or compatibility tag later, but it should not be the main limiter of build freedom in this version
 
 ## 2.1 Localization Display Names
@@ -138,9 +141,9 @@ UI, battle logs, and bot summaries should expose localized display names while k
 - each dungeon entry may equip up to `4` active skills
 - the basic attack is always available and does not consume a slot
 - the same skill cannot be equipped twice
-- equipped skills may be mixed from unlocked universal skills and any unlocked class-specific skills
+- equipped skills may be mixed from unlocked universal skills and any unlocked skills that belong to the current class
 - classes should not be hard-locked to a single route before a dungeon
-- bots should be able to save multiple free-mix loadout presets
+- bots should be able to save multiple per-class free-mix loadout presets
 - routes remain recommended build labels, not equip restrictions
 
 Cooldown tier rules:
@@ -168,12 +171,15 @@ Recommended unlock structure:
 | --- | --- |
 | character creation | basic attack only |
 | civilian level `1-9` | the `6` universal skills may be unlocked to level `1` |
-| level `10+` after profession choice | class-specific skills for the chosen class may be unlocked |
-| level `10+` while staying civilian | continue using only universal skills |
+| level `10+` after profession choice | universal skills plus the chosen class's full skill pool may be unlocked |
+| level `10+` while staying civilian | continue using the universal skill pool |
 
 Design rule:
 
-- once a universal or class skill reaches level `1`, it may be mixed freely with other unlocked skills that the character is allowed to use
+- once a universal or class skill reaches level `1`, that skill stays learned permanently
+- a learned universal skill may always be equipped and used
+- a learned skill may be equipped and used whenever the current class matches that skill's class
+- changing back to a previous class restores access to that class's previously learned skills
 - route labels should still exist for UI guidance, bot recommendation, and balancing analysis
 
 ### 4.2 Profession Choice
@@ -184,7 +190,8 @@ Profession-choice rules:
 
 - every class change costs `800` gold
 - the current class determines the character's class identity
-- learned skill levels are preserved when the class changes
+- learned skill levels are preserved when the class changes and never reset
+- switching back to a previous class restores access to that class's learned skills
 - the active loadout automatically removes skills that are unusable in the new class
 - entering a promoted class from `civilian` grants one recommended starter weapon family
 - route labels remain internal skill-track metadata inside each class and do not represent a second profession-selection layer
@@ -253,7 +260,7 @@ Balance intent:
 
 ## 5. Universal Skill Pool
 
-Universal skills are available to all characters and form the entire non-basic skill pool during the civilian stage.
+Universal skills are available to all characters and form the non-basic skill pool during the civilian stage.
 
 ### 5.1 Universal skills
 
@@ -301,26 +308,39 @@ Universal skills are available to all characters and form the entire non-basic s
 
 Design intent:
 
-- universal skills should feel practical and flavorful without replacing class-defining skills
-- they should provide onboarding utility, tempo control, and light setup rather than hard identity payoffs
-- they should remain situationally useful even after profession choice
+- universal skills keep the civilian stage viable instead of forcing immediate profession change
+- they provide onboarding utility, tempo control, and light setup rather than replacing class-defining payoffs
+- after profession change they remain optional mix-in tools rather than a separate class-shared layer
 
-## 6. Auto-battle Selection Logic
+## 6. Civilian Stage
+
+Civilian is a valid long-term class choice and relies on the universal skill pool instead of a profession-specific pool.
+
+Rules:
+
+- civilians use the basic attack plus any unlocked universal skills in dungeon combat
+- civilians may equip any weapon family and any armor piece
+- civilians cannot learn warrior, mage, or priest skills until they change profession
+- staying `civilian` after level `10` is allowed, but it intentionally trades combat depth for equipment freedom
+
+## 7. Auto-battle Selection Logic
 
 Player-side entities choose actions in this order:
 
 1. survival skills if self HP is low
 2. healing, shielding, or summon-refresh if allies are endangered
 3. AoE or battlefield-control skills when multiple enemies are active
-4. boss-specific break, curse, or route payoff skills when conditions are met
+4. boss-specific break, curse, or class payoff skills when conditions are met
 5. highest-value damage or summon-empower skills if available
 6. basic attack if everything is on cooldown
 
-## 7. Warrior Skill System
+## 8. Warrior Skill System
 
-Warrior routes are built around frontline control, physical execution, and magic-infused burst.
+All profession skills listed in this section belong to the same warrior skill pool. Track headings are recommendation tags only and never affect access.
 
-### 7.1 Shared Basic Attack
+Warrior tracks are built around frontline control, physical execution, and magic-infused burst.
+
+### 8.1 Warrior Basic Attack
 
 - `Strike`
   - type: `basic_attack`
@@ -329,7 +349,7 @@ Warrior routes are built around frontline control, physical execution, and magic
   - tier: `basic`
   - cooldown: `0`
 
-### 7.2 Warrior Shared Active Skills
+### 8.2 Warrior General-Purpose Skills
 
 - `Guard Stance`
   - type: `shield`
@@ -352,7 +372,9 @@ Warrior routes are built around frontline control, physical execution, and magic
   - tier: `normal`
   - cooldown: `1`
 
-### 7.3 Tank Track
+These skills are still part of the same warrior pool and are not a separate class-shared layer.
+
+### 8.3 Tank Track
 
 Route identity:
 
@@ -390,7 +412,7 @@ Route skills:
   - tier: `advanced`
   - cooldown: `2`
 
-### 7.4 Physical Burst Track
+### 8.4 Physical Burst Track
 
 Route identity:
 
@@ -428,7 +450,7 @@ Route skills:
   - tier: `ultimate`
   - cooldown: `3`
 
-### 7.5 Magic Burst Track
+### 8.5 Magic Burst Track
 
 Route identity:
 
@@ -466,11 +488,13 @@ Route skills:
   - tier: `ultimate`
   - cooldown: `3`
 
-## 8. Mage Skill System
+## 9. Mage Skill System
 
-Mage routes are built around precision nukes, large-scale AoE pressure, and battlefield control.
+All profession skills listed in this section belong to the same mage skill pool. Track headings are recommendation tags only and never affect access.
 
-### 8.1 Shared Basic Attack
+Mage tracks are built around precision nukes, large-scale AoE pressure, and battlefield control.
+
+### 9.1 Mage Basic Attack
 
 - `Arc Bolt`
   - type: `basic_attack`
@@ -479,7 +503,7 @@ Mage routes are built around precision nukes, large-scale AoE pressure, and batt
   - tier: `basic`
   - cooldown: `0`
 
-### 8.2 Mage Shared Active Skills
+### 9.2 Mage General-Purpose Skills
 
 - `Arc Veil`
   - type: `shield`
@@ -502,7 +526,9 @@ Mage routes are built around precision nukes, large-scale AoE pressure, and batt
   - tier: `advanced`
   - cooldown: `2`
 
-### 8.3 Single Burst Track
+These skills are still part of the same mage pool and are not a separate class-shared layer.
+
+### 9.3 Single Burst Track
 
 Route identity:
 
@@ -540,7 +566,7 @@ Route skills:
   - tier: `advanced`
   - cooldown: `2`
 
-### 8.4 AoE Burst Track
+### 9.4 AoE Burst Track
 
 Route identity:
 
@@ -578,7 +604,7 @@ Route skills:
   - tier: `ultimate`
   - cooldown: `3`
 
-### 8.5 Control Track
+### 9.5 Control Track
 
 Route identity:
 
@@ -616,11 +642,13 @@ Route skills:
   - tier: `ultimate`
   - cooldown: `3`
 
-## 9. Priest Skill System
+## 10. Priest Skill System
 
-Priest routes are built around sustain utility, curse application, and creature-based support.
+All profession skills listed in this section belong to the same priest skill pool. Track headings are recommendation tags only and never affect access.
 
-### 9.1 Shared Basic Attack
+Priest tracks are built around sustain utility, curse application, and creature-based support.
+
+### 10.1 Priest Basic Attack
 
 - `Smite`
   - type: `basic_attack`
@@ -629,7 +657,7 @@ Priest routes are built around sustain utility, curse application, and creature-
   - tier: `basic`
   - cooldown: `0`
 
-### 9.2 Priest Shared Active Skills
+### 10.2 Priest General-Purpose Skills
 
 - `Restore`
   - type: `heal`
@@ -652,7 +680,9 @@ Priest routes are built around sustain utility, curse application, and creature-
   - tier: `normal`
   - cooldown: `1`
 
-### 9.3 Healing Support Track
+These skills are still part of the same priest pool and are not a separate class-shared layer.
+
+### 10.3 Healing Support Track
 
 Route identity:
 
@@ -690,7 +720,7 @@ Route skills:
   - tier: `advanced`
   - cooldown: `2`
 
-### 9.4 Curse Track
+### 10.4 Curse Track
 
 Route identity:
 
@@ -728,7 +758,7 @@ Route skills:
   - tier: `ultimate`
   - cooldown: `3`
 
-### 9.5 Summon Track
+### 10.5 Summon Track
 
 Route identity:
 
@@ -766,7 +796,7 @@ Route skills:
   - tier: `ultimate`
   - cooldown: `3`
 
-## 10. Recommended Loadout Examples
+## 11. Recommended Loadout Examples
 
 ### Warrior Tank
 
@@ -831,7 +861,7 @@ Route skills:
 - `Censer Guardian`
 - `Choir Invocation`
 
-## 11. Fit With Dungeon Tempo
+## 12. Fit With Dungeon Tempo
 
 Because a dungeon battle is capped at `10` rounds:
 
@@ -840,8 +870,8 @@ Because a dungeon battle is capped at `10` rounds:
 - AoE, sustain, control, summon presence, and survival all need to matter in short fights
 - boss pacing should revolve around `2` and `3` round cooldowns
 
-## 12. Open Follow-up Decisions
+## 13. Open Follow-up Decisions
 
 - whether skill-track labels should be visible as a separate recommendation field in bot summaries and observer UI
 - whether summons occupy explicit battlefield slots or use an abstract support-entity layer
-- whether some future advanced skills should be shared across two tracks of the same class
+- whether track labels should directly influence bot build recommendations instead of staying presentation-only

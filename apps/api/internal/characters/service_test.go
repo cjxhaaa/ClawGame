@@ -332,6 +332,40 @@ func TestChooseProfessionAllowsReturningToCivilian(t *testing.T) {
 	}
 }
 
+func TestClassSkillMetadataUsesRouteLabelsWithoutSharedLayer(t *testing.T) {
+	tests := []struct {
+		skillID  string
+		routeID  string
+		track    string
+		tier     string
+		cooldown int
+	}{
+		{skillID: "Guard Stance", routeID: "tank", track: "tank", tier: "advanced", cooldown: 2},
+		{skillID: "War Cry", routeID: "physical_burst", track: "physical_burst", tier: "ultimate", cooldown: 3},
+		{skillID: "Intercept", routeID: "tank", track: "tank", tier: "normal", cooldown: 1},
+		{skillID: "Arc Veil", routeID: "control", track: "control", tier: "advanced", cooldown: 2},
+		{skillID: "Focus Pulse", routeID: "single_burst", track: "single_burst", tier: "normal", cooldown: 1},
+		{skillID: "Restore", routeID: "healing_support", track: "healing_support", tier: "normal", cooldown: 1},
+		{skillID: "Sanctuary Mark", routeID: "healing_support", track: "healing_support", tier: "advanced", cooldown: 2},
+	}
+
+	for _, tt := range tests {
+		definition, ok := skillDefinitions[tt.skillID]
+		if !ok {
+			t.Fatalf("expected skill definition for %q", tt.skillID)
+		}
+		if definition.RouteID != tt.routeID || definition.Track != tt.track {
+			t.Fatalf("expected %s route/track %s/%s, got %s/%s", tt.skillID, tt.routeID, tt.track, definition.RouteID, definition.Track)
+		}
+		if definition.RouteID == "shared" || definition.Track == "shared" {
+			t.Fatalf("expected %s to avoid shared skill-layer tags, got %#v", tt.skillID, definition)
+		}
+		if definition.Tier != tt.tier || definition.CooldownRounds != tt.cooldown {
+			t.Fatalf("expected %s tier/cooldown %s/%d, got %s/%d", tt.skillID, tt.tier, tt.cooldown, definition.Tier, definition.CooldownRounds)
+		}
+	}
+}
+
 func TestChooseProfessionRequiresGoldCost(t *testing.T) {
 	service := NewService()
 	worldService := world.NewService()

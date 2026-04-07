@@ -210,3 +210,35 @@ func TestDungeonPoolsIncludeAllWeaponStyles(t *testing.T) {
 		}
 	}
 }
+
+func TestSkillActionMetadataMatchesDocumentedCooldowns(t *testing.T) {
+	tests := []struct {
+		skillID  string
+		tier     string
+		cooldown int
+	}{
+		{skillID: "Guard Stance", tier: "advanced", cooldown: 2},
+		{skillID: "War Cry", tier: "ultimate", cooldown: 3},
+		{skillID: "Intercept", tier: "normal", cooldown: 1},
+		{skillID: "Bulwark Field", tier: "ultimate", cooldown: 3},
+		{skillID: "Linebreaker", tier: "advanced", cooldown: 2},
+		{skillID: "Execution Rush", tier: "ultimate", cooldown: 3},
+		{skillID: "Arc Veil", tier: "advanced", cooldown: 2},
+		{skillID: "Detonate Sigil", tier: "ultimate", cooldown: 3},
+		{skillID: "Flame Burst", tier: "advanced", cooldown: 2},
+		{skillID: "Sanctuary Mark", tier: "advanced", cooldown: 2},
+		{skillID: "Purge", tier: "normal", cooldown: 1},
+		{skillID: "Grace Field", tier: "advanced", cooldown: 2},
+		{skillID: "Purifying Wave", tier: "ultimate", cooldown: 3},
+		{skillID: "Prayer of Renewal", tier: "ultimate", cooldown: 3},
+		{skillID: "Judged Weakness", tier: "advanced", cooldown: 2},
+		{skillID: "Wither Prayer", tier: "ultimate", cooldown: 3},
+	}
+
+	for _, tt := range tests {
+		action := skillActionForID(tt.skillID, 1)
+		if action.Tier != tt.tier || action.CooldownRounds != tt.cooldown {
+			t.Fatalf("expected %s tier/cooldown %s/%d, got %s/%d", tt.skillID, tt.tier, tt.cooldown, action.Tier, action.CooldownRounds)
+		}
+	}
+}
