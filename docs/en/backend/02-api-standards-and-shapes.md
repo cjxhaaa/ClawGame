@@ -93,7 +93,6 @@ These shapes should be shared across handlers and OpenAPI schemas.
   "name": "bot-alpha",
   "class": "mage",
   "weapon_style": "staff",
-  "rank": "mid",
   "reputation": 245,
   "gold": 1380,
   "location_region_id": "main_city",

@@ -31,36 +31,33 @@
 
 ### 6.2 Reputation
 
-Reputation is now a spendable contract currency, not a rank ladder.
+Reputation is a spendable contract currency used for daily progression pacing.
 
 Rules:
 
 - reputation is earned mainly from daily contract submission
-- reputation no longer unlocks regions, dungeons, or potion tiers
+- reputation is used for contract rewards and extra dungeon reward-claim purchases
 - every character receives `2` free dungeon reward claims each day
 - one extra dungeon reward claim costs `50` reputation
 - purchased extra claims reset each day, while unspent reputation remains on the character
-- the legacy `rank` field may still exist in payloads for compatibility, but it is no longer an authoritative progression gate
 
 ### 6.3 Character level
 
-The baseline V1 spec originally did not use a separate XP level system.
-
-This is now superseded by the seasonal progression proposal in:
+Character level progression is defined in:
 
 - `08-seasonal-leveling-and-stat-framework.md`
 
-The new direction is:
+Key points:
 
 - every season lasts 30 days
 - season level runs from `1` to `100`
 - level-based stat growth stops at max level
 - the late-season loop shifts toward materials and equipment
-- reputation remains a parallel economy track instead of an access-gating axis
+- reputation works as a parallel economy track alongside gold and season-level progression
 
 ## 7. Stats and Combat
 
-This section now serves as a compact overview only.
+This section serves as a compact overview.
 
 The detailed battle rules have moved to:
 
@@ -68,21 +65,32 @@ The detailed battle rules have moved to:
 
 ### 7.1 Core stats
 
-Every character and enemy has:
+Current core combat stats are:
 
-- `max_hp`
-- `physical_attack`
-- `magic_attack`
-- `physical_defense`
-- `magic_defense`
-- `speed`
-- `healing_power`
+| Field | Name | Meaning |
+| --- | --- | --- |
+| `max_hp` | Max HP | Maximum health pool. |
+| `physical_attack` | Physical Attack | Main offensive stat for physical damage skills and attacks. |
+| `magic_attack` | Magic Attack | Main offensive stat for magic damage skills and attacks. |
+| `physical_defense` | Physical Defense | Main mitigation stat against physical damage. |
+| `magic_defense` | Magic Defense | Main mitigation stat against magic damage. |
+| `speed` | Speed | Determines turn order priority. |
+| `healing_power` | Healing Power | Main scaling stat for healing effects. |
+| `crit_rate` | Crit Rate | Chance-oriented offensive modifier for critical hits. |
+| `crit_damage` | Crit Damage | Damage multiplier applied when a critical hit occurs. |
+| `block_rate` | Block Rate | Defensive modifier affecting block outcomes. |
+| `precision` | Precision | Accuracy-oriented stat used to support hit stability and offensive consistency. |
+| `evasion_rate` | Evasion Rate | Defensive modifier affecting evade outcomes. |
+| `physical_mastery` | Physical Mastery | Supplemental scaling stat for physical-focused builds and effects. |
+| `magic_mastery` | Magic Mastery | Supplemental scaling stat for magic-focused builds and effects. |
 
-Optional battle metadata:
+Related runtime battle fields:
 
-- `status_effects`
-- `cooldowns`
-- `shield_value`
+| Field | Name | Meaning |
+| --- | --- | --- |
+| `status_effects` | Status Effects | Active states currently affecting the entity. |
+| `cooldowns` | Cooldowns | Remaining cooldown state for equipped skills. |
+| `shield_value` | Shield Value | Current shield amount that absorbs damage before HP. |
 
 ### 7.2 Combat model
 
@@ -135,16 +143,17 @@ No hidden stacking rules:
 
 ## 8. Class Skill Kits
 
-This section now serves as a compact overview only.
+This section serves as a compact overview.
 
 The detailed skill specification has moved to:
 
 - `11-class-skill-system.md`
 
-The new direction is:
+Core rules:
 
-- each class and weapon style has a broader skill pool
+- each class has its own skill pool
+- weapon style influences stat leaning and build profile rather than skill access
 - each dungeon loadout may equip up to `4` active skills
 - the basic attack is always available and has no cooldown
-- skills no longer consume MP and are gated only by cooldowns
+- skills use cooldowns and do not consume MP
 - battle actions are selected automatically from the configured loadout

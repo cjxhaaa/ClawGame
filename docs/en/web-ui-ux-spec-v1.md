@@ -198,7 +198,6 @@ Each region node should show:
 
 - region name
 - type
-- min rank
 - active bot count
 - recent event heat
 
@@ -214,7 +213,6 @@ Content:
 - region name
 - description
 - type
-- min rank
 - travel cost
 - local activity summary
 - buildings
@@ -316,7 +314,7 @@ Result list minimum fields:
 
 - bot name
 - character id
-- class / weapon style / rank
+- class / weapon style
 - current region
 - current activity summary
 - last seen time
@@ -417,7 +415,7 @@ Route:
 Sections:
 
 - identity header
-- class / weapon style / rank
+- class / weapon style
 - current region
 - current activity summary
 - stats snapshot (explicit base attributes)
@@ -438,7 +436,6 @@ Bot detail must support the following data blocks in V1:
   - character id
   - class
   - weapon style
-  - rank
   - current region
 
 2. Attributes / Stats

@@ -591,7 +591,7 @@ func TestAuthChallengeRequiredAndInvalid(t *testing.T) {
 	}
 }
 
-func TestCivilianUniversalSkillUpgradeAndLoadout(t *testing.T) {
+func TestCivilianSkillsStartReadyAndCanUpgradeAndLoadout(t *testing.T) {
 	server := NewServer(config.API{Port: "8080"})
 
 	doJSONRequest(t, server, http.MethodPost, "/api/v1/auth/register", withAuthChallenge(t, server, map[string]any{
@@ -619,11 +619,16 @@ func TestCivilianUniversalSkillUpgradeAndLoadout(t *testing.T) {
 				BasicAttack struct {
 					SkillID string `json:"skill_id"`
 				} `json:"basic_attack"`
-				Universal []struct {
+				CivilianSkills []struct {
 					SkillID    string `json:"skill_id"`
 					IsUnlocked bool   `json:"is_unlocked"`
 					Level      int    `json:"level"`
-				} `json:"universal_skills"`
+				} `json:"civilian_skills"`
+				ClassCommonSkills []struct {
+					SkillID    string `json:"skill_id"`
+					IsUnlocked bool   `json:"is_unlocked"`
+					Level      int    `json:"level"`
+				} `json:"class_common_skills"`
 			} `json:"skills"`
 		} `json:"data"`
 	}
@@ -650,14 +655,17 @@ func TestCivilianUniversalSkillUpgradeAndLoadout(t *testing.T) {
 		t.Fatalf("expected civilian basic attack Strike, got %q", createResponse.Data.Skills.BasicAttack.SkillID)
 	}
 
-	unlockedUniversal := 0
-	for _, skill := range createResponse.Data.Skills.Universal {
-		if skill.IsUnlocked || skill.Level != 0 {
-			unlockedUniversal++
+	readyCivilianSkills := 0
+	for _, skill := range createResponse.Data.Skills.CivilianSkills {
+		if skill.IsUnlocked && skill.Level == 1 {
+			readyCivilianSkills++
 		}
 	}
-	if unlockedUniversal != 0 {
-		t.Fatalf("expected all universal skills to start locked, got %d unlocked entries", unlockedUniversal)
+	if readyCivilianSkills != len(createResponse.Data.Skills.CivilianSkills) {
+		t.Fatalf("expected all civilian skills to start unlocked at level 1, got %d ready entries out of %d", readyCivilianSkills, len(createResponse.Data.Skills.CivilianSkills))
+	}
+	if len(createResponse.Data.Skills.ClassCommonSkills) == 0 {
+		t.Fatal("expected civilian character to access profession-common skills")
 	}
 
 	var upgradeResponse struct {
@@ -666,32 +674,50 @@ func TestCivilianUniversalSkillUpgradeAndLoadout(t *testing.T) {
 				Gold int `json:"gold"`
 			} `json:"character"`
 			Skills struct {
-				Universal []struct {
+				CivilianSkills []struct {
 					SkillID    string `json:"skill_id"`
 					IsUnlocked bool   `json:"is_unlocked"`
 					Level      int    `json:"level"`
-				} `json:"universal_skills"`
+				} `json:"civilian_skills"`
+				ClassCommonSkills []struct {
+					SkillID    string `json:"skill_id"`
+					IsUnlocked bool   `json:"is_unlocked"`
+					Level      int    `json:"level"`
+				} `json:"class_common_skills"`
 			} `json:"skills"`
 		} `json:"data"`
 	}
 	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/skills/Quickstep/upgrade", nil, loginResponse.Data.AccessToken, http.StatusOK, &upgradeResponse)
 
-	if upgradeResponse.Data.Character.Gold != createResponse.Data.Character.Gold-120 {
-		t.Fatalf("expected gold to drop by 120, got %d -> %d", createResponse.Data.Character.Gold, upgradeResponse.Data.Character.Gold)
+	if upgradeResponse.Data.Character.Gold != createResponse.Data.Character.Gold-180 {
+		t.Fatalf("expected gold to drop by 180, got %d -> %d", createResponse.Data.Character.Gold, upgradeResponse.Data.Character.Gold)
 	}
 
 	foundQuickstep := false
-	for _, skill := range upgradeResponse.Data.Skills.Universal {
+	for _, skill := range upgradeResponse.Data.Skills.CivilianSkills {
 		if skill.SkillID != "Quickstep" {
 			continue
 		}
 		foundQuickstep = true
-		if !skill.IsUnlocked || skill.Level != 1 {
-			t.Fatalf("expected Quickstep unlocked at level 1, got unlocked=%v level=%d", skill.IsUnlocked, skill.Level)
+		if !skill.IsUnlocked || skill.Level != 2 {
+			t.Fatalf("expected Quickstep upgraded to level 2, got unlocked=%v level=%d", skill.IsUnlocked, skill.Level)
 		}
 	}
 	if !foundQuickstep {
-		t.Fatal("expected Quickstep to be present in universal skill list")
+		t.Fatal("expected Quickstep to be present in civilian skill list")
+	}
+	foundFocusPulse := false
+	for _, skill := range upgradeResponse.Data.Skills.ClassCommonSkills {
+		if skill.SkillID != "Focus Pulse" {
+			continue
+		}
+		foundFocusPulse = true
+		if !skill.IsUnlocked || skill.Level != 1 {
+			t.Fatalf("expected Focus Pulse ready for civilian loadouts, got unlocked=%v level=%d", skill.IsUnlocked, skill.Level)
+		}
+	}
+	if !foundFocusPulse {
+		t.Fatal("expected Focus Pulse to be present in civilian-accessible class-common skills")
 	}
 
 	var loadoutResponse struct {
@@ -700,11 +726,11 @@ func TestCivilianUniversalSkillUpgradeAndLoadout(t *testing.T) {
 		} `json:"data"`
 	}
 	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/skills/loadout", map[string]any{
-		"skill_ids": []string{"Quickstep"},
+		"skill_ids": []string{"Quickstep", "Focus Pulse"},
 	}, loginResponse.Data.AccessToken, http.StatusOK, &loadoutResponse)
 
-	if len(loadoutResponse.Data.ActiveLoadout) != 1 || loadoutResponse.Data.ActiveLoadout[0] != "Quickstep" {
-		t.Fatalf("expected Quickstep loadout, got %#v", loadoutResponse.Data.ActiveLoadout)
+	if len(loadoutResponse.Data.ActiveLoadout) != 2 || loadoutResponse.Data.ActiveLoadout[0] != "Quickstep" || loadoutResponse.Data.ActiveLoadout[1] != "Focus Pulse" {
+		t.Fatalf("expected civilian mixed loadout, got %#v", loadoutResponse.Data.ActiveLoadout)
 	}
 }
 
@@ -747,6 +773,11 @@ func TestGuildSkillUpgradeForProfessionCharacter(t *testing.T) {
 		Data struct {
 			BuildingID string `json:"building_id"`
 			Skills     struct {
+				ClassCommonSkills []struct {
+					SkillID    string `json:"skill_id"`
+					IsUnlocked bool   `json:"is_unlocked"`
+					Level      int    `json:"level"`
+				} `json:"class_common_skills"`
 				ClassSkills []struct {
 					SkillID    string `json:"skill_id"`
 					IsUnlocked bool   `json:"is_unlocked"`
@@ -760,6 +791,9 @@ func TestGuildSkillUpgradeForProfessionCharacter(t *testing.T) {
 	if guildSkills.Data.BuildingID != "guild_main_city" {
 		t.Fatalf("expected guild_main_city, got %q", guildSkills.Data.BuildingID)
 	}
+	if len(guildSkills.Data.Skills.ClassCommonSkills) == 0 {
+		t.Fatal("expected mage class-common skills in guild response")
+	}
 
 	foundFlameBurst := false
 	for _, skill := range guildSkills.Data.Skills.ClassSkills {
@@ -767,8 +801,8 @@ func TestGuildSkillUpgradeForProfessionCharacter(t *testing.T) {
 			continue
 		}
 		foundFlameBurst = true
-		if skill.IsUnlocked || skill.Level != 0 {
-			t.Fatalf("expected Flame Burst locked at level 0 before upgrade, got unlocked=%v level=%d", skill.IsUnlocked, skill.Level)
+		if !skill.IsUnlocked || skill.Level != 1 {
+			t.Fatalf("expected Flame Burst ready at level 1 before upgrade, got unlocked=%v level=%d", skill.IsUnlocked, skill.Level)
 		}
 	}
 	if !foundFlameBurst {
@@ -779,6 +813,11 @@ func TestGuildSkillUpgradeForProfessionCharacter(t *testing.T) {
 		Data struct {
 			BuildingID string `json:"building_id"`
 			Skills     struct {
+				ClassCommonSkills []struct {
+					SkillID    string `json:"skill_id"`
+					IsUnlocked bool   `json:"is_unlocked"`
+					Level      int    `json:"level"`
+				} `json:"class_common_skills"`
 				ClassSkills []struct {
 					SkillID    string `json:"skill_id"`
 					IsUnlocked bool   `json:"is_unlocked"`
@@ -795,8 +834,8 @@ func TestGuildSkillUpgradeForProfessionCharacter(t *testing.T) {
 			continue
 		}
 		upgraded = true
-		if !skill.IsUnlocked || skill.Level != 1 {
-			t.Fatalf("expected Flame Burst unlocked at level 1, got unlocked=%v level=%d", skill.IsUnlocked, skill.Level)
+		if !skill.IsUnlocked || skill.Level != 2 {
+			t.Fatalf("expected Flame Burst upgraded to level 2, got unlocked=%v level=%d", skill.IsUnlocked, skill.Level)
 		}
 	}
 	if !upgraded {
@@ -5192,13 +5231,12 @@ func asStringValue(value any) string {
 func doJSONRequest(t *testing.T, server *Server, method, path string, body any, bearerToken string, expectedStatus int, target any) {
 	t.Helper()
 
-	legacyRouteID := ""
+	legacyClassID := ""
 	if method == http.MethodPost && path == "/api/v1/characters" && expectedStatus == http.StatusOK {
 		if payloadMap, ok := body.(map[string]any); ok {
 			className := strings.TrimSpace(asStringValue(payloadMap["class"]))
-			weaponStyle := strings.TrimSpace(asStringValue(payloadMap["weapon_style"]))
-			if routeID, ok := legacyCreateRouteID(className, weaponStyle); ok {
-				legacyRouteID = routeID
+			if className != "" && className != "civilian" {
+				legacyClassID = className
 				body = map[string]any{
 					"name": payloadMap["name"],
 				}
@@ -5234,7 +5272,7 @@ func doJSONRequest(t *testing.T, server *Server, method, path string, body any, 
 		decodeJSON(t, recorder, target)
 	}
 
-	if legacyRouteID != "" {
+	if legacyClassID != "" {
 		account, err := server.authService.Authenticate(bearerToken)
 		if err != nil {
 			t.Fatalf("failed to authenticate legacy create flow in test helper: %v", err)
@@ -5251,28 +5289,9 @@ func doJSONRequest(t *testing.T, server *Server, method, path string, body any, 
 		}
 
 		doJSONRequest(t, server, http.MethodPost, "/api/v1/me/profession-route", map[string]any{
-			"route_id": legacyRouteID,
+			"class_id": legacyClassID,
 		}, bearerToken, http.StatusOK, nil)
 		return
-	}
-}
-
-func legacyCreateRouteID(className, weaponStyle string) (string, bool) {
-	switch {
-	case className == "warrior" && weaponStyle == "sword_shield":
-		return "tank", true
-	case className == "warrior" && weaponStyle == "great_axe":
-		return "physical_burst", true
-	case className == "mage" && weaponStyle == "staff":
-		return "aoe_burst", true
-	case className == "mage" && weaponStyle == "spellbook":
-		return "single_burst", true
-	case className == "priest" && weaponStyle == "scepter":
-		return "curse", true
-	case className == "priest" && weaponStyle == "holy_tome":
-		return "healing_support", true
-	default:
-		return "", false
 	}
 }
 

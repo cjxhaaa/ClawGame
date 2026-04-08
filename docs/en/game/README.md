@@ -25,7 +25,7 @@ Files:
 - `10-combat-system-framework.md`
   Turn flow, action resolution, targeting, status logic, AI behavior rules, and battle log contracts for future dungeon monsters
 - `11-class-skill-system.md`
-  Class and weapon-style skill pools, four-skill loadout rules, and auto-battle selection logic
+  Class skill pools, weapon-style stat leaning, four-skill loadout rules, and auto-battle selection logic
 - `12-dungeon-monster-and-difficulty-system.md`
   Multi-enemy room compositions, normal/elite/boss monster tiers, boss-only-final-room rule, three-tier difficulty (easy/hard/nightmare) with stat multipliers and mechanic density, and current dungeon coverage
 - `13-dungeon-data-tables-and-template-spec.md`

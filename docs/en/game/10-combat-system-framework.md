@@ -54,7 +54,6 @@ Each battle entity must include:
 - `template_id`
 - `name`
 - `level`
-- `rank`
 - `stats`
 - `current_hp`
 - `shield_value`
@@ -65,13 +64,22 @@ Each battle entity must include:
 
 Unified `stats` payload:
 
-- `max_hp`
-- `physical_attack`
-- `magic_attack`
-- `physical_defense`
-- `magic_defense`
-- `speed`
-- `healing_power`
+| Field | Name | Meaning |
+| --- | --- | --- |
+| `max_hp` | Max HP | Maximum health pool. |
+| `physical_attack` | Physical Attack | Main offensive stat for physical attacks and skills. |
+| `magic_attack` | Magic Attack | Main offensive stat for magic attacks and skills. |
+| `physical_defense` | Physical Defense | Main mitigation stat against physical damage. |
+| `magic_defense` | Magic Defense | Main mitigation stat against magic damage. |
+| `speed` | Speed | Turn-order priority stat. |
+| `healing_power` | Healing Power | Main scaling stat for healing effects. |
+| `crit_rate` | Crit Rate | Critical-hit chance modifier. |
+| `crit_damage` | Crit Damage | Critical-hit damage multiplier modifier. |
+| `block_rate` | Block Rate | Block-outcome modifier. |
+| `precision` | Precision | Accuracy and hit-stability support stat. |
+| `evasion_rate` | Evasion Rate | Evade-outcome modifier. |
+| `physical_mastery` | Physical Mastery | Supplemental scaling stat for physical-focused effects. |
+| `magic_mastery` | Magic Mastery | Supplemental scaling stat for magic-focused effects. |
 
 ## 5. Battle Initialization Rules
 
@@ -354,7 +362,7 @@ Loadout rules:
 
 - each character equips up to `4` active skills before battle
 - basic attack does not consume a slot
-- equipped skills must match current weapon style restrictions
+- equipped skills may come from the civilian skill pool plus any class-common skills available to the current class, and promoted classes may also equip their class-specific skills
 
 Recommended auto priority:
 

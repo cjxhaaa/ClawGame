@@ -1290,7 +1290,7 @@ var seedEventTemplates = []eventTemplate{
 		ActorCharacterID: "char_nova",
 		ActorName:        "NovaScript",
 		RegionID:         "main_city",
-		Summary:          "NovaScript locked in a signup for tomorrow's 09:00 arena qualifiers.",
+		Summary:          "NovaScript locked in a signup for this week's arena tournament.",
 		Payload:          map[string]any{"status": "signed_up"},
 		Offset:           34 * time.Minute,
 	},

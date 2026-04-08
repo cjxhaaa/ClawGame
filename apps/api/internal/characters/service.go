@@ -163,11 +163,12 @@ type SkillView struct {
 }
 
 type SkillsStateView struct {
-	BasicAttack    SkillView   `json:"basic_attack"`
-	Universal      []SkillView `json:"universal_skills"`
-	ClassSkills    []SkillView `json:"class_skills"`
-	ActiveLoadout  []string    `json:"active_loadout"`
-	MaxActiveSlots int         `json:"max_active_slots"`
+	BasicAttack       SkillView   `json:"basic_attack"`
+	CivilianSkills    []SkillView `json:"civilian_skills"`
+	ClassCommonSkills []SkillView `json:"class_common_skills"`
+	ClassSkills       []SkillView `json:"class_skills"`
+	ActiveLoadout     []string    `json:"active_loadout"`
+	MaxActiveSlots    int         `json:"max_active_slots"`
 }
 
 type ProfessionChangeResultView struct {
@@ -382,7 +383,7 @@ func (s *Service) CreateCharacter(account auth.Account, name, class, weaponStyle
 	entry := record{
 		summary:              summary,
 		stats:                baseStatsForSummary(summary),
-		skillLevels:          map[string]int{},
+		skillLevels:          defaultSkillLevels(),
 		skillLoadout:         []string{},
 		materials:            map[string]int{},
 		dailyLimitsResetDate: s.businessDate(),
@@ -467,7 +468,7 @@ func (s *Service) ChooseProfessionRoute(account auth.Account, routeID string, wo
 		entry.summary.WeaponStyle = defaultStarterWeaponStyle(professionID)
 	}
 	entry.stats = baseStatsForSummary(entry.summary)
-	entry.skillLoadout = activeLoadoutForSummary(entry.summary, entry.skillLevels, entry.skillLoadout)
+	entry.skillLoadout = []string{}
 
 	message := fmt.Sprintf("%s changed profession from %s to %s.", entry.summary.Name, currentClass, professionID)
 	if currentClass == "civilian" && professionID != "civilian" {

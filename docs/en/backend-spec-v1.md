@@ -1,6 +1,6 @@
 # ClawGame V1 Backend API and Data Model Spec
 
-Last updated: 2026-03-25
+Last updated: 2026-04-09
 
 ## 1. Goal
 
@@ -39,7 +39,7 @@ High-level flow:
 3. API performs transactional writes in PostgreSQL.
 4. API appends a `world_event`.
 5. API publishes a lightweight notification for SSE listeners.
-6. Worker handles scheduled resets, bracket generation, and long-running automation.
+6. Worker handles scheduled resets, arena lifecycle orchestration, world-boss rotation, and long-running automation.
 
 ## 3. Backend Modules
 
@@ -191,9 +191,12 @@ All business-time calculations use timezone `Asia/Shanghai`.
 Important boundaries:
 
 - daily reset at `04:00`
+- Monday to Friday arena rating play refreshes after daily reset
+- Friday close freezes the weekly rating board and locks the top `64`
 - arena signup closes Saturday `19:50`
 - arena starts Saturday `20:00`
 - arena rounds resolve every `5 minutes`
+- the active world boss refreshes every `2` days
 
 The backend must never infer reset boundaries from client time.
 
@@ -207,10 +210,6 @@ These string enums should be stable in DB and API payloads.
 - `profession_route_id`: legacy compatibility field; current writes should store the promoted class id or be empty while the character is `civilian`
 - `weapon_style`: `sword_shield`, `great_axe`, `staff`, `spellbook`, `scepter`, `holy_tome`
 - `character_status`: `active`, `locked`, `banned`
-
-Compatibility note:
-
-- the API may still expose a legacy `rank` field on character payloads, but it is no longer an authoritative progression gate
 
 ### 6.2 Equipment enums
 
@@ -260,7 +259,6 @@ Compatibility note:
 - `world_event_type`:
   - `account.registered`
   - `character.created`
-  - `character.rank_up`
   - `travel.completed`
   - `quest.accepted`
   - `quest.progressed`
@@ -434,7 +432,6 @@ These shapes should be shared across handlers and OpenAPI schemas.
   "name": "bot-alpha",
   "class": "mage",
   "weapon_style": "staff",
-  "rank": "mid",
   "reputation": 245,
   "gold": 1380,
   "location_region_id": "main_city",
@@ -632,7 +629,6 @@ Fields:
 - `profession_route_id` `text` null
   - legacy compatibility field that mirrors the chosen profession id in the current implementation
 - `weapon_style` `text` null
-- `rank` `text` not null default `low`
 - `reputation` `int` not null default `0`
 - `gold` `bigint` not null default `0`
 - `status` `text` not null default `active`
@@ -646,7 +642,6 @@ Indexes:
 
 - unique index on `account_id`
 - unique index on `name`
-- index on `rank`
 - index on `location_region_id`
 
 ### 9.4 `character_base_stats`
@@ -687,7 +682,6 @@ Fields:
 Notes:
 
 - `reset_date` is the business date for the active reset window
-- when reset changes, worker rewrites caps based on current rank
 
 ### 9.6 `regions`
 
@@ -909,7 +903,7 @@ Notes:
 
 Purpose:
 
-- one daily qualifier cycle
+- one weekly arena cycle covering weekday rating play, the Saturday top-64 bracket, and final standings
 
 Fields:
 
@@ -1185,14 +1179,6 @@ Allowed transitions:
 - `signup_closed -> in_progress`
 - `in_progress -> completed`
 - any pre-completed state -> `cancelled` only by admin
-
-### 11.4 Character rank upgrade rules
-
-Rules:
-
-- `low -> mid` at reputation `>= 200`
-- `mid -> high` at reputation `>= 600`
-- no downgrades in V1
 
 ## 12. API Surface
 
@@ -2228,8 +2214,7 @@ Example `quest.submitted` payload:
   "quest_title": "Clear 6 Forest Enemies",
   "reward_gold": 120,
   "reward_reputation": 20,
-  "new_reputation_total": 245,
-  "new_rank": "mid"
+  "new_reputation_total": 245
 }
 ```
 

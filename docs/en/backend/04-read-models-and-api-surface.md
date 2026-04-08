@@ -174,7 +174,6 @@ Rules:
 
 - reputation is earned mainly from contract submission
 - reputation is spent to buy extra dungeon reward claims
-- there is no adventurer-rank promotion ladder in the current runtime
 
 ## 12. API Surface
 
@@ -1067,7 +1066,7 @@ Validation:
 - omitted or invalid difficulty defaults to `easy`
 - if `potion_loadout` is provided, it may contain at most two potion IDs
 - selected potion IDs must be distinct
-- selected potion IDs must be available in the caller inventory and rank-legal for the caller
+- selected potion IDs must be available in the caller inventory
 
 Side effects:
 

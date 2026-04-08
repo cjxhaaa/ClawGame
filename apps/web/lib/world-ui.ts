@@ -253,17 +253,17 @@ export const uiText = {
       eyebrow: "竞技场情报桌",
       title: "竞技场观战台",
       intro:
-        "这里聚焦每日报名状态、09:00 海选对阵和近期竞技场动态，方便围观者快速判断今天谁最值得盯住。",
-      seasonState: "今日状态",
+        "这里聚焦每周报名状态、积分榜快照、淘汰赛对阵和近期竞技场动态，方便围观者快速判断谁最值得盯住。",
+      seasonState: "本周状态",
       liveBracket: "直播赛程",
       roundTimeline: "轮次时间线",
       currentShowdown: "当前焦点对局",
-      qualifierDesk: "海选与补位",
+      qualifierDesk: "入围与补位",
       fullBracket: "完整轮次展开",
-      championDeck: "今日冠军",
+      championDeck: "本周冠军",
       fieldBreakdown: "参赛构成",
       activeRound: "当前轮次",
-      qualifierLabel: "海选赛",
+      qualifierLabel: "积分赛",
       npcFill: "NPC 补位",
       realEntrants: "真实报名",
       roundStarts: "开赛时间",
@@ -398,8 +398,8 @@ export const uiText = {
       eyebrow: "Arena Desk",
       title: "Arena Watch",
       intro:
-        "This view centers the daily signup state, 09:00 qualifier pairings, and the most recent arena moments so observers can quickly decide who is worth tracking.",
-      seasonState: "Daily state",
+        "This view centers the weekly signup state, rating board snapshots, bracket progression, and the most recent arena moments so observers can quickly decide who is worth tracking.",
+      seasonState: "Weekly state",
       liveBracket: "Live Bracket",
       roundTimeline: "Round Timeline",
       currentShowdown: "Featured Matchup",
@@ -455,9 +455,9 @@ const regionAtlasDictionary = {
     terrainBand: { "zh-CN": "文明核心带", "en-US": "Civil Core" },
     riskTier: { "zh-CN": "低风险", "en-US": "Low Risk" },
     shortIntro: {
-      "zh-CN": "铁旗城是整个冒险体系的行政与经济核心，Bot 会在这里接任务、补给、强化装备，并准备每天 09:00 的竞技场海选。",
+      "zh-CN": "铁旗城是整个冒险体系的行政与经济核心，Bot 会在这里接任务、补给、强化装备，并准备每周竞技场赛事。",
       "en-US":
-        "Ironbanner City is the administrative and economic center where bots accept contracts, restock, enhance gear, and prepare for the daily 09:00 arena qualifiers.",
+        "Ironbanner City is the administrative and economic center where bots accept contracts, restock, enhance gear, and prepare for the weekly arena tournament.",
     },
     primaryActivity: {
       "zh-CN": "任务交接与竞技场备战",
@@ -494,8 +494,8 @@ const regionAtlasDictionary = {
         "Greenfield Outpost sits on the edge of civilization as the last stable recovery and supply stop before the forest and catacomb line.",
     },
     primaryActivity: {
-      "zh-CN": "补给循环与低阶契约中转",
-      "en-US": "Supply loops and low-rank contract turnover",
+      "zh-CN": "补给循环与早期契约中转",
+      "en-US": "Supply loops and early contract turnover",
     },
     observationFocus: {
       "zh-CN": "关注治疗、消耗品购买和护送物资任务是否稳定流动。",
@@ -548,8 +548,8 @@ const regionAtlasDictionary = {
       "en-US": ["Wolf Pelt", "Thorn Vine", "Whisperleaf", "Beast Bone Shard"],
     },
     growthUses: {
-      "zh-CN": ["低阶防具升级", "草药类消耗品", "早期武器强化辅材"],
-      "en-US": ["Low-tier armor upgrades", "Herbal consumables", "Early weapon enhancement support"],
+      "zh-CN": ["初期防具升级", "草药类消耗品", "早期武器强化辅材"],
+      "en-US": ["Starter armor upgrades", "Herbal consumables", "Early weapon enhancement support"],
     },
     signatureMaterial: { "zh-CN": "低语叶", "en-US": "Whisperleaf" },
     linkedRegionId: "ancient_catacomb",
@@ -595,17 +595,17 @@ const regionAtlasDictionary = {
     terrainBand: { "zh-CN": "边境前线带", "en-US": "Frontier Edge" },
     riskTier: { "zh-CN": "中风险", "en-US": "Mid Risk" },
     shortIntro: {
-      "zh-CN": "灼痕前线是世界从熟悉狩猎区迈入中阶危险边境的分水岭，Bot 会在这里开始承担更高旅行成本与战斗压力。",
+      "zh-CN": "灼痕前线是世界从熟悉狩猎区迈入高压远征边境的分水岭，Bot 会在这里开始承担更高旅行成本与战斗压力。",
       "en-US":
-        "Sunscar Frontier is the dividing line where familiar hunting lanes turn into a harsher mid-rank frontier with heavier travel and combat costs.",
+        "Sunscar Frontier is the dividing line where familiar hunting lanes turn into a harsher expedition frontier with heavier travel and combat costs.",
     },
     primaryActivity: {
       "zh-CN": "精英契约与边境远征",
       "en-US": "Elite contracts and frontier expeditions",
     },
     observationFocus: {
-      "zh-CN": "重点观察中阶队伍是否开始大规模迁移，以及高收益高风险循环是否已经稳定成形。",
-      "en-US": "Track whether mid-rank parties are migrating in and whether higher-risk, higher-yield loops are stabilizing.",
+      "zh-CN": "重点观察成长中的队伍是否开始大规模迁移，以及高收益高风险循环是否已经稳定成形。",
+      "en-US": "Track whether advancing parties are migrating in and whether higher-risk, higher-yield loops are stabilizing.",
     },
     notableNpcs: {
       "zh-CN": ["边境悬赏官", "沙地补给商", "旧遗迹勘察员"],
@@ -620,7 +620,7 @@ const regionAtlasDictionary = {
       "en-US": ["Sunscorched Ore", "Dry Resin", "Sand Carapace", "Dust Crystal", "Venom Sac"],
     },
     growthUses: {
-      "zh-CN": ["中阶武器强化", "抗毒与耐久装备", "高阶任务前置材料"],
+      "zh-CN": ["中期武器强化", "抗毒与耐久装备", "高级任务前置材料"],
       "en-US": ["Mid-tier weapon enhancement", "Anti-poison and durability gear", "Advanced quest prerequisites"],
     },
     signatureMaterial: { "zh-CN": "灼痕矿石", "en-US": "Sunscorched Ore" },
@@ -631,24 +631,24 @@ const regionAtlasDictionary = {
     terrainBand: { "zh-CN": "边境前线带", "en-US": "Frontier Edge" },
     riskTier: { "zh-CN": "高风险", "en-US": "High Risk" },
     shortIntro: {
-      "zh-CN": "沙虫巢穴是 V1 中危险度最高、观赏性最强的地下城之一，适合作为高阶 Bot 的实力分界线。",
+      "zh-CN": "沙虫巢穴是 V1 中危险度最高、观赏性最强的地下城之一，适合作为成熟 Bot 的实力分界线。",
       "en-US":
-        "Sandworm Den is one of the most dangerous and watchable dungeons in V1, acting as a power threshold for high-rank bots.",
+        "Sandworm Den is one of the most dangerous and watchable dungeons in V1, acting as a power threshold for prepared bots.",
     },
     primaryActivity: {
-      "zh-CN": "高阶下潜与稀有材料争夺",
+      "zh-CN": "高压下潜与稀有材料争夺",
       "en-US": "High-tier dives and rare material races",
     },
     observationFocus: {
-      "zh-CN": "重点观察高阶 Bot 的进入与阵亡情况、稀有通关、Boss 热点，以及顶级材料是否被垄断。",
-      "en-US": "Watch high-rank entries, defeats, rare clears, boss heat, and whether top materials are being monopolized.",
+      "zh-CN": "重点观察高压队伍的进入与阵亡情况、稀有通关、Boss 热点，以及顶级材料是否被垄断。",
+      "en-US": "Watch high-pressure entries, defeats, rare clears, boss heat, and whether top materials are being monopolized.",
     },
     notableNpcs: {
-      "zh-CN": ["深穴看守", "毒素炼金师", "高阶战利品鉴定师"],
+      "zh-CN": ["深穴看守", "毒素炼金师", "稀有战利品鉴定师"],
       "en-US": ["Deep Den Watcher", "Venom Alchemist", "Elite Appraiser"],
     },
     facilities: {
-      "zh-CN": ["巢穴入口营地", "毒液实验车", "高阶战利品兑换所"],
+      "zh-CN": ["巢穴入口营地", "毒液实验车", "稀有战利品兑换所"],
       "en-US": ["Den Entrance Camp", "Venom Lab Cart", "Elite Loot Exchange"],
     },
     materials: {
@@ -656,7 +656,7 @@ const regionAtlasDictionary = {
       "en-US": ["Sandworm Fang", "Carapace Plate", "Toxic Gland", "Deep Desert Core", "Matriarch Spine Shard"],
     },
     growthUses: {
-      "zh-CN": ["高阶装备强化", "稀有护甲制作", "竞技场高配装前置素材"],
+      "zh-CN": ["高级装备强化", "稀有护甲制作", "竞技场高配装前置素材"],
       "en-US": ["High-tier enhancement", "Rare armor crafting", "Arena-grade gearing prerequisites"],
     },
     signatureMaterial: { "zh-CN": "深沙核心", "en-US": "Deep Desert Core" },
@@ -675,20 +675,20 @@ const regionDescriptionDictionary = {
     "en-US": "A logistics stop for early contracts and recovery before pushing back into the wild.",
   },
   "The first major hunting ground, filled with predictable contracts and light dungeon pressure.": {
-    "zh-CN": "这是低阶 Bot 最先长期停留的狩猎区，任务明确、收益稳定，风险也相对可控。",
+    "zh-CN": "这是早期 Bot 最先长期停留的狩猎区，任务明确、收益稳定，风险也相对可控。",
     "en-US": "The first major hunting ground, filled with predictable contracts and light dungeon pressure.",
   },
   "A compact starter dungeon with four encounters and a necromancer boss.": {
     "zh-CN": "一个节奏紧凑的新手地下城，共有四场遭遇战与一名死灵法师首领。",
     "en-US": "A compact starter dungeon with four encounters and a necromancer boss.",
   },
-  "A mid-rank route where higher-reputation bots pivot into tougher quest loops.": {
-    "zh-CN": "这是中阶 Bot 开始转向更高难度、更高收益任务循环的重要分界线。",
-    "en-US": "A mid-rank route where higher-reputation bots pivot into tougher quest loops.",
+  "An expedition route where advanced bots pivot into tougher quest loops.": {
+    "zh-CN": "这是成长中的 Bot 开始转向更高难度、更高收益任务循环的重要分界线。",
+    "en-US": "An expedition route where advanced bots pivot into tougher quest loops.",
   },
-  "The highest-rank dungeon in V1, built around five encounters and a matriarch boss fight.": {
-    "zh-CN": "V1 阶段最高阶的地下城，共包含五场遭遇战与一场母体首领战。",
-    "en-US": "The highest-rank dungeon in V1, built around five encounters and a matriarch boss fight.",
+  "The highest-pressure dungeon in V1, built around five encounters and a matriarch boss fight.": {
+    "zh-CN": "V1 阶段压力最高的地下城，共包含五场遭遇战与一场母体首领战。",
+    "en-US": "The highest-pressure dungeon in V1, built around five encounters and a matriarch boss fight.",
   },
 } as const;
 
@@ -701,21 +701,21 @@ const regionHighlightDictionary = {
     "zh-CN": "补给型 Bot 正在治疗点与前哨站之间反复循环。",
     "en-US": "Supply runners are rotating through healer and outpost loops.",
   },
-  "Quest traffic is heavy as low-rank bots farm reputation.": {
-    "zh-CN": "低阶 Bot 正在这里大量刷取声望与任务进度。",
-    "en-US": "Quest traffic is heavy as low-rank bots farm reputation.",
+  "Quest traffic is heavy as early bots farm reputation.": {
+    "zh-CN": "早期 Bot 正在这里大量刷取声望与任务进度。",
+    "en-US": "Quest traffic is heavy as early bots farm reputation.",
   },
   "Starter dungeon clears are pacing today's gold income.": {
     "zh-CN": "新手地下城的通关节奏正在稳定贡献今日金币产出。",
     "en-US": "Starter dungeon clears are pacing today's gold income.",
   },
-  "Mid-rank parties are pushing elite field quests.": {
-    "zh-CN": "中阶队伍正在推进收益更高的野外精英任务。",
-    "en-US": "Mid-rank parties are pushing elite field quests.",
+  "Advancing parties are pushing elite field quests.": {
+    "zh-CN": "成长中的队伍正在推进收益更高的野外精英任务。",
+    "en-US": "Advancing parties are pushing elite field quests.",
   },
-  "High-rank clears remain limited but lucrative.": {
-    "zh-CN": "高阶地下城通关次数不多，但单次收益非常可观。",
-    "en-US": "High-rank clears remain limited but lucrative.",
+  "High-pressure clears remain limited but lucrative.": {
+    "zh-CN": "高压地下城通关次数不多，但单次收益非常可观。",
+    "en-US": "High-pressure clears remain limited but lucrative.",
   },
   "No public bot activity is visible here yet.": {
     "zh-CN": "这里暂时还没有可见的公开 Bot 活动。",
@@ -774,21 +774,21 @@ const actionNameDictionary = {
 } as const;
 
 const encounterSummaryDictionary = {
-  "Low-rank bots clear forest enemies here for gold, reputation, and quest progress.": {
-    "zh-CN": "低阶 Bot 在这里清理森林敌人，以获取金币、声望和任务进度。",
-    "en-US": "Low-rank bots clear forest enemies here for gold, reputation, and quest progress.",
+  "Early bots clear forest enemies here for gold, reputation, and quest progress.": {
+    "zh-CN": "早期 Bot 在这里清理森林敌人，以获取金币、声望和任务进度。",
+    "en-US": "Early bots clear forest enemies here for gold, reputation, and quest progress.",
   },
   "Bots enter for limited daily clears, deterministic logs, and a compact reward table.": {
     "zh-CN": "Bot 会消耗每日次数进入这里，获取可复现战斗日志与稳定奖励。",
     "en-US": "Bots enter for limited daily clears, deterministic logs, and a compact reward table.",
   },
-  "Mid-rank patrols hunt elite field enemies and unlock higher-tier gold loops.": {
-    "zh-CN": "中阶巡逻队在这里猎杀精英敌人，逐步解锁更高收益循环。",
-    "en-US": "Mid-rank patrols hunt elite field enemies and unlock higher-tier gold loops.",
+  "Advancing patrols hunt elite field enemies and unlock higher-tier gold loops.": {
+    "zh-CN": "成长中的巡逻队在这里猎杀精英敌人，逐步解锁更高收益循环。",
+    "en-US": "Advancing patrols hunt elite field enemies and unlock higher-tier gold loops.",
   },
-  "High-rank runs concentrate the sharpest gold output and the most demanding deterministic battles.": {
-    "zh-CN": "高阶地下城将最高金币收益与最严苛的可复现战斗集中在一起。",
-    "en-US": "High-rank runs concentrate the sharpest gold output and the most demanding deterministic battles.",
+  "High-pressure runs concentrate the sharpest gold output and the most demanding deterministic battles.": {
+    "zh-CN": "高压地下城将最高金币收益与最严苛的可复现战斗集中在一起。",
+    "en-US": "High-pressure runs concentrate the sharpest gold output and the most demanding deterministic battles.",
   },
 } as const;
 
@@ -810,41 +810,41 @@ const encounterHighlightDictionary = {
   },
   "5 encounters per run": { "zh-CN": "每次 5 场遭遇战", "en-US": "5 encounters per run" },
   "Sandworm matriarch boss": { "zh-CN": "沙虫母体首领", "en-US": "Sandworm matriarch boss" },
-  "High-tier dungeon rewards": { "zh-CN": "高阶地下城奖励", "en-US": "High-tier dungeon rewards" },
+  "High-tier dungeon rewards": { "zh-CN": "高级地下城奖励", "en-US": "High-tier dungeon rewards" },
 } as const;
 
 const arenaStatusDictionary = {
   preparing: {
     label: { "zh-CN": "准备中", "en-US": "Preparing" },
     details: {
-      "zh-CN": "竞技场正在准备下一轮每日海选。",
-      "en-US": "The arena is preparing the next daily qualifier cycle.",
+      "zh-CN": "竞技场正在准备下一轮周赛流程。",
+      "en-US": "The arena is preparing the next weekly arena cycle.",
     },
     nextMilestone: {
-      "zh-CN": "下一轮海选将于 09:00 锁定",
-      "en-US": "Qualifiers lock at 09:00",
+      "zh-CN": "下一轮周赛会按赛程开放",
+      "en-US": "The next weekly cycle opens on schedule",
     },
   },
   signup_open: {
     label: { "zh-CN": "报名开放", "en-US": "Signups Open" },
     details: {
-      "zh-CN": "满足条件的中阶与高阶 Bot 可在 09:00 前报名参加今日海选。",
-      "en-US": "Eligible mid- and high-rank bots can sign up before the 09:00 qualifier cutoff.",
+      "zh-CN": "竞技场开放报名时，符合条件的 Bot 可以报名参加本周赛事。",
+      "en-US": "When signup is open, eligible bots can register for the weekly arena tournament.",
     },
     nextMilestone: {
-      "zh-CN": "海选将于 09:00 锁定报名",
-      "en-US": "Qualifiers lock at 09:00",
+      "zh-CN": "报名会在本周截止时间锁定",
+      "en-US": "Signup locks at the weekly cutoff",
     },
   },
   signup_locked: {
-    label: { "zh-CN": "海选分组中", "en-US": "Qualifiers Seeding" },
+    label: { "zh-CN": "赛事编排中", "en-US": "Bracket Seeding" },
     details: {
-      "zh-CN": "09:00-09:05 正在进行海选，系统会把场上人数裁到 64 强；若不足 64，则由中游强度 NPC 补齐正赛名单。",
-      "en-US": "The 09:00-09:05 qualifier round is trimming the field to 64, with NPCs ready to backfill the main bracket if needed.",
+      "zh-CN": "报名已经截止，系统正在冻结积分榜并生成周六 64 强对阵；若不足 64，则由 NPC 补齐正赛名单。",
+      "en-US": "Signup has closed and the system is freezing the rating board into the Saturday top-64 bracket, with NPCs ready to backfill if needed.",
     },
     nextMilestone: {
-      "zh-CN": "64 强将于 09:05 开赛",
-      "en-US": "Round of 64 starts at 09:05",
+      "zh-CN": "64 强将于周六开赛",
+      "en-US": "The round of 64 starts on Saturday",
     },
   },
   in_progress: {
@@ -865,8 +865,8 @@ const arenaStatusDictionary = {
       "en-US": "Today's 64-player bracket is complete and the champion is visible on the public board.",
     },
     nextMilestone: {
-      "zh-CN": "下一轮海选将于明天 09:00 锁定",
-      "en-US": "Next qualifiers lock tomorrow 09:00",
+      "zh-CN": "下一轮周赛将于下周重新开放报名",
+      "en-US": "Signup reopens for next week's tournament",
     },
   },
   offline: {
@@ -916,10 +916,10 @@ const activityLabelDictionary = {
   "Arena prep rotations": { "zh-CN": "竞技场备战循环", "en-US": "Arena prep rotations" },
   "Forest contract grinder": { "zh-CN": "森林契约刷取者", "en-US": "Forest contract grinder" },
   "Starter dungeon farming": { "zh-CN": "新手本刷取者", "en-US": "Starter dungeon farming" },
-  "High-rank dungeon loop": { "zh-CN": "高阶地下城循环", "en-US": "High-rank dungeon loop" },
-  "Mid-rank courier disruptor": {
-    "zh-CN": "中阶护送截击手",
-    "en-US": "Mid-rank courier disruptor",
+  "High-pressure dungeon loop": { "zh-CN": "高压地下城循环", "en-US": "High-pressure dungeon loop" },
+  "Advanced courier disruptor": {
+    "zh-CN": "进阶护送截击手",
+    "en-US": "Advanced courier disruptor",
   },
   "Projected top seed": { "zh-CN": "预计头号种子", "en-US": "Projected top seed" },
   "Bracket control pick": { "zh-CN": "控场型热门选手", "en-US": "Bracket control pick" },
@@ -956,25 +956,25 @@ const eventSummaryDictionary = {
     "zh-CN": "Ferrin-7 通关了远古墓窟，并带着升级后的装备安全撤离。",
     "en-US": "Ferrin-7 cleared Ancient Catacomb and extracted with upgraded gear.",
   },
-  "LyraLoop submitted a guild contract and pushed into mid-rank reputation.": {
-    "zh-CN": "LyraLoop 提交了一份公会契约，声望推进到了中阶区间。",
-    "en-US": "LyraLoop submitted a guild contract and pushed into mid-rank reputation.",
+  "LyraLoop submitted a guild contract and pushed into a stronger reputation tier.": {
+    "zh-CN": "LyraLoop 提交了一份公会契约，声望推进到了更高区间。",
+    "en-US": "LyraLoop submitted a guild contract and pushed into a stronger reputation tier.",
   },
   "TomaSeed fast-travelled to Sunscar Desert Outskirts for elite patrol contracts.": {
     "zh-CN": "TomaSeed 快速旅行至灼痕沙漠外围，准备处理精英巡逻契约。",
     "en-US": "TomaSeed fast-travelled to Sunscar Desert Outskirts for elite patrol contracts.",
   },
-  "NovaScript locked in a signup for tomorrow's 09:00 arena qualifiers.": {
-    "zh-CN": "NovaScript 已锁定明天 09:00 竞技场海选的报名席位。",
-    "en-US": "NovaScript locked in a signup for tomorrow's 09:00 arena qualifiers.",
+  "NovaScript locked in a signup for this week's arena tournament.": {
+    "zh-CN": "NovaScript 已锁定本周竞技场赛事的报名席位。",
+    "en-US": "NovaScript locked in a signup for this week's arena tournament.",
   },
   "MiraBot completed a forest hunt objective and returned with clean deterministic logs.": {
     "zh-CN": "MiraBot 完成了森林狩猎目标，并带着完整可复现日志返回。",
     "en-US": "MiraBot completed a forest hunt objective and returned with clean deterministic logs.",
   },
-  "KiroNode entered Sandworm Den and consumed one of today's high-rank dungeon attempts.": {
-    "zh-CN": "KiroNode 进入了沙虫巢穴，并消耗了今日一次高阶地下城次数。",
-    "en-US": "KiroNode entered Sandworm Den and consumed one of today's high-rank dungeon attempts.",
+  "KiroNode entered Sandworm Den and consumed one of today's Sandworm Den reward claims.": {
+    "zh-CN": "KiroNode 进入了沙虫巢穴，并占用了今日一次沙虫巢穴领奖额度。",
+    "en-US": "KiroNode entered Sandworm Den and consumed one of today's Sandworm Den reward claims.",
   },
 } as const;
 

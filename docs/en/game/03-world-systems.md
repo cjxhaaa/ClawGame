@@ -1,6 +1,6 @@
 ## 9. Equipment System
 
-This section is now a high-level summary only.
+This section is a high-level summary.
 
 The detailed specification has moved to:
 
@@ -26,7 +26,7 @@ The detailed specification has moved to:
 
 ### 9.3 Item rarity
 
-The baseline rarity direction is now superseded by the new five-grade dungeon loot model:
+V1 item rarity uses the five-grade dungeon loot model:
 
 - Blue
 - Purple
@@ -298,6 +298,7 @@ V1 world boss should use asynchronous `6`-player matching instead of manual part
 Core rules:
 
 - players and bots join one shared world-boss matching pool
+- world-boss participation is open from day one; there is no mid-season unlock gate
 - once `6` valid entries are available, the system creates one world-boss raid instance automatically
 - the raid resolves asynchronously and does not require all six participants to be online at the same moment
 - the raid result is evaluated by the total combined damage dealt by the six participants
@@ -310,7 +311,7 @@ Core rules:
 
 Recommended difficulty target:
 
-- world boss should sit above ordinary dungeon farming pressure and act as a mid-to-late-season cooperative target
+- world boss is available from day one, but it should still sit above ordinary dungeon farming pressure and scale into a long-term cooperative target
 - recommended per-player panel combat power:
   - floor: `6400`
   - stable: `7600`
@@ -320,8 +321,8 @@ Recommended difficulty target:
   - stable: `45600`
   - strong: `54000`
 - intended outcome curve:
-  - parties near the floor usually end in `D-C`
-  - stable day-15-plus parties should commonly land in `B-A`
+  - early-day or low-power parties usually end in `D-C`
+  - stable mid-season parties should commonly land in `B-A`
   - well-optimized late-season parties should contest `S`
 
 Recommended boss combat profile:
@@ -482,7 +483,7 @@ The board contains:
 
 ### 13.2 Quest difficulty
 
-Daily contracts now use two runtime contract kinds:
+Daily contracts use two runtime contract kinds:
 
 - `normal`
 - `bounty`
@@ -504,7 +505,7 @@ V1 templates:
 - deliver purchased supplies to an outpost
 - clear a dungeon without defeat
 
-Current implementation notes:
+Additional notes:
 
 - field curios can also generate a `curio_followup_delivery` quest
 - this follow-up quest does not consume one of the fixed daily template slots
@@ -623,7 +624,7 @@ Key requirements for `nightmare` dailies:
 - a quest can be active or completed once per daily board
 - quest state must advance through its defined state machine and cannot skip to submit
 - contracts are auto-accepted when generated; there is no separate accept step in the intended loop
-- reroll is no longer part of the intended daily-board loop
+- the daily-board loop does not include reroll
 - unfinished accepted or completed contracts are preserved across reset and count toward the next day's four-slot cap
 
 Additional process constraint for future daily quests:
@@ -637,11 +638,11 @@ Every quest grants:
 - gold
 - reputation
 
-Current implementation notes:
+Reward notes:
 
-- the stable reward loop today is gold plus reputation
-- reputation is a spendable currency and no longer triggers rank-up
-- the immediate downstream use of reputation is buying extra dungeon reward claims
+- the stable reward loop is gold plus reputation
+- reputation is a spendable currency
+- its immediate downstream use is buying extra dungeon reward claims
 
 ### 13.7 Current progression triggers
 
@@ -656,7 +657,7 @@ This keeps map and quest responsibilities intentionally separate:
 - the map tells OpenClaw what actions are available in the current region
 - the quest system decides which accepted objectives advance after those actions resolve
 
-### 13.8 Current scope and known gaps
+### 13.8 Scope and known gaps
 
 The current quest system is intentionally basic and aims to provide a stable growth loop rather than a full narrative framework.
 
@@ -748,28 +749,28 @@ Goal:
 
 #### Ancient Catacomb
 
-- access: Low rank
+- access: default parallel dungeon
 - theme: undead / dark magic
 - floors: 6 rooms, boss in room 6
-- damage profile: mixed physical and magic
+- damage profile: defense, block, and sustain pressure
 
 #### Thorned Hollow
 
-- access: Mid rank
+- access: default parallel dungeon
 - theme: predator grove / crit pressure
 - floors: 6 rooms, boss in room 6
 - damage profile: speed, precision, focus fire
 
 #### Sunscar Warvault
 
-- access: High rank
+- access: default parallel dungeon
 - theme: fortress soldiers / burst windows
 - floors: 6 rooms, boss in room 6
 - damage profile: physical burst and breakpoints
 
 #### Obsidian Spire
 
-- access: High rank
+- access: default parallel dungeon
 - theme: arcane tower / void magic
 - floors: 6 rooms, boss in room 6
 - damage profile: magic chains and silence pressure
@@ -799,35 +800,36 @@ On failure:
 ### 15.1 Arena eligibility
 
 - any character can sign up while the arena window is open
-- signup stays open each day until `09:00` Asia/Shanghai
+- weekday rating challenges are open from Monday to Friday
+- weekly arena signup remains open until Saturday `19:50` Asia/Shanghai
+- registration ordering is only used as a stable display tiebreaker, not as a way to discard extra entrants
 
 ### 15.2 Format
 
-- daily qualifier cycle
-- signup locks at `09:00`, after which all signed entrants enter the qualifier pool
-- qualifier rounds are resolved automatically in repeated 1v1 elimination waves until the live field becomes a 64-player main bracket
-- if a qualifier round has an odd entrant count, the bracket may assign a deterministic bye so the round can still complete cleanly
-- if signups are below `64`, pre-seeded NPC entrants are added until the main bracket reaches 64
+- weekly arena cycle
+- Monday to Friday use rating-based challenge play instead of elimination qualifiers
+- the weekly rating board freezes at Friday close and promotes the top `64` into the Saturday main bracket
+- if the live qualified field is below `64`, pre-seeded NPC entrants are added until the main bracket reaches `64`
 - NPC strength is based on the median power band of the signed-up entrants
-- registration ordering is only used as a stable display tiebreaker, not as a way to discard extra entrants
+- the Saturday bracket starts at `20:00` and advances automatically
 
 ### 15.3 Match rules
 
 - arena uses the same battle engine as PvE
-- qualifier duels are fully simulated by the server
-- every qualifier duel and every main-bracket duel produces a battle report
+- weekday rating duels and Saturday main-bracket duels are fully simulated by the server
+- every arena duel produces a battle report
 - battle reports are queryable from both arena tournament views and the participating bot's own arena battle history
 - once the 64-player bracket begins, each elimination round resolves every `5 minutes`
 - the final resolves after the bracket schedule completes, after which the champion is published
-- no manual intervention after signup
+- no manual intervention after the bracket is locked
 
 ### 15.4 Rewards
 
-- top 1, 2, 4, 8 receive gold and unique title strings
+- title rewards begin at `top 32` and extend through `top 16`, `top 8`, `top 4`, `runner-up`, and `champion`
 - rankings page stores the latest completed tournament snapshot
+- champion and Saturday match betting markets may open after the top `64` is locked
 
 ### 15.5 V1 limitations
 
-- no betting
 - no live tactical input
 - no replay UI beyond event log and battle summary

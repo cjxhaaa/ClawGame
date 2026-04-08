@@ -229,7 +229,6 @@ func (s *PostgresStore) LoadCharacters() ([]characters.StoredCharacter, error) {
 			COALESCE(c.season_xp, 0),
 			COALESCE(c.skill_levels_json, '{}'::jsonb),
 			COALESCE(c.skill_loadout_json, '[]'::jsonb),
-			c.rank,
 			c.reputation,
 			c.gold,
 			c.status,
@@ -260,7 +259,6 @@ func (s *PostgresStore) LoadCharacters() ([]characters.StoredCharacter, error) {
 	for rows.Next() {
 		var item characters.StoredCharacter
 		var ignoredMaxMP int
-		var ignoredRank string
 		var skillLevelsJSON []byte
 		var skillLoadoutJSON []byte
 		if err := rows.Scan(
@@ -274,7 +272,6 @@ func (s *PostgresStore) LoadCharacters() ([]characters.StoredCharacter, error) {
 			&item.Summary.SeasonXP,
 			&skillLevelsJSON,
 			&skillLoadoutJSON,
-			&ignoredRank,
 			&item.Summary.Reputation,
 			&item.Summary.Gold,
 			&item.Summary.Status,
@@ -390,9 +387,9 @@ func (s *PostgresStore) SaveCharacter(stored characters.StoredCharacter) error {
 	if _, err := tx.Exec(`
 		INSERT INTO characters (
 			id, account_id, name, class, profession_route_id, weapon_style, season_level, season_xp, skill_levels_json, skill_loadout_json,
-			rank, reputation, gold, status, location_region_id, hp_current, mp_current, created_at, updated_at
+			reputation, gold, status, location_region_id, hp_current, mp_current, created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 		ON CONFLICT (id) DO UPDATE
 		SET name = EXCLUDED.name,
 		    class = EXCLUDED.class,
@@ -402,7 +399,6 @@ func (s *PostgresStore) SaveCharacter(stored characters.StoredCharacter) error {
 		    season_xp = EXCLUDED.season_xp,
 		    skill_levels_json = EXCLUDED.skill_levels_json,
 		    skill_loadout_json = EXCLUDED.skill_loadout_json,
-		    rank = EXCLUDED.rank,
 		    reputation = EXCLUDED.reputation,
 		    gold = EXCLUDED.gold,
 		    status = EXCLUDED.status,
@@ -411,7 +407,7 @@ func (s *PostgresStore) SaveCharacter(stored characters.StoredCharacter) error {
 		    mp_current = EXCLUDED.mp_current,
 		    updated_at = EXCLUDED.updated_at
 	`, stored.Summary.CharacterID, stored.AccountID, stored.Summary.Name, stored.Summary.Class, nullableString(stored.Summary.ProfessionRoute), nullableString(stored.Summary.WeaponStyle), stored.Summary.SeasonLevel, stored.Summary.SeasonXP,
-		skillLevelsJSON, skillLoadoutJSON, "", stored.Summary.Reputation, stored.Summary.Gold, stored.Summary.Status, stored.Summary.LocationRegionID,
+		skillLevelsJSON, skillLoadoutJSON, stored.Summary.Reputation, stored.Summary.Gold, stored.Summary.Status, stored.Summary.LocationRegionID,
 		stored.Stats.MaxHP, 0, now, now); err != nil {
 		return err
 	}

@@ -59,7 +59,7 @@ All non-HP potions are temporary combat buffs, not permanent character growth.
 
 ## 4. Shop Access
 
-Potion purchase access is not controlled by reputation or rank gates.
+Potion purchase access depends on shop availability.
 
 Principles:
 
@@ -192,7 +192,7 @@ Battle log should include:
 - potions are purchased from building shops
 - apothecary inventory is shared and ungated; all current potion tiers are visible to any character who can access the building
 - potion prices should create real trade-offs with gear repair and enhancement
-- current V1 runtime keeps potion stock static rather than daily-random; economy pressure comes from gold cost, not stock scarcity
+- potion stock is static; economy pressure comes from gold cost, not stock scarcity
 
 Current V1 apothecary price table:
 

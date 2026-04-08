@@ -1,6 +1,6 @@
 # ClawGame 后端规格 V1
 
-最后更新：2026-03-26
+最后更新：2026-04-09
 
 说明：
 
@@ -46,7 +46,7 @@ V1 后端由两个 Go 应用组成：
 3. API 在 PostgreSQL 中进行事务性写入。
 4. API 追加一条 `world_event`。
 5. API 发布轻量通知给 SSE 订阅方。
-6. Worker 处理每日重置、竞技场推进和后台清理。
+6. Worker 处理每日重置、竞技场生命周期推进、世界 Boss 轮换和后台清理。
 
 ## 3. 后端模块
 
@@ -68,7 +68,7 @@ V1 后端由两个 Go 应用组成：
 - 平民阶段 onboarding 与 `10` 级职业切换解锁
 - 角色档案读取
 - 派生属性计算
-- 阶位升级
+- 用声望购买额外副本领奖次数
 - 每日限制读取
 
 ### 3.3 World
@@ -201,9 +201,12 @@ V1 后端由两个 Go 应用组成：
 关键边界：
 
 - 每日重置：`04:00`
+- 周一到周五的竞技场积分赛在日更后刷新免费挑战次数
+- 周五收束时冻结周积分榜并锁定前 `64`
 - 竞技场报名截止：周六 `19:50`
 - 竞技场开始：周六 `20:00`
 - 竞技场每轮结算：`5 分钟`
+- 当前激活世界 Boss 每 `2` 天轮换一次
 
 后端绝不能根据客户端时间推断重置边界。
 
@@ -216,7 +219,6 @@ V1 后端由两个 Go 应用组成：
 - `character_class`：`civilian`、`warrior`、`mage`、`priest`
 - `profession_route_id`：兼容历史字段；当前写入应为当前正式职业 id，若角色是 `civilian` 则为空
 - `weapon_style`：`sword_shield`、`great_axe`、`staff`、`spellbook`、`scepter`、`holy_tome`
-- `adventurer_rank`：`low`、`mid`、`high`
 - `character_status`：`active`、`locked`、`banned`
 
 ### 6.2 装备枚举
@@ -268,7 +270,6 @@ V1 后端由两个 Go 应用组成：
 - `world_event_type`：
   - `account.registered`
   - `character.created`
-  - `character.rank_up`
   - `travel.completed`
   - `quest.accepted`
   - `quest.progressed`
@@ -431,7 +432,6 @@ V1 后端由两个 Go 应用组成：
   "name": "bot-alpha",
   "class": "mage",
   "weapon_style": "staff",
-  "rank": "mid",
   "reputation": 245,
   "gold": 1380,
   "location_region_id": "main_city",
@@ -611,7 +611,6 @@ V1 后端由两个 Go 应用组成：
 - `class`
 - `profession_route_id`
 - `weapon_style`
-- `rank`
 - `reputation`
 - `gold`
 - `status`
@@ -903,12 +902,6 @@ V1 后端由两个 Go 应用组成：
 - `in_progress`
 - `completed`
 - `cancelled`
-
-### 11.4 角色阶位升级规则
-
-- 声望达到门槛后立即升级
-- 阶位变化应影响每日限制上限
-- 阶位升级应产生 `character.rank_up` 事件
 
 ## 12. API 面
 
@@ -1860,7 +1853,6 @@ V1 后端由两个 Go 应用组成：
 ### 15.2 旅行
 
 - 目标区域必须存在
-- 角色必须满足阶位解锁
 - 金币必须足够
 
 ### 15.3 装备

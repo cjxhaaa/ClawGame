@@ -873,17 +873,19 @@ components:
         class:
           type: string
           enum:
+          - civilian
           - warrior
           - mage
           - priest
+        profession_route_id:
+          type: string
+          nullable: true
         weapon_style:
           type: string
-        rank:
-          type: string
-          enum:
-          - low
-          - mid
-          - high
+        season_level:
+          type: integer
+        season_xp:
+          type: integer
         reputation:
           type: integer
         gold:
@@ -909,6 +911,73 @@ components:
           type: integer
         healing_power:
           type: integer
+        crit_rate:
+          type: number
+        crit_damage:
+          type: number
+        block_rate:
+          type: number
+        precision:
+          type: number
+        evasion_rate:
+          type: number
+        physical_mastery:
+          type: number
+        magic_mastery:
+          type: number
+    ArenaPowerPreview:
+      type: object
+      properties:
+        reference_power:
+          type: integer
+        power_delta:
+          type: integer
+        estimated_win_rate_band:
+          type: string
+        estimated_strength_tier:
+          type: string
+    DungeonPowerPreview:
+      type: object
+      properties:
+        dungeon_id:
+          type: string
+        dungeon_name:
+          type: string
+        recommended_power_min:
+          type: integer
+        recommended_power_max:
+          type: integer
+        current_power:
+          type: integer
+        estimated_confidence:
+          type: string
+        estimated_clear_band:
+          type: string
+    CombatPowerSummary:
+      type: object
+      properties:
+        formula_version:
+          type: string
+        effective_level:
+          type: integer
+        progression_coeff:
+          type: number
+        base_growth_score:
+          type: integer
+        equipment_score:
+          type: integer
+        build_modifier_score:
+          type: integer
+        panel_power_score:
+          type: integer
+        power_tier:
+          type: string
+        arena_preview:
+          $ref: '#/components/schemas/ArenaPowerPreview'
+        dungeon_previews:
+          type: array
+          items:
+            $ref: '#/components/schemas/DungeonPowerPreview'
     DailyLimits:
       type: object
       properties:
@@ -922,6 +991,12 @@ components:
         dungeon_entry_cap:
           type: integer
         dungeon_entry_used:
+          type: integer
+        free_dungeon_entry_cap:
+          type: integer
+        bonus_dungeon_entry_purchased:
+          type: integer
+        reputation_per_bonus_claim:
           type: integer
       description: Daily counters. In the current repo, dungeon_entry_* fields track
         dungeon reward claims rather than raw enters.
@@ -987,6 +1062,15 @@ components:
           type: string
         template_type:
           type: string
+        contract_type:
+          type: string
+          nullable: true
+        difficulty:
+          type: string
+          nullable: true
+        flow_kind:
+          type: string
+          nullable: true
         rarity:
           type: string
         status:
@@ -1006,6 +1090,146 @@ components:
           type: integer
         reward_reputation:
           type: integer
+    SkillView:
+      type: object
+      properties:
+        skill_id:
+          type: string
+        name:
+          type: string
+        display_name_zh:
+          type: string
+        class:
+          type: string
+        route_id:
+          type: string
+        skill_track:
+          type: string
+        skill_tier:
+          type: string
+        cooldown_rounds:
+          type: integer
+        is_basic:
+          type: boolean
+        is_unlocked:
+          type: boolean
+        level:
+          type: integer
+        max_level:
+          type: integer
+        current_multiplier_pct:
+          type: integer
+        next_level_cost_gold:
+          type: integer
+          nullable: true
+    SkillsStateView:
+      type: object
+      properties:
+        basic_attack:
+          $ref: '#/components/schemas/SkillView'
+        civilian_skills:
+          type: array
+          items:
+            $ref: '#/components/schemas/SkillView'
+        class_common_skills:
+          type: array
+          items:
+            $ref: '#/components/schemas/SkillView'
+        class_skills:
+          type: array
+          items:
+            $ref: '#/components/schemas/SkillView'
+        active_loadout:
+          type: array
+          items:
+            type: string
+        max_active_slots:
+          type: integer
+    ProfessionChangeResultView:
+      type: object
+      properties:
+        requested_class:
+          type: string
+        from_class:
+          type: string
+        to_class:
+          type: string
+        gold_cost:
+          type: integer
+        gold_before:
+          type: integer
+        gold_after:
+          type: integer
+        skill_levels_preserved:
+          type: boolean
+        active_loadout_before:
+          type: array
+          items:
+            type: string
+        active_loadout_after:
+          type: array
+          items:
+            type: string
+        removed_active_skill_ids:
+          type: array
+          items:
+            type: string
+        weapon_auto_unequipped:
+          type: boolean
+        unequipped_weapon_item_id:
+          type: string
+          nullable: true
+        unequipped_weapon_catalog_id:
+          type: string
+          nullable: true
+        unequipped_weapon_name:
+          type: string
+          nullable: true
+        starter_weapon_granted:
+          type: boolean
+        starter_weapon_item_id:
+          type: string
+          nullable: true
+        starter_weapon_catalog_id:
+          type: string
+          nullable: true
+        starter_weapon_equipped:
+          type: boolean
+        warnings:
+          type: array
+          items:
+            type: string
+    MaterialBalance:
+      type: object
+      properties:
+        material_key:
+          type: string
+        quantity:
+          type: integer
+    SlotEnhancementView:
+      type: object
+      properties:
+        slot:
+          type: string
+        enhancement_level:
+          type: integer
+        enhancement_preview_pct:
+          type: number
+        max_enhancement_level:
+          type: integer
+    DungeonDailyHint:
+      type: object
+      properties:
+        has_remaining_quota:
+          type: boolean
+        remaining_claims:
+          type: integer
+        has_claimable_run:
+          type: boolean
+        pending_claim_run_ids:
+          type: array
+          items:
+            type: string
     WorldEvent:
       type: object
       properties:
@@ -1129,18 +1353,8 @@ components:
       type: object
       required:
       - name
-      - class
-      - weapon_style
       properties:
         name:
-          type: string
-        class:
-          type: string
-          enum:
-          - warrior
-          - mage
-          - priest
-        weapon_style:
           type: string
     MeResponse:
       allOf:
@@ -1173,8 +1387,20 @@ components:
                 $ref: '#/components/schemas/CharacterSummary'
               stats:
                 $ref: '#/components/schemas/StatsSnapshot'
+              combat_power:
+                $ref: '#/components/schemas/CombatPowerSummary'
+              skills:
+                $ref: '#/components/schemas/SkillsStateView'
               limits:
                 $ref: '#/components/schemas/DailyLimits'
+              materials:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MaterialBalance'
+              slot_enhancements:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SlotEnhancementView'
               dungeon_daily:
                 $ref: '#/components/schemas/DungeonDailyHint'
               objectives:
@@ -1189,6 +1415,10 @@ components:
                 type: array
                 items:
                   $ref: '#/components/schemas/ValidAction'
+              profession_change_result:
+                oneOf:
+                - $ref: '#/components/schemas/ProfessionChangeResultView'
+                - type: 'null'
               materials:
                 type: array
                 items:
@@ -1263,19 +1493,6 @@ components:
           type: integer
         recommended_level_max:
           type: integer
-    DungeonDailyHint:
-      type: object
-      properties:
-        has_remaining_quota:
-          type: boolean
-        remaining_claims:
-          type: integer
-        has_claimable_run:
-          type: boolean
-        pending_claim_run_ids:
-          type: array
-          items:
-            type: string
       description: Compact claim-oriented dungeon hints. RemainingClaims reflects
         remaining reward claims in the current repo.
     ValidActionsResponse:

@@ -196,7 +196,7 @@ export const openClawManifest = {
     },
     {
       name: "arena",
-      summary: "Sign up and inspect current arena status when rank and timing allow.",
+      summary: "Sign up and inspect current arena status when the weekly arena window is open.",
       endpoints: [
         "POST /arena/signup",
         "GET /arena/current",

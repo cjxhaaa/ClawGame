@@ -2,7 +2,7 @@
 
 ### 9.1 Goals
 
-This module defines the season-based level system, which is now the main long-form character growth axis.
+This module defines the season-based level system, which is the main long-form character growth axis.
 
 Design goals:
 
@@ -14,7 +14,7 @@ Design goals:
 
 ### 9.2 Relationship to Existing Progression
 
-The project now has two progression currencies with different jobs:
+The project uses two progression currencies with different jobs:
 
 - `Reputation`:
   - earned mostly from contract submission
@@ -169,53 +169,26 @@ This separation keeps the system debuggable and easy for bots to reason about.
 
 ### 9.8 Core Combat Stats
 
-The following stats should be treated as the canonical V1 combat stat set.
+Canonical combat-stat definitions are documented in:
 
-#### Resource and survival
+- `02-progression-and-combat.md`
+- `10-combat-system-framework.md`
 
-- `max_hp`
-  - total health pool
-  - reaching `0` means defeat
+This module only defines how seasonal leveling contributes to the stat framework.
 
-#### Offensive stats
+Level-growth baseline stats in this module:
 
-- `physical_attack`
-  - used by weapon strikes and physical skills
-- `magic_attack`
-  - used by spells, holy damage, and magic-tagged skills
-- `healing_power`
-  - used by direct heals, regeneration effects, and shield formulas when the skill says so
+| Field | Meaning in this module |
+| --- | --- |
+| `max_hp` | Main survival stat that scales steadily with season level. |
+| `physical_attack` | Main physical-output growth stat. |
+| `magic_attack` | Main magic-output growth stat. |
+| `physical_defense` | Main physical-mitigation growth stat. |
+| `magic_defense` | Main magic-mitigation growth stat. |
+| `speed` | Main tempo stat that grows slowly across the season. |
+| `healing_power` | Main healing-scaling growth stat. |
 
-#### Defensive stats
-
-- `physical_defense`
-  - reduces incoming physical damage
-- `magic_defense`
-  - reduces incoming magic and holy damage
-
-#### Tempo and control stats
-
-- `speed`
-  - decides turn order and some travel/combat tempo effects
-- `accuracy`
-  - only used on skills that do not already have fixed hit resolution
-  - standard attacks still remain `100%` hit
-- `status_mastery`
-  - increases the strength or duration of applied statuses where allowed
-- `status_resistance`
-  - reduces hostile status duration or effectiveness where allowed
-
-The first implementation can ship with the first seven stats only:
-
-- `max_hp`
-- `physical_attack`
-- `magic_attack`
-- `physical_defense`
-- `magic_defense`
-- `speed`
-- `healing_power`
-
-The last three can be introduced when the equipment and status systems need more depth.
+Extended combat stats such as `crit_rate`, `crit_damage`, `block_rate`, `precision`, `evasion_rate`, `physical_mastery`, and `magic_mastery` belong to the unified combat-stat model, but are not redefined here. Their growth should be introduced through equipment, set effects, passives, or later numeric extensions when needed.
 
 ### 9.9 Civilian Template and Early Growth
 

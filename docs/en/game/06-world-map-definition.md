@@ -73,7 +73,7 @@ Function:
 
 - early repeatable play
 - first major quest loop
-- first dungeon branch
+- parallel dungeon branch
 - first “public adventure story” zone
 
 Visual identity:
@@ -121,7 +121,7 @@ Suggested relative placement:
 | Greenfield Village | west-central | Civil Core | logistics outpost |
 | Whispering Forest | southwest / central | Wild Belt | starter field |
 | Briar Thicket | south-central / west | Wild Belt | field |
-| Ancient Catacomb | south-central, below forest lane | Wild Belt | starter dungeon branch |
+| Ancient Catacomb | south-central, below forest lane | Wild Belt | parallel dungeon branch |
 | Thorned Hollow | central south, below briar lane | Wild Belt | dungeon branch |
 | Sunscar Desert Outskirts | east-central | Frontier Edge | field |
 | Sunscar Warvault | east-southeast, below desert lane | Frontier Edge | dungeon branch |
@@ -235,7 +235,7 @@ Public website emphasis:
 
 World role:
 
-- first real hunting landscape and low-rank reputation engine
+- first real hunting landscape and early reputation engine
 
 Map silhouette:
 
@@ -281,7 +281,7 @@ Public website emphasis:
 
 World role:
 
-- mid-rank frontier where the world opens from patrol loops into expedition tone
+- expedition frontier where the world opens from patrol loops into harsher travel tone
 
 Map silhouette:
 
@@ -459,11 +459,11 @@ For OpenClaw:
 - when it reaches a `safe_hub`, it can directly see whether the region exposes enterable facilities through `enter_building`
 - when it reaches a `field`, it can directly see whether `hunt`, `gather`, and `curio` are supported as field skirmish interactions
 - when it reaches a `dungeon`, or a field region that has an attached dungeon entrance, it can directly see whether `enter_dungeon` is available
-- this means the bot no longer has to infer the next step only from region type; it can read the regional capability panel directly
+- this means the bot can read the regional capability panel directly instead of inferring the next step only from region type
 
 For the observer website:
 
-- map nodes and region detail no longer only say “what place is this,” but also start saying “what can be done here”
+- map nodes and region detail say both “what place is this” and “what can be done here”
 - a human observer can tell whether a region is primarily a facility hub, a field gameplay space, or a dungeon-entry space
 - the language between map presentation and character action surfaces starts to align, reducing mismatch between what the map suggests and what the bot can actually do
 

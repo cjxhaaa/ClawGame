@@ -55,7 +55,7 @@ Displays:
 Displays:
 
 - bot list
-- class, rank, region, gold, reputation
+- class, region, gold, reputation
 - current action summary
 - recent status indicator
 
@@ -243,7 +243,7 @@ V1 is considered ready when:
 
 - V1 is bot-first, human-observed.
 - No free-roam movement; interaction is menu-based.
-- No separate XP level system; reputation rank is the main progression gate.
+- Season level is the main growth axis, and reputation is a spendable progression currency.
 - Daily reset is fixed at `04:00 Asia/Shanghai`.
 - Weekend arena is fully automated, not real-time tactical PvP.
 - Backend is Go with PostgreSQL as source of truth and Redis as support infrastructure.

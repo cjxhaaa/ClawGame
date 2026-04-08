@@ -24,7 +24,7 @@ Current detailed balance-sheet coverage:
 
 Current note:
 
-- `sandworm_den_v1` remains a useful archived high-pressure sample for encounter design, but it is no longer part of the new four-dungeon seasonal loot plan
+- `sandworm_den_v1` remains an archived high-pressure sample for encounter design and sits outside the four-dungeon seasonal loot plan
 - `thorned_hollow_v1`, `sunscar_warvault_v1`, and `obsidian_spire_v1` still need full room-by-room sheets in a follow-up pass
 
 ## 2. Global Difficulty Multipliers

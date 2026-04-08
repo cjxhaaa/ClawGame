@@ -23,7 +23,6 @@ type skillDefinition struct {
 }
 
 var skillUpgradeCosts = map[int]int{
-	0: 120,
 	1: 180,
 	2: 300,
 	3: 480,
@@ -39,12 +38,12 @@ var skillDefinitions = map[string]skillDefinition{
 	"Strike":            {SkillID: "Strike", Name: "Strike", DisplayNameZH: "重击", Class: "warrior", RouteID: "basic", Track: "basic", Tier: "basic", CooldownRounds: 0, IsBasic: true},
 	"Arc Bolt":          {SkillID: "Arc Bolt", Name: "Arc Bolt", DisplayNameZH: "奥术飞弹", Class: "mage", RouteID: "basic", Track: "basic", Tier: "basic", CooldownRounds: 0, IsBasic: true},
 	"Smite":             {SkillID: "Smite", Name: "Smite", DisplayNameZH: "惩击", Class: "priest", RouteID: "basic", Track: "basic", Tier: "basic", CooldownRounds: 0, IsBasic: true},
-	"Quickstep":         {SkillID: "Quickstep", Name: "Quickstep", DisplayNameZH: "迅步", Class: "universal", RouteID: "universal", Track: "universal", Tier: "normal", CooldownRounds: 1},
-	"Pocket Sand":       {SkillID: "Pocket Sand", Name: "Pocket Sand", DisplayNameZH: "扬沙", Class: "universal", RouteID: "universal", Track: "universal", Tier: "normal", CooldownRounds: 1},
-	"Emergency Roll":    {SkillID: "Emergency Roll", Name: "Emergency Roll", DisplayNameZH: "紧急翻滚", Class: "universal", RouteID: "universal", Track: "universal", Tier: "advanced", CooldownRounds: 2},
-	"Signal Flare":      {SkillID: "Signal Flare", Name: "Signal Flare", DisplayNameZH: "信号照明弹", Class: "universal", RouteID: "universal", Track: "universal", Tier: "advanced", CooldownRounds: 2},
-	"Field Tonic":       {SkillID: "Field Tonic", Name: "Field Tonic", DisplayNameZH: "野战提神剂", Class: "universal", RouteID: "universal", Track: "universal", Tier: "advanced", CooldownRounds: 2},
-	"Tripwire Kit":      {SkillID: "Tripwire Kit", Name: "Tripwire Kit", DisplayNameZH: "绊索装置", Class: "universal", RouteID: "universal", Track: "universal", Tier: "ultimate", CooldownRounds: 3},
+	"Quickstep":         {SkillID: "Quickstep", Name: "Quickstep", DisplayNameZH: "迅步", Class: "civilian", RouteID: "civilian", Track: "civilian", Tier: "normal", CooldownRounds: 1},
+	"Pocket Sand":       {SkillID: "Pocket Sand", Name: "Pocket Sand", DisplayNameZH: "扬沙", Class: "civilian", RouteID: "civilian", Track: "civilian", Tier: "normal", CooldownRounds: 1},
+	"Emergency Roll":    {SkillID: "Emergency Roll", Name: "Emergency Roll", DisplayNameZH: "紧急翻滚", Class: "civilian", RouteID: "civilian", Track: "civilian", Tier: "advanced", CooldownRounds: 2},
+	"Signal Flare":      {SkillID: "Signal Flare", Name: "Signal Flare", DisplayNameZH: "信号照明弹", Class: "civilian", RouteID: "civilian", Track: "civilian", Tier: "advanced", CooldownRounds: 2},
+	"Field Tonic":       {SkillID: "Field Tonic", Name: "Field Tonic", DisplayNameZH: "野战提神剂", Class: "civilian", RouteID: "civilian", Track: "civilian", Tier: "advanced", CooldownRounds: 2},
+	"Tripwire Kit":      {SkillID: "Tripwire Kit", Name: "Tripwire Kit", DisplayNameZH: "绊索装置", Class: "civilian", RouteID: "civilian", Track: "civilian", Tier: "ultimate", CooldownRounds: 3},
 	"Guard Stance":      {SkillID: "Guard Stance", Name: "Guard Stance", DisplayNameZH: "守御姿态", Class: "warrior", RouteID: "tank", Track: "tank", Tier: "advanced", CooldownRounds: 2},
 	"War Cry":           {SkillID: "War Cry", Name: "War Cry", DisplayNameZH: "战吼", Class: "warrior", RouteID: "physical_burst", Track: "physical_burst", Tier: "ultimate", CooldownRounds: 3},
 	"Intercept":         {SkillID: "Intercept", Name: "Intercept", DisplayNameZH: "拦截", Class: "warrior", RouteID: "tank", Track: "tank", Tier: "normal", CooldownRounds: 1},
@@ -92,17 +91,26 @@ var skillDefinitions = map[string]skillDefinition{
 	"Choir Invocation":  {SkillID: "Choir Invocation", Name: "Choir Invocation", DisplayNameZH: "圣咏召唤", Class: "priest", RouteID: "summon", Track: "summon", Tier: "ultimate", CooldownRounds: 3},
 }
 
+var classCommonSkillIDs = map[string]struct{}{
+	"Guard Stance":   {},
+	"War Cry":        {},
+	"Intercept":      {},
+	"Arc Veil":       {},
+	"Focus Pulse":    {},
+	"Disrupt Ray":    {},
+	"Restore":        {},
+	"Sanctuary Mark": {},
+	"Purge":          {},
+}
+
 func cloneSkillLevels(source map[string]int) map[string]int {
-	if len(source) == 0 {
-		return map[string]int{}
-	}
-	cloned := make(map[string]int, len(source))
+	cloned := defaultSkillLevels()
 	for key, value := range source {
 		if _, ok := skillDefinitions[key]; !ok {
 			continue
 		}
-		if value < 0 {
-			value = 0
+		if value < 1 {
+			value = 1
 		}
 		if value > 10 {
 			value = 10
@@ -110,6 +118,17 @@ func cloneSkillLevels(source map[string]int) map[string]int {
 		cloned[key] = value
 	}
 	return cloned
+}
+
+func defaultSkillLevels() map[string]int {
+	levels := make(map[string]int, len(skillDefinitions))
+	for key, definition := range skillDefinitions {
+		if definition.IsBasic {
+			continue
+		}
+		levels[key] = 1
+	}
+	return levels
 }
 
 func cloneSkillLoadout(source []string) []string {
@@ -166,7 +185,7 @@ func (s *Service) UpgradeSkill(account auth.Account, skillID string) (SkillsStat
 	}
 
 	if entry.skillLevels == nil {
-		entry.skillLevels = map[string]int{}
+		entry.skillLevels = defaultSkillLevels()
 	}
 
 	currentLevel := entry.skillLevels[skillID]
@@ -217,7 +236,8 @@ func (s *Service) SetSkillLoadout(account auth.Account, skillIDs []string) (Skil
 func buildSkillsState(summary Summary, skillLevels map[string]int, skillLoadout []string) SkillsStateView {
 	levels := cloneSkillLevels(skillLevels)
 	loadout := activeLoadoutForSummary(summary, levels, skillLoadout)
-	universal := make([]SkillView, 0, 6)
+	civilianSkills := make([]SkillView, 0, 6)
+	classCommonSkills := make([]SkillView, 0, 9)
 	classSkills := make([]SkillView, 0, 16)
 
 	for _, definition := range orderedSkillDefinitions() {
@@ -225,8 +245,15 @@ func buildSkillsState(summary Summary, skillLevels map[string]int, skillLoadout 
 			continue
 		}
 		view := skillViewFromDefinition(summary, definition, levels[definition.SkillID])
-		if definition.Class == "universal" {
-			universal = append(universal, view)
+		if definition.Class == "civilian" {
+			civilianSkills = append(civilianSkills, view)
+			continue
+		}
+		if !canAccessSkill(summary, definition) {
+			continue
+		}
+		if isClassCommonSkill(definition.SkillID) {
+			classCommonSkills = append(classCommonSkills, view)
 			continue
 		}
 		if definition.Class == summary.Class {
@@ -235,11 +262,12 @@ func buildSkillsState(summary Summary, skillLevels map[string]int, skillLoadout 
 	}
 
 	return SkillsStateView{
-		BasicAttack:    basicAttackView(summary),
-		Universal:      universal,
-		ClassSkills:    classSkills,
-		ActiveLoadout:  loadout,
-		MaxActiveSlots: maxActiveSkillSlots,
+		BasicAttack:       basicAttackView(summary),
+		CivilianSkills:    civilianSkills,
+		ClassCommonSkills: classCommonSkills,
+		ClassSkills:       classSkills,
+		ActiveLoadout:     loadout,
+		MaxActiveSlots:    maxActiveSkillSlots,
 	}
 }
 
@@ -251,7 +279,7 @@ func activeLoadoutForSummary(summary Summary, skillLevels map[string]int, skillL
 		if !ok || definition.IsBasic {
 			continue
 		}
-		if !canAccessSkill(summary, definition) || skillLevels[skillID] <= 0 {
+		if !canAccessSkill(summary, definition) || skillLevels[skillID] < 1 {
 			continue
 		}
 		filtered = append(filtered, skillID)
@@ -294,9 +322,12 @@ func basicAttackView(summary Summary) SkillView {
 func skillViewFromDefinition(summary Summary, definition skillDefinition, level int) SkillView {
 	isUnlocked := definition.IsBasic
 	if !definition.IsBasic {
-		isUnlocked = canAccessSkill(summary, definition) && level > 0
+		isUnlocked = canAccessSkill(summary, definition)
 	}
-	currentMultiplier := 100 + level*2
+	currentMultiplier := 100
+	if !definition.IsBasic && level > 1 {
+		currentMultiplier += (level - 1) * 2
+	}
 	if definition.IsBasic {
 		currentMultiplier = 100
 	}
@@ -326,13 +357,18 @@ func canAccessSkill(summary Summary, definition skillDefinition) bool {
 	if definition.IsBasic {
 		return true
 	}
-	if definition.Class == "universal" {
+	if definition.Class == "civilian" {
 		return true
 	}
 	if strings.EqualFold(summary.Class, "civilian") {
-		return false
+		return isClassCommonSkill(definition.SkillID)
 	}
 	return strings.EqualFold(summary.Class, definition.Class)
+}
+
+func isClassCommonSkill(skillID string) bool {
+	_, ok := classCommonSkillIDs[skillID]
+	return ok
 }
 
 func validateSkillLoadout(summary Summary, skillLevels map[string]int, skillIDs []string) ([]string, error) {
@@ -350,7 +386,7 @@ func validateSkillLoadout(summary Summary, skillLevels map[string]int, skillIDs 
 		if _, exists := seen[skillID]; exists {
 			return nil, ErrSkillInvalidLoadout
 		}
-		if !canAccessSkill(summary, definition) || skillLevels[skillID] <= 0 {
+		if !canAccessSkill(summary, definition) || skillLevels[skillID] < 1 {
 			return nil, ErrSkillLocked
 		}
 		seen[skillID] = struct{}{}

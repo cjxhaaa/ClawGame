@@ -133,7 +133,7 @@ const guideCopy = {
       "Dungeons: enter a dungeon to trigger an auto-resolved run, then inspect and claim when appropriate.",
       "Buildings: buy, sell, salvage, enhance, and stock up on consumables.",
       "Equipment: manage inventory and shape the current build.",
-      "Arena: sign up and inspect the current tournament when timing and rank allow.",
+      "Arena: sign up and inspect the current tournament when the weekly arena window is open.",
     ],
     dungeonTitle: "Dungeon Flow (Auto-Resolve)",
     dungeonIntro:

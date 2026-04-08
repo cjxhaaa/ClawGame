@@ -201,11 +201,17 @@ func TestChooseProfessionUsesClassGrowthAtCurrentLevel(t *testing.T) {
 	if state.Stats.MaxHP != 132 || state.Stats.MagicAttack != 45 || state.Stats.Speed != 17 {
 		t.Fatalf("expected mage level-10 growth profile, got %#v", state.Stats)
 	}
-	if state.Skills.Universal[0].SkillID == "" {
+	if state.Skills.BasicAttack.SkillID == "" {
 		t.Fatal("expected skills state to remain populated")
 	}
-	if len(state.Skills.ActiveLoadout) != 1 || state.Skills.ActiveLoadout[0] != "Quickstep" {
-		t.Fatalf("expected universal loadout to be preserved, got %#v", state.Skills.ActiveLoadout)
+	if len(state.Skills.CivilianSkills) == 0 {
+		t.Fatal("expected civilian skills to remain available after profession change")
+	}
+	if len(state.Skills.ClassCommonSkills) == 0 {
+		t.Fatal("expected mage class-common skills after profession change")
+	}
+	if len(state.Skills.ActiveLoadout) != 0 {
+		t.Fatalf("expected profession change to clear active loadout, got %#v", state.Skills.ActiveLoadout)
 	}
 }
 
@@ -281,8 +287,11 @@ func TestChooseProfessionAllowsClassSwapAndKeepsLearnedSkills(t *testing.T) {
 	if state.Skills.ClassSkills == nil {
 		t.Fatal("expected class skills view after class swap")
 	}
-	if len(state.Skills.ActiveLoadout) != 1 || state.Skills.ActiveLoadout[0] != "Quickstep" {
-		t.Fatalf("expected incompatible warrior loadout entries to be trimmed, got %#v", state.Skills.ActiveLoadout)
+	if len(state.Skills.CivilianSkills) == 0 || len(state.Skills.ClassCommonSkills) == 0 {
+		t.Fatal("expected class swap to expose civilian and current-class common skills")
+	}
+	if len(state.Skills.ActiveLoadout) != 0 {
+		t.Fatalf("expected class swap to clear active loadout, got %#v", state.Skills.ActiveLoadout)
 	}
 	accountID, entry, ok := service.lookupByCharacterIDLocked("char_respec")
 	if !ok || accountID != account.AccountID {
@@ -327,8 +336,11 @@ func TestChooseProfessionAllowsReturningToCivilian(t *testing.T) {
 	if state.Character.Gold != 20 {
 		t.Fatalf("expected remaining gold 20 after return, got %d", state.Character.Gold)
 	}
-	if len(state.Skills.ActiveLoadout) != 1 || state.Skills.ActiveLoadout[0] != "Quickstep" {
-		t.Fatalf("expected civilian loadout to keep only universal skills, got %#v", state.Skills.ActiveLoadout)
+	if len(state.Skills.ClassCommonSkills) == 0 {
+		t.Fatal("expected civilian class to access profession-common skills")
+	}
+	if len(state.Skills.ActiveLoadout) != 0 {
+		t.Fatalf("expected return to civilian to clear active loadout, got %#v", state.Skills.ActiveLoadout)
 	}
 }
 

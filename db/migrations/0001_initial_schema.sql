@@ -68,7 +68,6 @@ CREATE TABLE IF NOT EXISTS characters (
     season_xp integer NOT NULL DEFAULT 0,
     skill_levels_json jsonb NOT NULL DEFAULT '{}'::jsonb,
     skill_loadout_json jsonb NOT NULL DEFAULT '[]'::jsonb,
-    rank text NOT NULL DEFAULT 'low',
     reputation integer NOT NULL DEFAULT 0,
     gold bigint NOT NULL DEFAULT 0,
     status text NOT NULL DEFAULT 'active',
@@ -79,7 +78,6 @@ CREATE TABLE IF NOT EXISTS characters (
     updated_at timestamptz NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_characters_rank ON characters(rank);
 CREATE INDEX IF NOT EXISTS idx_characters_location_region_id ON characters(location_region_id);
 
 CREATE TABLE IF NOT EXISTS character_base_stats (

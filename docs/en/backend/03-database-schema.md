@@ -56,7 +56,6 @@ Fields:
 - `name` `text` unique not null
 - `class` `text` not null
 - `weapon_style` `text` not null
-- `rank` `text` not null default `low`
 - `reputation` `int` not null default `0`
 - `gold` `bigint` not null default `0`
 - `status` `text` not null default `active`
@@ -70,7 +69,6 @@ Indexes:
 
 - unique index on `account_id`
 - unique index on `name`
-- index on `rank`
 - index on `location_region_id`
 
 ### 9.4 `character_base_stats`
@@ -118,7 +116,7 @@ Fields:
 Notes:
 
 - `reset_date` is the business date for the active reset window
-- when reset changes, worker rewrites caps based on current rank
+- when reset changes, worker rewrites caps based on the active daily-limit policy
 
 ### 9.6 `regions`
 
@@ -420,12 +418,12 @@ Notes:
 
 Purpose:
 
-- one daily arena cycle containing qualifier rounds, the 64-player main bracket, and final standings
+- one weekly arena cycle containing weekday rating play, the Saturday top-64 bracket, and final standings
 
 Fields:
 
 - `id` `text` primary key
-- `day_key` `text` unique not null
+- `week_key` `text` unique not null
 - `status` `text` not null
 - `signup_opens_at` `timestamptz` not null
 - `signup_closes_at` `timestamptz` not null
@@ -446,7 +444,6 @@ Fields:
 
 Notes:
 
-- this table should later represent one weekly arena cycle rather than one daily tournament
 - `snapshot_json` should be able to hold weekday rating-board summaries, Saturday top-64 seeds, and Sunday title-payout outcomes
 
 ### 9.19 `arena_entries`

@@ -1,6 +1,6 @@
 # ClawGame V1 Backend API and Data Model Spec
 
-Last updated: 2026-03-25
+Last updated: 2026-04-09
 
 ## 1. Goal
 
@@ -39,7 +39,7 @@ High-level flow:
 3. API performs transactional writes in PostgreSQL.
 4. API appends a `world_event`.
 5. API publishes a lightweight notification for SSE listeners.
-6. Worker handles scheduled resets, bracket generation, and long-running automation.
+6. Worker handles scheduled resets, arena lifecycle orchestration, world-boss rotation, and long-running automation.
 
 ## 3. Backend Modules
 
@@ -63,7 +63,7 @@ Responsibilities:
 - civilian onboarding and level-10 profession-change unlock
 - profile retrieval
 - derived stat calculation
-- reputation balance and daily-limit state
+- reputation spending for extra dungeon reward claims
 - daily limit state retrieval
 
 ### 3.3 World
@@ -81,10 +81,9 @@ Responsibilities:
 Responsibilities:
 
 - personal daily quest-board generation
-- quest acceptance
+- daily-board top-up on query
 - quest progress updates
 - quest submission
-- quest reroll
 - reward payout
 
 ### 3.5 Inventory
@@ -124,14 +123,27 @@ Responsibilities:
 
 Responsibilities:
 
+- weekday rating-challenge validation and resolution
 - signup validation
 - tournament creation
-- bracket seeding
+- top-64 bracket seeding
 - round advancement
 - reward payout
 - weekly leaderboard snapshot
 
-### 3.9 Public Feed
+### 3.9 World Boss
+
+Responsibilities:
+
+- world-boss season configuration
+- asynchronous `6`-player match-pool orchestration
+- raid instance creation and resolution
+- total-damage tier evaluation
+- reward distribution
+- equipment extra-affix reforge requests
+- pending-reforge result confirmation or discard
+
+### 3.10 Public Feed
 
 Responsibilities:
 
@@ -140,7 +152,7 @@ Responsibilities:
 - leaderboard read models
 - public event pagination and SSE streaming
 
-### 3.10 Admin
+### 3.11 Admin
 
 Responsibilities:
 
@@ -180,9 +192,12 @@ All business-time calculations use timezone `Asia/Shanghai`.
 Important boundaries:
 
 - daily reset at `04:00`
-- arena signup locks every day at `09:00`
-- arena qualifier pairing happens every day at `09:00`
-- arena qualifier duels resolve automatically right after random pairing
+- Monday to Friday arena rating play refreshes after daily reset
+- Friday close freezes the weekly rating board and locks the top `64`
+- arena signup closes Saturday `19:50`
+- arena starts Saturday `20:00`
+- arena rounds resolve every `5 minutes`
+- the active world boss refreshes every `2` days
 
 The backend must never infer reset boundaries from client time.
 
@@ -195,7 +210,6 @@ These string enums should be stable in DB and API payloads.
 - `character_class`: `civilian`, `warrior`, `mage`, `priest`
 - `profession_route_id`: legacy compatibility field; current writes should store the promoted class id or be empty while the character is `civilian`
 - `weapon_style`: `sword_shield`, `great_axe`, `staff`, `spellbook`, `scepter`, `holy_tome`
-- `adventurer_rank`: `low`, `mid`, `high`
 - `character_status`: `active`, `locked`, `banned`
 
 ### 6.2 Equipment enums
@@ -239,13 +253,19 @@ Additional note:
   - `claim_dungeon_rewards`
 
 
-### 6.6 Arena enums
+### 6.6 World-boss enums
+
+- `world_boss_queue_status`: `queued`, `matched`, `expired`, `cancelled`
+- `world_boss_raid_status`: `forming`, `resolving`, `resolved`, `rewarded`
+- `world_boss_reward_tier`: `D`, `C`, `B`, `A`, `S`
+
+### 6.7 Arena enums
 
 - `arena_tournament_status`: `signup_open`, `signup_closed`, `in_progress`, `completed`, `cancelled`
 - `arena_entry_status`: `signed_up`, `seeded`, `eliminated`, `completed`
 - `arena_match_status`: `pending`, `ready`, `resolved`, `walkover`
 
-### 6.7 Event enums
+### 6.8 Event enums
 
 - `world_event_visibility`: `public`, `internal`, `admin_only`
 - `world_event_type`:

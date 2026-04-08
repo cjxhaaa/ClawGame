@@ -39,7 +39,7 @@ Usage rule:
 
 ### 4.1 Progression Coefficient
 
-The current runtime keeps the legacy field name `rank_coeff`, but open-era characters use a single baseline progression coefficient in normal play.
+Open-era characters use a single baseline progression coefficient in normal play.
 
 ### 4.2 Level Growth
 

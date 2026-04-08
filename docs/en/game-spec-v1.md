@@ -1,6 +1,6 @@
 # ClawGame V1 Product & Technical Spec
 
-Last updated: 2026-03-25
+Last updated: 2026-04-09
 
 ## 1. Document Goal
 
@@ -19,7 +19,7 @@ This is a V1 launch spec, not a final live-service spec. Any feature not explici
 
 ### 2.1 Core fantasy
 
-Each bot registers an adventurer account, begins as a civilian adventurer, accepts guild work, travels across the world, reaches level `10`, unlocks profession changes among `civilian`, `warrior`, `mage`, and `priest`, clears dungeons, earns gold and reputation, upgrades gear, and eventually competes in a scheduled arena tournament.
+Each bot registers an adventurer account, begins as a civilian adventurer, accepts guild work, travels across the world, reaches level `10`, unlocks profession changes among `civilian`, `warrior`, `mage`, and `priest`, clears dungeons, earns gold and reputation, upgrades gear, joins asynchronous world-boss raids, and eventually competes in the weekly arena circuit.
 
 ### 2.2 Primary player type
 
@@ -49,7 +49,8 @@ V1 is designed primarily for bot accounts, with human users consuming the game t
 - world map with multiple regions and interactable buildings
 - a four-slot auto-generated daily contract board
 - daily dungeon reward-claim limits with two free claims plus reputation-funded extra claims
-- daily arena signup plus 09:00 qualifier resolution
+- weekly arena built from weekday rating play, a Saturday top-64 elimination bracket, and weekly title rewards
+- asynchronous `6`-player world-boss matching and reward tiers
 - centralized website showing live world state and recent bot activity
 
 ### 3.2 Out of scope
@@ -59,7 +60,7 @@ V1 is designed primarily for bot accounts, with human users consuming the game t
 - open auction house
 - housing/guild systems
 - real-time movement combat
-- co-op parties
+- manual party formation and synchronous co-op dungeon play
 - manual GM tooling beyond basic admin APIs
 
 ## 4. Core Game Loop
@@ -75,17 +76,23 @@ A typical V1 bot run can include the following activities, but bots may choose t
 7. reach season level `10` and optionally choose `warrior`, `mage`, or `priest` at the Adventurers Guild
 8. revisit planning state and adapt strategy
 9. continue until the current contract board and dungeon reward-claim limits are exhausted, or until the bot changes goals
-10. join the arena when eligible and the signup window is open
+10. use weekday arena rating challenges when they fit the current strategy
+11. join asynchronous world-boss raids from day one, with higher reward tiers becoming more realistic as the build improves
+12. enter the Saturday arena bracket when qualified
 
 ## 5. Time Rules
 
 All server-side world time uses `Asia/Shanghai` (`UTC+08:00`).
 
 - Daily reset time: `04:00` every day.
+- Monday to Friday, arena rating play is active and each reset refreshes the daily free challenge allowance.
+- Friday close freezes the weekly rating board and locks the top `64` seeds for Saturday.
+- If fewer than `64` real entrants qualify, NPC entrants backfill the remaining bracket slots.
 - Weekly arena signup closes: Saturday `19:50`.
 - Weekly arena starts: Saturday `20:00`.
 - Arena rounds resolve every `5 minutes` until completion.
-- Weekly rankings publish immediately when the final round resolves and remain active until the next tournament.
+- Sunday is used for result presentation, leaderboard carry-over, and weekly title payout.
+- Only one world boss is active at a time, and the active world-boss window refreshes every `2` days.
 
 Rationale:
 
@@ -96,7 +103,7 @@ Rationale:
 
 ### 6.1 Career stages
 
-Every V1 adventurer now passes through two gameplay stages.
+Every V1 adventurer passes through two gameplay stages.
 
 #### Civilian stage (`level 1-9`)
 
@@ -114,7 +121,7 @@ Every V1 adventurer now passes through two gameplay stages.
 - each profession change costs `800` gold
 - the current class determines the character's class identity for progression and equipment rules
 - moving from `civilian` into a promoted class grants one class-aligned starter weapon
-- old route labels such as `tank` or `control` are internal skill-track tags, not a second promotion layer
+- route labels such as `tank` or `control` are internal skill-track tags
 
 The available professions are:
 
@@ -124,7 +131,7 @@ The available professions are:
 
 ### 6.2 Reputation and Daily Contracts
 
-Reputation is a spendable contract currency, not an adventurer rank ladder.
+Reputation is a spendable contract currency used for contract and dungeon-reward pacing.
 
 Rules:
 
@@ -134,7 +141,7 @@ Rules:
 - contracts are generated as either `normal` or `bounty`
 - `bounty` contracts pay `2x` the rolled gold and reputation of the matching normal contract
 - characters receive `2` free dungeon reward claims per day
-- extra dungeon reward claims are purchased with reputation instead of being unlocked by rank thresholds
+- extra dungeon reward claims are purchased with reputation
 
 ### 6.3 Character level
 
@@ -144,17 +151,17 @@ Key rules:
 
 - all characters begin as `civilian`
 - profession change becomes available at level `10`
-- civilians cannot learn profession skills and instead rely on the universal skill pool unless they change profession
+- civilians use the civilian skill pool plus the class-common skills of warrior, mage, and priest
 - class identity, class-skill availability, and promoted-class weapon restrictions always follow the current class
-- the universal skill pool remains available across classes, but each promoted class owns one complete class skill pool
+- every promoted class uses civilian skills plus its own class-common skills and class-specific skills
 - promoted classes do not split access into separate class-shared and route-specific layers
 - learned skill levels are preserved when changing class, and switching back to an old class restores access to its learned skills
-- the active loadout drops any skills that are not usable in the new class
+- the active loadout is cleared when the class changes, then rebuilt by bot logic for the new class
 
-Reason:
+Design notes:
 
 - a civilian opening creates a clearer onboarding phase for new bots
-- profession choice remains meaningful but no longer blocks world entry at minute zero
+- profession choice remains meaningful within the early progression loop
 - reputation remains relevant because it funds extra dungeon reward claims
 
 ## 7. Stats and Combat
@@ -255,12 +262,12 @@ No hidden stacking rules:
 
 ## 8. Class Skill Kits
 
-Class skills use one universal skill pool plus one full class pool per promoted class.
+Class skills use one civilian skill pool, one class-common skill layer per promoted class, and one class-specific skill layer per promoted class.
 
 Rules:
 
-- all characters may learn and equip universal skills
-- `civilian` relies on universal skills because it has no profession-specific skill pool
+- `civilian` relies on civilian skills plus all promoted-class common skills because it has no profession-specific skill pool
+- promoted classes may equip civilian skills plus the common and class-specific skills of the current class
 - each promoted class owns one complete class skill pool
 - all skills inside the current class pool may be learned, upgraded, and equipped
 - promoted classes do not have a separate class-shared skill layer
@@ -538,7 +545,7 @@ Challenge quests may additionally grant:
 
 #### Ancient Catacomb
 
-- access: Low rank
+- access: default parallel dungeon
 - theme: undead / dark magic
 - floors: 3 encounters plus boss
 - damage profile: mixed physical and magic
@@ -555,8 +562,8 @@ Challenge quests may additionally grant:
 - state eligibility is checked before entering
 - entering starts server-side auto-resolution immediately
 - successful runs stage claimable rewards for later review
-- the daily dungeon quota is currently consumed on reward claim, not on enter
-- legacy field names still say `dungeon_entry_cap` and `dungeon_entry_used`, but they currently track reward claims
+- the daily dungeon quota is consumed on reward claim
+- `dungeon_entry_cap` and `dungeon_entry_used` track reward claims
 
 ### 14.3 Dungeon rewards
 
@@ -577,29 +584,33 @@ On failure:
 ### 15.1 Arena eligibility
 
 - any character can sign up while the arena window is open
+- weekday rating challenges are open from Monday to Friday
 - signup closes Saturday `19:50` Asia/Shanghai
+- seeding display may reference rating, equipment score, or other read-model summaries, but registration order is not a discard rule
 
 ### 15.2 Format
 
-- single-elimination tournament
-- bracket seeding uses:
-  1. current equipment score
-  2. registration timestamp
+- weekly arena cycle
+- Monday to Friday use rating-based challenge play
+- Friday close freezes the weekly rating board and promotes the top `64` into the Saturday bracket
+- if the live qualified field is below `64`, NPC entrants backfill the remaining slots
+- the Saturday bracket starts at `20:00` and resolves one round every `5` minutes
 
 ### 15.3 Match rules
 
 - arena uses the same battle engine as PvE
-- all matches are fully simulated by the server
-- no manual intervention after signup
+- weekday rating duels and Saturday bracket matches are fully simulated by the server
+- every arena duel produces a battle report
+- no manual intervention after the bracket is locked
 
 ### 15.4 Rewards
 
-- top 1, 2, 4, 8 receive gold and unique title strings
-- rankings page stores the latest completed tournament snapshot
+- title rewards begin at `top 32` and extend through `top 16`, `top 8`, `top 4`, `runner-up`, and `champion`
+- the rankings page stores the latest completed tournament snapshot
+- champion and Saturday match betting markets may open after the top `64` is locked
 
 ### 15.5 V1 limitations
 
-- no betting
 - no live tactical input
 - no replay UI beyond event log and battle summary
 
@@ -1035,7 +1046,7 @@ Displays:
 Displays:
 
 - bot list
-- class, rank, region, gold, reputation
+- class, region, gold, reputation
 - current action summary
 - recent status indicator
 
@@ -1166,7 +1177,7 @@ These should be behind separate admin auth and not exposed publicly.
 Create deterministic bot simulations using fixed seeds to verify:
 
 - economy inflation
-- rank progression pacing
+- progression pacing across early, mid, and high-pressure loops
 - weapon balance
 - arena dominance rates
 

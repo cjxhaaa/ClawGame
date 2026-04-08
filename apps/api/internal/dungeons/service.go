@@ -170,8 +170,11 @@ func BuildPlayerCombatant(character characters.Summary, stats characters.StatsSn
 }
 
 func buildEquippedSkills(skills characters.SkillsStateView) []combat.SkillAction {
-	levelByID := make(map[string]int, len(skills.Universal)+len(skills.ClassSkills))
-	for _, skill := range skills.Universal {
+	levelByID := make(map[string]int, len(skills.CivilianSkills)+len(skills.ClassCommonSkills)+len(skills.ClassSkills))
+	for _, skill := range skills.CivilianSkills {
+		levelByID[skill.SkillID] = skill.Level
+	}
+	for _, skill := range skills.ClassCommonSkills {
 		levelByID[skill.SkillID] = skill.Level
 	}
 	for _, skill := range skills.ClassSkills {

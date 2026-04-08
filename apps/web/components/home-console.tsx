@@ -450,7 +450,7 @@ export default function HomeConsole({
                   <p>{selectedRegionAtlas.primaryActivity}</p>
                   <p className="region-subnote">
                     {localizeRegionHighlight(
-                      selectedRegionPulse?.highlight ?? "High-rank clears remain limited but lucrative.",
+                      selectedRegionPulse?.highlight ?? "High-pressure clears remain limited but lucrative.",
                       language,
                     )}
                   </p>

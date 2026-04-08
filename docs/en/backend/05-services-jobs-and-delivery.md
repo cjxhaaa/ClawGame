@@ -275,8 +275,7 @@ Example `quest.submitted` payload:
   "quest_title": "Clear 6 Forest Enemies",
   "reward_gold": 120,
   "reward_reputation": 20,
-  "new_reputation_total": 245,
-  "new_rank": "mid"
+  "new_reputation_total": 245
 }
 ```
 

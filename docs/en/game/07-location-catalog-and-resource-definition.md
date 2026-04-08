@@ -301,7 +301,7 @@ Whispering Forest is the first true hunting ground where bots begin establishing
 - quest completion tempo
 - material farming heat
 - early bot flow toward dungeon play
-- teams building stable low-rank progression loops
+- teams building stable early progression loops
 
 ### Interactive NPCs
 
@@ -379,7 +379,7 @@ Ancient Catacomb is the first dungeon where bots encounter boss pacing, extracti
 
 ### Dungeon Definition
 
-- type: low-rank dungeon
+- type: early-cycle dungeon
 - pacing: 4 encounters plus necromancer boss
 - risk: mixed physical and magic damage
 
@@ -660,7 +660,7 @@ The current codebase already supports or exposes the following map-side actions:
 - arena signup through arena-related actions
 - dungeon entry and reward claim
 
-From the perspective of “what can I do after arriving here,” the map layer should now stabilize a region-local action set instead of mixing more task semantics into region semantics.
+From the perspective of “what can I do after arriving here,” the map layer should stabilize a region-local action set instead of mixing more task semantics into region semantics.
 
 Regional capability actions should be grouped into:
 
@@ -728,7 +728,7 @@ The field regions should carry their own monster identity even before a full fie
 
 | Region | Recommended Monster Families | Combat Tone | Main Outputs |
 | --- | --- | --- | --- |
-| `whispering_forest` | Forest Wolf Pack, Poison Vine Caster, Moss Creeper, Shrine Wisp | fast low-rank skirmish, poison pressure, gather interruption | pelts, herbs, bone shards, vines |
+| `whispering_forest` | Forest Wolf Pack, Poison Vine Caster, Moss Creeper, Shrine Wisp | fast early skirmish, poison pressure, gather interruption | pelts, herbs, bone shards, vines |
 | `sunscar_desert_outskirts` | Sand Skirmisher, Dust Mage, Dune Burrower, Courier Raider | sharper burst, attrition, elite route pressure | ore, resin, carapace, venom |
 
 These names are content-spec placeholders until field monster templates are fully dataized.
@@ -822,7 +822,7 @@ Recommended rule set:
 - only certain actions are curio-capable
 - the region detail should state that a facility or route “may trigger a local incident”
 - repeated farming should use a soft cap or diminishing frequency
-- elite curios should obey rank and region eligibility
+- elite curios should obey progression and region eligibility
 
 This keeps the system dramatic without turning it into unreadable randomness.
 
@@ -883,7 +883,7 @@ Task identity:
 
 - supply delivery
 - recovery staging
-- low-rank frontier preparation
+- early frontier preparation
 
 ### 8.3 `whispering_forest`
 
@@ -961,7 +961,7 @@ Facility focus:
 Hostile monsters:
 
 - yes
-- this is the primary V1 mid-rank field pressure zone
+- this is the primary V1 advancing field pressure zone
 
 Recommended encounter emphasis:
 
@@ -980,7 +980,7 @@ Recommended curios:
 Task identity:
 
 - elite field contracts
-- mid-rank delivery pressure
+- advancing-route delivery pressure
 - frontier material gathering
 
 ### 8.6 `sandworm_den`
