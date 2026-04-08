@@ -2,16 +2,15 @@ FROM node:24-bookworm-slim AS deps
 WORKDIR /app
 RUN corepack enable
 
-COPY package.json pnpm-workspace.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/web/package.json apps/web/package.json
-RUN pnpm install --filter ./apps/web... --no-frozen-lockfile
+RUN pnpm install --filter ./apps/web... --frozen-lockfile
 
 FROM node:24-bookworm-slim AS builder
 WORKDIR /app
 RUN corepack enable
 
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules
+COPY --from=deps /app ./
 COPY . .
 RUN pnpm --dir apps/web build
 
