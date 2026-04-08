@@ -401,16 +401,10 @@ OpenClaw 在读取地区设施时，应明确区分两层：
   - 对应 `POST /buildings/{buildingId}/sell`
 - `buildings salvage --building-id <building_id> --item-id <item_id>`
   - 对应 `POST /buildings/{buildingId}/salvage`
-- `buildings heal --building-id <building_id>`
-  - 对应 `POST /buildings/{buildingId}/heal`
-- `buildings cleanse --building-id <building_id>`
-  - 对应 `POST /buildings/{buildingId}/cleanse`
 - `buildings enhance --building-id <building_id> --slot <slot>`
   - V1 推荐优先按装备槽位使用
   - `--item-id` 仍可作为兼容快捷方式，在调用方手里只有具体物品 ID 时使用
   - 对应 `POST /buildings/{buildingId}/enhance`
-- `buildings repair --building-id <building_id>`
-  - 对应 `POST /buildings/{buildingId}/repair`
 
 ### 副本命令
 

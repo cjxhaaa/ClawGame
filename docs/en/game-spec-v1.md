@@ -296,12 +296,12 @@ See [docs/en/game/11-class-skill-system.md](/home/cjxh/ClawGame/docs/en/game/11-
 
 ### 9.3 Item rarity
 
-- Common
-- Rare
-- Epic
-- Gold
-- Red
-- Prismatic
+- `common`
+- `blue`
+- `purple`
+- `gold`
+- `red`
+- `prismatic`
 
 V1 item power should come mostly from:
 
@@ -356,7 +356,6 @@ V1 uses one soft currency:
 ### 10.3 Gold sinks
 
 - consumables
-- equipment repair fee after dungeon or arena defeat
 - equipment enhancement
 - fast travel fee between distant regions
 - guild quest reroll fee
@@ -418,53 +417,78 @@ V1 regions:
 ### 12.1 Main City
 
 - Adventurers Guild
-- Weapon Shop
-- Armor Shop
-- Temple
+- Equipment Shop
+- Apothecary
 - Blacksmith
-- Arena Hall
+- Arena
 - Warehouse
 
 ### 12.2 Greenfield Village
 
-- Quest Outpost
-- General Store
-- Field Healer
+- Adventurers Guild Outpost
+- Equipment Shop
+- Apothecary
+- Caravan Dispatch Point
 
 ### 12.3 Building actions
 
 Adventurers Guild:
 
 - list quests
-- accept quest
 - submit quest
 - reroll daily board for gold
+- manage profession, route, and skill progression
 
-Weapon Shop / Armor Shop:
+Equipment Shop:
 
 - browse stock
 - buy item
 - sell loot
 
-Temple / Field Healer:
+Current V1 sell contract:
 
-- restore HP/MP for gold
-- remove status effects
+- only inventory items can be sold; equipped items must be unequipped first
+- selling removes the item immediately and grants gold in the same action
+- every equipment item should have one canonical shop-estimate formula
+- the estimate should use the same rarity-base, slot-multiplier, and stat-premium pricing skeleton as the shop, without per-day offer variance
+- sell value should be `floor(shop_estimated_price / 2)`
+- selling is a direct liquidation action, not a bargaining or listing loop
+
+Apothecary:
+
+- buy consumables
+- no out-of-combat heal or cleanse action in the current V1 loop
 
 Blacksmith:
 
-- repair item durability
 - enhance eligible equipment
+- salvage eligible equipment
+
+Current V1 enhancement contract:
+
+- enhancement is slot-bound, not item-instance-bound
+- callers may target enhancement by `item_id` or by `slot`
+- every slot currently supports enhancement up to `+20`
+- success is deterministic in V1
+- enhancement consumes gold and `enhancement_shard`
+- both gold cost and shard cost scale by current enhancement level and item rarity
+- enhancement increases only the slot item's base stat package; passive affixes are not multiplied
+- salvaging inventory equipment is the primary material source for enhancement
+- current shard yield by salvaged item rarity is:
+  - `common`: `1`
+  - `blue`: `3`
+  - `purple`: `7`
+  - `gold`: `14`
+  - `red`: `24`
+  - `prismatic`: `40`
 
 Warehouse:
 
-- list inventory
-- equip item
-- unequip item
+- view storage surface
 
-Arena Hall:
+Arena:
 
-- view schedule
+- view current arena state
 - sign up
 - view bracket
 
@@ -546,7 +570,7 @@ On successful clear:
 On failure:
 
 - partial loot only if at least one encounter was cleared
-- repair fee increases on damaged items
+- no additional repair or town-heal tax is applied in the current V1 loop
 
 ## 15. Arena System
 
@@ -662,10 +686,8 @@ No bot should need to infer available actions from prose.
 - `GET /api/v1/buildings/{buildingId}/shop-inventory`
 - `POST /api/v1/buildings/{buildingId}/purchase`
 - `POST /api/v1/buildings/{buildingId}/sell`
-- `POST /api/v1/buildings/{buildingId}/heal`
-- `POST /api/v1/buildings/{buildingId}/cleanse`
+- `POST /api/v1/buildings/{buildingId}/salvage`
 - `POST /api/v1/buildings/{buildingId}/enhance`
-- `POST /api/v1/buildings/{buildingId}/repair`
 
 #### Quests
 
@@ -1111,7 +1133,7 @@ Minimal internal endpoints:
 
 - force reset a bot daily limits
 - grant gold
-- repair character state
+- reconcile character state
 - rerun arena snapshot publish
 
 These should be behind separate admin auth and not exposed publicly.

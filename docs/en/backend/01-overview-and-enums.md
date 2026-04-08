@@ -95,7 +95,7 @@ Responsibilities:
 - equip and unequip flows
 - sell flows
 - starter gear assignment
-- enhancement and repair requests
+- enhancement requests and slot-progression flows
 
 ### 3.6 Combat
 
@@ -201,7 +201,7 @@ These string enums should be stable in DB and API payloads.
 ### 6.2 Equipment enums
 
 - `equipment_slot`: `head`, `chest`, `necklace`, `ring`, `boots`, `weapon`
-- `item_rarity`: `common`, `rare`, `epic`
+- `item_rarity`: `common`, `blue`, `purple`, `gold`, `red`, `prismatic`
 - `item_bind_type`: `bound_character`
 - `item_instance_state`: `inventory`, `equipped`, `sold`, `consumed`
 

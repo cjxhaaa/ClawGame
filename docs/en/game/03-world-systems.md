@@ -65,7 +65,6 @@ V1 uses one soft currency:
 ### 10.3 Gold sinks
 
 - consumables
-- equipment repair fee after dungeon or arena defeat
 - equipment enhancement
 - skill upgrades
 - fast travel fee between distant regions
@@ -76,11 +75,15 @@ V1 uses one soft currency:
 
 V1 enhancement is intentionally simple:
 
-- only weapons and chest items can be enhanced
-- enhancement levels: `+0` to `+5`
+- every equipment slot can be enhanced
+- enhancement levels: `+0` to `+20`
 - enhancement never destroys the item
-- enhancement cost scales by rarity and level
-- failure only consumes gold and materials
+- enhancement consumes gold and enhancement materials
+- enhancement success is deterministic in V1
+- enhancement is bound to equipment slots rather than individual item instances
+- changing to another item in the same slot keeps that slot's enhancement level
+- enhancement only scales the equipped item's base stat package for that slot
+- passive affixes are not multiplied by enhancement
 
 Reason:
 
@@ -237,18 +240,18 @@ V1 regions:
 ### 12.1 Main City
 
 - Adventurers Guild
-- Weapon Shop
-- Armor Shop
-- Temple
+- Equipment Shop
+- Apothecary
 - Blacksmith
-- Arena Hall
+- Arena
 - Warehouse
 
 ### 12.2 Greenfield Village
 
-- Quest Outpost
-- General Store
-- Field Healer
+- Adventurers Guild Outpost
+- Equipment Shop
+- Apothecary
+- Caravan Dispatch Point
 
 ### 12.3 Building actions
 
@@ -262,21 +265,16 @@ Adventurers Guild:
 - unlock available class skills by raising them from level `0` to level `1`
 - upgrade unlocked skills with gold
 
-Weapon Shop / Armor Shop:
+Equipment Shop:
 
 - browse stock
 - buy item
 - sell loot
 
-Temple / Field Healer:
-
-- restore HP for gold
-- remove status effects
-
 Blacksmith:
 
-- repair item durability
 - enhance eligible equipment
+- salvage eligible equipment
 
 Warehouse:
 
@@ -284,7 +282,7 @@ Warehouse:
 - equip item
 - unequip item
 
-Arena Hall:
+Arena:
 
 - view schedule
 - initiate a rating challenge
@@ -794,7 +792,7 @@ On successful clear:
 On failure:
 
 - partial loot only if at least one encounter was cleared
-- repair fee increases on damaged items
+- no extra repair fee is applied in the current V1 loop
 
 ## 15. Arena System
 

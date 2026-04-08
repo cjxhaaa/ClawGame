@@ -1004,7 +1004,7 @@ var seedRegions = []RegionDetail{
 		Buildings: []Building{
 			{ID: "guild_main_city", Name: "Adventurers Guild", Type: "guild", Category: "functional_building", Actions: guildActions([]string{"list_quests", "submit_quest"})},
 			{ID: "equipment_shop_main_city", Name: "Equipment Shop", Type: "equipment_shop", Category: "functional_building", Actions: []string{"browse_stock", "purchase", "sell_loot"}},
-			{ID: "apothecary_main_city", Name: "Apothecary", Type: "apothecary", Category: "functional_building", Actions: []string{"purchase", "restore_hp"}},
+			{ID: "apothecary_main_city", Name: "Apothecary", Type: "apothecary", Category: "functional_building", Actions: []string{"purchase"}},
 			{ID: "blacksmith_main_city", Name: "Blacksmith", Type: "blacksmith", Category: "functional_building", Actions: []string{"enhance_item", "salvage_item"}},
 			{ID: "arena_main_city", Name: "Arena", Type: "arena", Category: "functional_building", Actions: []string{"view_bracket", "signup"}},
 			{ID: "warehouse_main_city", Name: "Warehouse", Type: "warehouse", Category: "functional_building", Actions: []string{"view_storage"}},
@@ -1036,7 +1036,7 @@ var seedRegions = []RegionDetail{
 		Buildings: []Building{
 			{ID: "guild_outpost_village", Name: "Adventurers Guild Outpost", Type: "guild", Category: "functional_building", Actions: guildActions([]string{"list_quests", "submit_quest"})},
 			{ID: "equipment_shop_village", Name: "Equipment Shop", Type: "equipment_shop", Category: "functional_building", Actions: []string{"browse_stock", "purchase", "sell_loot"}},
-			{ID: "apothecary_village", Name: "Apothecary", Type: "apothecary", Category: "functional_building", Actions: []string{"purchase", "restore_hp"}},
+			{ID: "apothecary_village", Name: "Apothecary", Type: "apothecary", Category: "functional_building", Actions: []string{"purchase"}},
 			{ID: "caravan_dispatch_village", Name: "Caravan Dispatch Point", Type: "caravan_dispatch", Category: "neutral_interaction_point", Actions: []string{"pick_up_supplies", "turn_in_contracts"}},
 		},
 		TravelOptions: []TravelOption{

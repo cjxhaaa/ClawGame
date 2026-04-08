@@ -100,7 +100,7 @@ V1 后端由两个 Go 应用组成：
 - 装备 / 卸下流程
 - 出售流程
 - 起始装备分发
-- 强化与修理请求
+- 强化请求与相关物品变更流程
 
 ### 3.6 Combat
 
@@ -161,10 +161,10 @@ V1 后端由两个 Go 应用组成：
 
 职责：
 
-- 状态修复接口
+- 状态恢复与对账接口
 - 运营支持接口
 - 手动发放与重置
-- 观测与修复命令
+- 观测与恢复命令
 
 ## 4. ID 策略
 
@@ -222,7 +222,7 @@ V1 后端由两个 Go 应用组成：
 ### 6.2 装备枚举
 
 - `equipment_slot`：`head`、`chest`、`necklace`、`ring`、`boots`、`weapon`
-- `item_rarity`：`common`、`rare`、`epic`
+- `item_rarity`：`common`、`blue`、`purple`、`gold`、`red`、`prismatic`
 - `item_bind_type`：`bound_character`
 - `item_instance_state`：`inventory`、`equipped`、`sold`、`consumed`
 
@@ -236,7 +236,7 @@ V1 后端由两个 Go 应用组成：
 ### 6.4 旅行与世界枚举
 
 - `region_type`：`safe_hub`、`field`、`dungeon`
-- `building_type`：`guild`、`weapon_shop`、`armor_shop`、`temple`、`blacksmith`、`warehouse`、`arena_hall`、`general_store`、`healer`、`quest_outpost`
+- `building_type`：`guild`、`equipment_shop`、`apothecary`、`blacksmith`、`arena`、`warehouse`、`caravan_dispatch`
 
 ### 6.5 地下城枚举
 
@@ -1160,6 +1160,13 @@ V1 后端由两个 Go 应用组成：
 
 ### 12.3 Actions APIs
 
+为什么需要动作层：
+
+- 面向 Bot 的调用方需要机器可读的动作面，而不是靠描述文本理解系统。
+- `planner` 是高层机会摘要。
+- `/me/actions` 是紧凑动作总线。
+- 当某个系统已经有成熟专用接口时，专用接口仍然是首选 typed contract。
+
 #### `GET /api/v1/me/actions`
 
 用途：
@@ -1175,6 +1182,17 @@ V1 后端由两个 Go 应用组成：
 当前仓库说明：
 
 - 这个接口刻意保持轻量，不返回完整 planner 语义
+- 当前结果来自“地区动作 + 已接受任务的 runtime 动作 + 基于当前账号状态推导出的立刻可执行后续动作”
+- 当前地区动作家族主要是 `travel`、`enter_building`、野外遭遇变体，以及“当前地区本身是副本或挂接一个可进入副本”时的 `enter_dungeon`
+- 当前任务 runtime 动作家族是 `quest_interact` 与 `quest_choice`
+- 当前后续动作家族还包括 `submit_quest`、`claim_dungeon_rewards`、`exchange_dungeon_reward_claims`、`equip_item`、`unequip_item`
+- 常见地区动作和后续动作现在会在 `args_schema` 里补入具体的 `suggested_*` 目标 ID
+- 它是一个紧凑发现面，不是账号当前所有可执行动作的完整清单
+
+当前实际限制：
+
+- planner 仍然承载比它更丰富的中程规划语义
+- `sell_item` 与 `enhance_item` 已经支持通过通用 action 总线执行，但当前仍不会在这个发现面里直接暴露，因为它们的物品选择、报价信息与显式建筑选择，依然更适合通过 planner 上下文配合专用 inventory/building 接口完成
 
 #### `POST /api/v1/me/actions`
 
@@ -1213,13 +1231,17 @@ V1 后端由两个 Go 应用组成：
 
 - `travel`
 - `enter_building`
+- `resolve_field_encounter`
+- `resolve_field_encounter:hunt`
+- `resolve_field_encounter:gather`
+- `resolve_field_encounter:curio`
 - `submit_quest`
+- `quest_choice`
+- `quest_interact`
 - `exchange_dungeon_reward_claims`
 - `equip_item`
 - `unequip_item`
 - `sell_item`
-- `restore_hp`
-- `remove_status`
 - `enhance_item`
 - `enter_dungeon`
 - `claim_dungeon_rewards`
@@ -1227,10 +1249,21 @@ V1 后端由两个 Go 应用组成：
 
 - `client_turn_id` 可由调用方传入，但当前仓库不会解释它
 
+当前仓库说明：
+
+- `sell_item` 与 `enhance_item` 现在已经在通用 action 总线上执行真实的建筑结算与状态变更
+- 如果调用方需要强化报价、商店上下文或显式建筑选择，专用 building 接口仍然是更清晰的 typed contract
+
 建议：
 
 - 保留专用接口以获得更清晰的契约与更好的可读性
 - 统一动作入口作为兜底层或兼容层使用
+
+建议后的开发修改方向：
+
+1. 后续 action family 或动作语义变更时，持续同步 planner、`/me/actions`、OpenAPI 与 tool-facing 文档
+2. 继续保持依赖建筑的通用动作只解析角色当前地区真实可用建筑这一 locality 约束
+3. 当未来加入新的上下文动作时，继续补更多可直接执行的 `suggested_*` 目标 ID
 
 ### 12.4 Region APIs
 
@@ -1292,18 +1325,60 @@ V1 后端由两个 Go 应用组成：
 
 建筑动作接口：
 
-- `POST /api/v1/buildings/{buildingId}/heal`
-- `POST /api/v1/buildings/{buildingId}/cleanse`
 - `POST /api/v1/buildings/{buildingId}/enhance`
-- `POST /api/v1/buildings/{buildingId}/repair`
+- `POST /api/v1/buildings/{buildingId}/salvage`
 - `POST /api/v1/buildings/{buildingId}/purchase`
 - `POST /api/v1/buildings/{buildingId}/sell`
 
 当前仓库说明：
 
 - 这些接口当前返回的是 action-style envelope
-- `heal` 会映射为轻量级动作结果 `restore_hp`
-- `cleanse` 会映射为 `remove_status`
+- 除了连续多房间挑战这类流程外，角色在战斗之间默认视为满血且不会保留 debuff
+- 当前 V1 玩法里没有装备耐久和修理环节
+
+当前专用动作契约：
+
+- `POST /api/v1/buildings/{buildingId}/sell`
+  - building 必须具备 `sell_loot` 能力
+  - 请求体要求 `item_id`
+  - 校验：
+    - 物品必须属于当前角色
+    - 物品当前不能处于已装备状态
+  - 副作用：
+    - 从背包移除该物品
+    - 立即发放金币
+    - 当前设计目标是按统一装备商店估价公式取 `floor(shop_estimated_price / 2)`
+    - 记录 `inventory.item_sold`
+  - 当前响应会返回更新后的 `inventory`、被出售的 `item` 与 `gain_gold`
+- `POST /api/v1/buildings/{buildingId}/enhance`
+  - building 必须具备 `enhance_item` 能力
+  - 请求体接受 `item_id`、`slot` 或两者同时提供
+  - 目标规则：
+    - 如果提供 `item_id`，就以该物品所在槽位作为强化目标
+    - 否则使用 `slot` 作为槽位强化目标
+  - 校验：
+    - 当提供 `item_id` 时，目标物品必须属于当前角色
+    - 目标必须可强化
+    - 当前槽位强化等级必须低于上限
+    - 角色必须拥有足够金币与强化材料
+  - 副作用：
+    - 扣除金币
+    - 扣除 `enhancement_shard`
+    - 将目标槽位强化等级加一
+    - 记录 `inventory.item_enhanced`
+  - 当前响应会返回更新后的 `inventory`、`item_before`、强化后的 `item`、`enhancement_quote` 与扣费后的 `materials`
+- `POST /api/v1/buildings/{buildingId}/salvage`
+  - building 必须具备 `salvage_item` 能力
+  - 请求体要求 `item_id`
+  - 校验：
+    - 物品必须属于当前角色
+    - 物品当前不能处于已装备状态
+  - 副作用：
+    - 从背包移除该物品
+    - 立即发放拆解材料
+    - 记录 `inventory.item_salvaged`
+  - 当前主要产出材料是 `enhancement_shard`
+  - 当前按被拆解装备稀有度产出 `1 / 3 / 7 / 14 / 24 / 40`，对应 `common / blue / purple / gold / red / prismatic`
 
 ### 12.6 Quest APIs
 

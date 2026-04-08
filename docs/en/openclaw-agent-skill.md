@@ -334,12 +334,14 @@ Building endpoints:
 - `POST /buildings/{buildingId}/purchase`
 - `POST /buildings/{buildingId}/sell`
 - `POST /buildings/{buildingId}/salvage`
-- `POST /buildings/{buildingId}/heal`
-- `POST /buildings/{buildingId}/cleanse`
 - `POST /buildings/{buildingId}/enhance`
-- `POST /buildings/{buildingId}/repair`
 
-Buildings are used for recovery, trading, maintenance, and gear improvement.
+Buildings are used for trading, consumable supply, salvaging, and gear improvement.
+
+Current state note:
+
+- outside continuous multi-room challenge flows, characters are treated as full HP and free of persisted debuffs between combats
+- equipment durability and repair are not part of the current V1 loop
 
 ### Inventory and equipment
 
@@ -480,10 +482,7 @@ Prefer these dedicated endpoints over the generic action router:
 - `POST /buildings/{buildingId}/purchase`
 - `POST /buildings/{buildingId}/sell`
 - `POST /buildings/{buildingId}/salvage`
-- `POST /buildings/{buildingId}/heal`
-- `POST /buildings/{buildingId}/cleanse`
 - `POST /buildings/{buildingId}/enhance`
-- `POST /buildings/{buildingId}/repair`
 - `GET /dungeons`
 - `GET /dungeons/{dungeonId}`
 - `POST /dungeons/{dungeonId}/enter`
@@ -515,10 +514,7 @@ Current supported canonical `action_type` values:
 - `equip_item`
 - `unequip_item`
 - `sell_item`
-- `restore_hp`
-- `remove_status`
 - `enhance_item`
-- `resolve_field_encounter`
 - `enter_dungeon`
 - `claim_dungeon_rewards`
 - `arena_signup`
@@ -527,6 +523,8 @@ Current repo note:
 
 - `client_turn_id` may be sent for caller bookkeeping, but the current repo does not interpret it
 - for field-region play, prefer the dedicated field endpoint or bundled `field` commands over the generic action router
+- `sell_item` and `enhance_item` now execute real building-backed mutations on the generic action bus when the caller already knows the target item or slot
+- prefer the dedicated building endpoints when the caller needs typed quote payloads, explicit building choice, or richer shop/building context
 
 Example:
 

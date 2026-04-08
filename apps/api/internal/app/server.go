@@ -661,18 +661,7 @@ func NewServer(cfg config.API) *Server {
 				return
 			}
 
-			character, limits, err := currentCharacterWithLimits(account, characterService, worldService)
-			if err != nil {
-				if errors.Is(err, characters.ErrCharacterNotFound) {
-					writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before requesting actions")
-					return
-				}
-				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to initialize quest board for actions")
-				return
-			}
-			_ = questService.ListQuests(character, limits)
-
-			actions, err := characterService.ListValidActions(account, worldService)
+			state, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, arenaService, worldService)
 			if err != nil {
 				if errors.Is(err, characters.ErrCharacterNotFound) {
 					writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before requesting actions")
@@ -682,10 +671,9 @@ func NewServer(cfg config.API) *Server {
 				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to load valid actions")
 				return
 			}
-			actions = appendQuestRuntimeValidActions(actions, account, characterService, questService)
 
 			writeEnvelope(w, r, http.StatusOK, map[string]any{
-				"actions": actions,
+				"actions": state.ValidActions,
 			})
 		})
 
@@ -750,8 +738,16 @@ func NewServer(cfg config.API) *Server {
 					writeError(w, r, http.StatusNotFound, "ITEM_NOT_OWNED", "item does not belong to character")
 				case errors.Is(err, inventory.ErrItemNotEquippable):
 					writeError(w, r, http.StatusBadRequest, "ITEM_NOT_EQUIPPABLE", "item cannot be equipped by current character")
+				case errors.Is(err, inventory.ErrItemEquipped):
+					writeError(w, r, http.StatusBadRequest, "INVALID_ACTION_STATE", "unequip item before selling or salvaging")
 				case errors.Is(err, inventory.ErrSlotNotOccupied):
 					writeError(w, r, http.StatusBadRequest, "ITEM_SLOT_EMPTY", "slot is not currently occupied")
+				case errors.Is(err, inventory.ErrItemNotEnhanceable):
+					writeError(w, r, http.StatusBadRequest, "ITEM_NOT_ENHANCEABLE", "item cannot be enhanced")
+				case errors.Is(err, inventory.ErrEnhancementCap):
+					writeError(w, r, http.StatusBadRequest, "ENHANCEMENT_CAP_REACHED", "item has reached the enhancement cap")
+				case errors.Is(err, characters.ErrMaterialsInsufficient):
+					writeError(w, r, http.StatusBadRequest, "MATERIALS_INSUFFICIENT", "character does not have enough materials for this action")
 				case errors.Is(err, arena.ErrSignupClosed):
 					writeError(w, r, http.StatusBadRequest, "ARENA_SIGNUP_CLOSED", "arena signup window is closed")
 				case errors.Is(err, arena.ErrAlreadySignedUp):
@@ -1463,20 +1459,11 @@ func NewServer(cfg config.API) *Server {
 			})
 		})
 
-		r.Post("/buildings/{buildingId}/heal", func(w http.ResponseWriter, r *http.Request) {
-			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, dungeonService, arenaService, "heal")
-		})
-		r.Post("/buildings/{buildingId}/cleanse", func(w http.ResponseWriter, r *http.Request) {
-			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, dungeonService, arenaService, "cleanse")
-		})
 		r.Post("/buildings/{buildingId}/enhance", func(w http.ResponseWriter, r *http.Request) {
 			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, dungeonService, arenaService, "enhance")
 		})
 		r.Post("/buildings/{buildingId}/salvage", func(w http.ResponseWriter, r *http.Request) {
 			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, dungeonService, arenaService, "salvage")
-		})
-		r.Post("/buildings/{buildingId}/repair", func(w http.ResponseWriter, r *http.Request) {
-			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, dungeonService, arenaService, "repair")
 		})
 		r.Post("/buildings/{buildingId}/purchase", func(w http.ResponseWriter, r *http.Request) {
 			handleBuildingAction(w, r, authService, worldService, characterService, inventoryService, questService, dungeonService, arenaService, "purchase")
@@ -2629,6 +2616,7 @@ func buildCharacterState(account auth.Account, characterService *characters.Serv
 	state.Objectives = activeObjectivesFromBoard(board)
 	state.ValidActions = append(state.ValidActions, questService.ListRuntimeActions(state.Character.CharacterID)...)
 	state.DungeonDaily = buildDungeonDailyHint(state, dungeonService)
+	state.ValidActions = appendContextualValidActions(state.ValidActions, state, inventoryView, dungeonService, worldService)
 	return state, nil
 }
 
@@ -3562,6 +3550,162 @@ func appendQuestRuntimeValidActions(actions []characters.ValidAction, account au
 	return append(actions, questService.ListRuntimeActions(character.CharacterID)...)
 }
 
+func appendContextualValidActions(actions []characters.ValidAction, state characters.StateView, inventoryView inventory.InventoryView, dungeonService *dungeons.Service, worldService *world.Service) []characters.ValidAction {
+	actions = appendDungeonEntryActions(actions, state.Character.LocationRegionID, dungeonService, worldService)
+
+	for _, objective := range state.Objectives {
+		if objective.Status != "completed" {
+			continue
+		}
+		actions = appendUniqueValidAction(actions, characters.ValidAction{
+			ActionType: "submit_quest",
+			Label:      fmt.Sprintf("Submit %s", objective.Title),
+			ArgsSchema: map[string]any{
+				"quest_id":             "string",
+				"suggested_quest_id":   objective.QuestID,
+				"reward_gold":          objective.RewardGold,
+				"reward_reputation":    objective.RewardReputation,
+				"quest_template_type":  objective.TemplateType,
+				"target_region_id":     objective.TargetRegionID,
+			},
+		})
+	}
+
+	if state.DungeonDaily.HasClaimableRun {
+		runsByID := make(map[string]dungeons.RunView)
+		for _, run := range dungeonService.ListRunsByCharacter(state.Character.CharacterID) {
+			runsByID[run.RunID] = run
+		}
+
+		for _, runID := range state.DungeonDaily.PendingClaimRunIDs {
+			label := "Claim dungeon rewards"
+			if run, ok := runsByID[runID]; ok {
+				if definition, found := dungeonService.GetDungeonDefinition(run.DungeonID); found {
+					label = fmt.Sprintf("Claim rewards for %s", definition.Name)
+				}
+			}
+			actions = appendUniqueValidAction(actions, characters.ValidAction{
+				ActionType: "claim_dungeon_rewards",
+				Label:      label,
+				ArgsSchema: map[string]any{
+					"run_id":               "string",
+					"suggested_run_id":     runID,
+					"remaining_claims":     state.DungeonDaily.RemainingClaims,
+					"has_remaining_quota":  state.DungeonDaily.HasRemainingQuota,
+				},
+			})
+		}
+	}
+
+	if state.DungeonDaily.HasClaimableRun && !state.DungeonDaily.HasRemainingQuota && state.Character.Reputation >= state.Limits.ReputationPerBonusClaim {
+		actions = appendUniqueValidAction(actions, characters.ValidAction{
+			ActionType: "exchange_dungeon_reward_claims",
+			Label:      "Exchange reputation for one more dungeon reward claim",
+			ArgsSchema: map[string]any{
+				"quantity":                   "integer",
+				"suggested_quantity":         1,
+				"reputation_cost_per_claim":  state.Limits.ReputationPerBonusClaim,
+				"has_claimable_run":          state.DungeonDaily.HasClaimableRun,
+			},
+		})
+	}
+
+	for _, hint := range inventoryView.UpgradeHints {
+		if hint.Source != "inventory" || !hint.DirectlyEquipable || strings.TrimSpace(hint.ItemID) == "" {
+			continue
+		}
+		actions = appendUniqueValidAction(actions, characters.ValidAction{
+			ActionType: "equip_item",
+			Label:      fmt.Sprintf("Equip %s", hint.Name),
+			ArgsSchema: map[string]any{
+				"item_id":            "string",
+				"suggested_item_id":  hint.ItemID,
+				"slot":               hint.Slot,
+				"item_catalog_id":    hint.CatalogID,
+				"score_delta":        hint.ScoreDelta,
+			},
+		})
+	}
+
+	for _, item := range inventoryView.Equipped {
+		if strings.TrimSpace(item.Slot) == "" {
+			continue
+		}
+		actions = appendUniqueValidAction(actions, characters.ValidAction{
+			ActionType: "unequip_item",
+			Label:      fmt.Sprintf("Unequip %s", item.Name),
+			ArgsSchema: map[string]any{
+				"slot":              "string",
+				"suggested_slot":    item.Slot,
+				"equipped_item_id":  item.ItemID,
+			},
+		})
+	}
+
+	return actions
+}
+
+func appendDungeonEntryActions(actions []characters.ValidAction, regionID string, dungeonService *dungeons.Service, worldService *world.Service) []characters.ValidAction {
+	detail, ok := worldService.GetRegion(regionID)
+	if !ok {
+		return actions
+	}
+
+	targetRegionID := ""
+	switch {
+	case detail.Region.Type == "dungeon":
+		targetRegionID = detail.Region.ID
+	case strings.TrimSpace(detail.LinkedDungeon) != "":
+		targetRegionID = strings.TrimSpace(detail.LinkedDungeon)
+	default:
+		return actions
+	}
+
+	dungeonID, definition, ok := findDungeonDefinitionForRegion(targetRegionID, dungeonService)
+	if !ok {
+		return actions
+	}
+
+	return appendUniqueValidAction(actions, characters.ValidAction{
+		ActionType: "enter_dungeon",
+		Label:      fmt.Sprintf("Enter %s", definition.Name),
+		ArgsSchema: map[string]any{
+			"dungeon_id":            "string",
+			"suggested_dungeon_id":  dungeonID,
+			"dungeon_region_id":     targetRegionID,
+			"potion_loadout":        "string[0..2]",
+		},
+	})
+}
+
+func findDungeonDefinitionForRegion(regionID string, dungeonService *dungeons.Service) (string, dungeons.DefinitionView, bool) {
+	for _, definition := range dungeonService.ListDungeonDefinitions() {
+		if definition.RegionID == regionID {
+			return definition.DungeonID, definition, true
+		}
+	}
+
+	return "", dungeons.DefinitionView{}, false
+}
+
+func appendUniqueValidAction(actions []characters.ValidAction, action characters.ValidAction) []characters.ValidAction {
+	key := validActionKey(action)
+	for _, existing := range actions {
+		if validActionKey(existing) == key {
+			return actions
+		}
+	}
+	return append(actions, action)
+}
+
+func validActionKey(action characters.ValidAction) string {
+	encoded, err := json.Marshal(action.ArgsSchema)
+	if err != nil {
+		return action.ActionType
+	}
+	return action.ActionType + ":" + string(encoded)
+}
+
 func findBuilding(worldService *world.Service, buildingID string) (world.Building, world.RegionDetail, bool) {
 	for _, region := range worldService.ListRegions() {
 		detail, ok := worldService.GetRegion(region.ID)
@@ -3573,6 +3717,21 @@ func findBuilding(worldService *world.Service, buildingID string) (world.Buildin
 			if building.ID == buildingID {
 				return building, detail, true
 			}
+		}
+	}
+
+	return world.Building{}, world.RegionDetail{}, false
+}
+
+func findBuildingInRegion(worldService *world.Service, regionID, buildingID string) (world.Building, world.RegionDetail, bool) {
+	detail, ok := worldService.GetRegion(regionID)
+	if !ok {
+		return world.Building{}, world.RegionDetail{}, false
+	}
+
+	for _, building := range detail.Buildings {
+		if building.ID == buildingID {
+			return building, detail, true
 		}
 	}
 
@@ -3860,11 +4019,8 @@ func handleBuildingAction(w http.ResponseWriter, r *http.Request, authService *a
 
 func buildingSupportsAction(building world.Building, actionName string) bool {
 	mapping := map[string][]string{
-		"heal":     {"restore_hp"},
-		"cleanse":  {"remove_status"},
 		"enhance":  {"enhance_item"},
 		"salvage":  {"salvage_item"},
-		"repair":   {"repair_item"},
 		"purchase": {"purchase", "buy_consumables"},
 		"sell":     {"sell_loot"},
 	}
@@ -3883,6 +4039,46 @@ func buildingSupportsAction(building world.Building, actionName string) bool {
 	}
 
 	return false
+}
+
+func resolveBuildingActionTarget(account auth.Account, actionName string, actionArgs map[string]any, characterService *characters.Service, worldService *world.Service) (characters.Summary, world.Building, error) {
+	character, exists := characterService.GetCharacterByAccount(account)
+	if !exists {
+		return characters.Summary{}, world.Building{}, characters.ErrCharacterNotFound
+	}
+
+	buildingID, _ := actionArgs["building_id"].(string)
+	buildingID = strings.TrimSpace(buildingID)
+	if buildingID != "" {
+		building, _, found := findBuildingInRegion(worldService, character.LocationRegionID, buildingID)
+		if !found || !buildingSupportsAction(building, actionName) {
+			return characters.Summary{}, world.Building{}, characters.ErrActionNotSupported
+		}
+		return character, building, nil
+	}
+
+	detail, ok := worldService.GetRegion(character.LocationRegionID)
+	if !ok {
+		return characters.Summary{}, world.Building{}, characters.ErrActionNotSupported
+	}
+
+	var matched world.Building
+	found := false
+	for _, candidate := range detail.Buildings {
+		if !buildingSupportsAction(candidate, actionName) {
+			continue
+		}
+		if found {
+			return characters.Summary{}, world.Building{}, characters.ErrActionNotSupported
+		}
+		matched = candidate
+		found = true
+	}
+	if !found {
+		return characters.Summary{}, world.Building{}, characters.ErrActionNotSupported
+	}
+
+	return character, matched, nil
 }
 
 func buildPublicBots(charactersList []characters.Summary, characterService *characters.Service, inventoryService *inventory.Service, dungeonService *dungeons.Service) []map[string]any {
@@ -4404,7 +4600,11 @@ func executeAction(account auth.Account, actionType string, actionArgs map[strin
 		}, nil
 	case "enter_building":
 		buildingID, _ := actionArgs["building_id"].(string)
-		building, detail, found := findBuilding(worldService, buildingID)
+		character, exists := characterService.GetCharacterByAccount(account)
+		if !exists {
+			return nil, characters.ErrCharacterNotFound
+		}
+		building, detail, found := findBuildingInRegion(worldService, character.LocationRegionID, buildingID)
 		if !found {
 			return nil, characters.ErrActionNotSupported
 		}
@@ -4419,21 +4619,127 @@ func executeAction(account auth.Account, actionType string, actionArgs map[strin
 				"supported_actions": building.Actions,
 			},
 		}, nil
-	case "restore_hp":
+	case "sell_item":
+		character, building, err := resolveBuildingActionTarget(account, "sell", actionArgs, characterService, worldService)
+		if err != nil {
+			return nil, err
+		}
+
+		itemID, _ := actionArgs["item_id"].(string)
+		view, sold, gain, err := inventoryService.SellItem(character, itemID)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := characterService.GrantGold(character.CharacterID, gain); err != nil {
+			return nil, err
+		}
+
+		_ = characterService.AppendEvents(character.CharacterID, world.WorldEvent{
+			EventID:          fmt.Sprintf("evt_sell_%d", time.Now().UnixNano()),
+			EventType:        "inventory.item_sold",
+			Visibility:       "public",
+			ActorCharacterID: character.CharacterID,
+			ActorName:        character.Name,
+			RegionID:         character.LocationRegionID,
+			Summary:          fmt.Sprintf("%s sold %s.", character.Name, sold.Name),
+			Payload: map[string]any{
+				"item_id":    sold.ItemID,
+				"catalog_id": sold.CatalogID,
+				"gain_gold":  gain,
+			},
+			OccurredAt: time.Now().Format(time.RFC3339),
+		})
+
+		state, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, arenaService, worldService)
+		if err != nil {
+			return nil, err
+		}
+
 		return map[string]any{
 			"action_result": map[string]any{
-				"action_type": "restore_hp",
-				"status":      "success",
+				"action_type":   "sell_item",
+				"building_id":   building.ID,
+				"building_name": building.Name,
+				"status":        "success",
 			},
-			"state": map[string]any{},
+			"state": state,
+			"result": map[string]any{
+				"inventory": view,
+				"item":      sold,
+				"gain_gold": gain,
+			},
 		}, nil
-	case "remove_status", "enhance_item", "sell_item":
+	case "enhance_item":
+		character, building, err := resolveBuildingActionTarget(account, "enhance", actionArgs, characterService, worldService)
+		if err != nil {
+			return nil, err
+		}
+
+		itemID, _ := actionArgs["item_id"].(string)
+		slot, _ := actionArgs["slot"].(string)
+		item, quote, err := inventoryService.GetEnhancementQuote(character, itemID, slot)
+		if err != nil {
+			return nil, err
+		}
+
+		if _, err := characterService.SpendGold(character.CharacterID, quote.GoldCost); err != nil {
+			return nil, err
+		}
+		materials, err := characterService.SpendMaterials(character.CharacterID, quote.MaterialCost)
+		if err != nil {
+			_, _ = characterService.GrantGold(character.CharacterID, quote.GoldCost)
+			return nil, err
+		}
+
+		view, enhanced, err := inventoryService.EnhanceItem(character, itemID, slot)
+		if err != nil {
+			_, _ = characterService.GrantGold(character.CharacterID, quote.GoldCost)
+			_, _ = characterService.GrantMaterials(character.CharacterID, quote.MaterialCost)
+			return nil, err
+		}
+
+		_ = characterService.AppendEvents(character.CharacterID, world.WorldEvent{
+			EventID:          fmt.Sprintf("evt_enhance_%d", time.Now().UnixNano()),
+			EventType:        "inventory.item_enhanced",
+			Visibility:       "public",
+			ActorCharacterID: character.CharacterID,
+			ActorName:        character.Name,
+			RegionID:         character.LocationRegionID,
+			Summary:          fmt.Sprintf("%s enhanced %s to +%d.", character.Name, enhanced.Name, enhanced.EnhancementLevel),
+			Payload: map[string]any{
+				"item_id":         enhanced.ItemID,
+				"catalog_id":      enhanced.CatalogID,
+				"from_level":      quote.CurrentLevel,
+				"to_level":        enhanced.EnhancementLevel,
+				"gold_cost":       quote.GoldCost,
+				"material_cost":   quote.MaterialCost,
+				"preview_bonus":   quote.PreviewBonusPct,
+				"target_stat_set": quote.EnhancementTarget,
+				"target_slot":     quote.TargetSlot,
+			},
+			OccurredAt: time.Now().Format(time.RFC3339),
+		})
+
+		state, err := buildCharacterState(account, characterService, inventoryService, questService, dungeonService, arenaService, worldService)
+		if err != nil {
+			return nil, err
+		}
+
 		return map[string]any{
 			"action_result": map[string]any{
-				"action_type": actionType,
-				"status":      "success",
+				"action_type":   "enhance_item",
+				"building_id":   building.ID,
+				"building_name": building.Name,
+				"status":        "success",
 			},
-			"state": map[string]any{},
+			"state": state,
+			"result": map[string]any{
+				"inventory":         view,
+				"item_before":       item,
+				"item":              enhanced,
+				"enhancement_quote": quote,
+				"materials":         materials,
+			},
 		}, nil
 	case "unequip_item":
 		slot, _ := actionArgs["slot"].(string)

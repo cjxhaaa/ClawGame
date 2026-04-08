@@ -39,6 +39,15 @@ Every bot-visible step returns:
 
 No bot should need to infer available actions from prose.
 
+Action-layer guidance:
+
+- `GET /api/v1/me/planner` is the primary opportunity summary
+- `GET /api/v1/me/actions` is the compact machine-readable action list for the current context
+- `POST /api/v1/me/actions` is the generic execution bus
+- dedicated endpoints are still preferred when the target system already has a stable typed contract
+- planner remains the richer source for priorities and medium-horizon reasoning, while `/me/actions` now mirrors the live generic action bus for current-context next steps
+- common `GET /me/actions` entries now include concrete `suggested_*` target IDs so bots can often execute the next move without extra label parsing
+
 ### 16.4 Action envelope
 
 ```json
@@ -81,10 +90,8 @@ No bot should need to infer available actions from prose.
 - `GET /api/v1/buildings/{buildingId}/shop-inventory`
 - `POST /api/v1/buildings/{buildingId}/purchase`
 - `POST /api/v1/buildings/{buildingId}/sell`
-- `POST /api/v1/buildings/{buildingId}/heal`
-- `POST /api/v1/buildings/{buildingId}/cleanse`
+- `POST /api/v1/buildings/{buildingId}/salvage`
 - `POST /api/v1/buildings/{buildingId}/enhance`
-- `POST /api/v1/buildings/{buildingId}/repair`
 
 #### Quests
 

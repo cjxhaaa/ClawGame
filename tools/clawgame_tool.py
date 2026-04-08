@@ -951,22 +951,6 @@ def cmd_buildings_salvage(args: argparse.Namespace, ctx: RuntimeContext, client:
     return CommandResult("buildings salvage", data, envelope.get("request_id"))
 
 
-def cmd_buildings_heal(args: argparse.Namespace, ctx: RuntimeContext, client: APIClient) -> CommandResult:
-    envelope = authenticated_request(ctx, client, "buildings heal", "POST", f"/buildings/{args.building_id}/heal")
-    data = extract_data(envelope)
-    sync_action_payload(ctx.state, data if isinstance(data, dict) else None)
-    save_state(ctx.state_file, ctx.state)
-    return CommandResult("buildings heal", data, envelope.get("request_id"))
-
-
-def cmd_buildings_cleanse(args: argparse.Namespace, ctx: RuntimeContext, client: APIClient) -> CommandResult:
-    envelope = authenticated_request(ctx, client, "buildings cleanse", "POST", f"/buildings/{args.building_id}/cleanse")
-    data = extract_data(envelope)
-    sync_action_payload(ctx.state, data if isinstance(data, dict) else None)
-    save_state(ctx.state_file, ctx.state)
-    return CommandResult("buildings cleanse", data, envelope.get("request_id"))
-
-
 def cmd_buildings_enhance(args: argparse.Namespace, ctx: RuntimeContext, client: APIClient) -> CommandResult:
     payload: dict[str, object] = {}
     if args.item_id:
@@ -978,14 +962,6 @@ def cmd_buildings_enhance(args: argparse.Namespace, ctx: RuntimeContext, client:
     sync_action_payload(ctx.state, data if isinstance(data, dict) else None)
     save_state(ctx.state_file, ctx.state)
     return CommandResult("buildings enhance", data, envelope.get("request_id"))
-
-
-def cmd_buildings_repair(args: argparse.Namespace, ctx: RuntimeContext, client: APIClient) -> CommandResult:
-    envelope = authenticated_request(ctx, client, "buildings repair", "POST", f"/buildings/{args.building_id}/repair")
-    data = extract_data(envelope)
-    sync_action_payload(ctx.state, data if isinstance(data, dict) else None)
-    save_state(ctx.state_file, ctx.state)
-    return CommandResult("buildings repair", data, envelope.get("request_id"))
 
 
 def cmd_dungeons_list(args: argparse.Namespace, ctx: RuntimeContext, client: APIClient) -> CommandResult:
@@ -1243,20 +1219,11 @@ def build_parser() -> argparse.ArgumentParser:
     buildings_salvage.add_argument("--building-id", required=True)
     buildings_salvage.add_argument("--item-id", required=True)
     buildings_salvage.set_defaults(func=cmd_buildings_salvage)
-    buildings_heal = buildings_sub.add_parser("heal", help="heal at a building")
-    buildings_heal.add_argument("--building-id", required=True)
-    buildings_heal.set_defaults(func=cmd_buildings_heal)
-    buildings_cleanse = buildings_sub.add_parser("cleanse", help="cleanse at a building")
-    buildings_cleanse.add_argument("--building-id", required=True)
-    buildings_cleanse.set_defaults(func=cmd_buildings_cleanse)
     buildings_enhance = buildings_sub.add_parser("enhance", help="enhance at a building")
     buildings_enhance.add_argument("--building-id", required=True)
     buildings_enhance.add_argument("--slot")
     buildings_enhance.add_argument("--item-id")
     buildings_enhance.set_defaults(func=cmd_buildings_enhance)
-    buildings_repair = buildings_sub.add_parser("repair", help="repair at a building")
-    buildings_repair.add_argument("--building-id", required=True)
-    buildings_repair.set_defaults(func=cmd_buildings_repair)
 
     dungeons = subparsers.add_parser("dungeons", help="dungeon operations")
     dungeons_sub = dungeons.add_subparsers(dest="dungeons_command", required=True)

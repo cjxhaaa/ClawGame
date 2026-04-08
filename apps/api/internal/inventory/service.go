@@ -1275,6 +1275,11 @@ func pickDailyEquipmentOfferByFilter(character characters.Summary, businessDate 
 }
 
 func dailyEquipmentShopPrice(item catalogItem, characterID, businessDate string, offset int) int {
+	variance := 0.92 + deterministicFloat(item.CatalogID, characterID+"|"+businessDate, offset+53)*0.16
+	return equipmentShopEstimatedPrice(item, variance)
+}
+
+func equipmentShopEstimatedPrice(item catalogItem, variance float64) int {
 	baseByRarity := map[string]int{"blue": 260, "purple": 460, "gold": 820, "red": 1280, "prismatic": 1980}
 	base := baseByRarity[strings.ToLower(strings.TrimSpace(item.Rarity))]
 	if base <= 0 {
@@ -1293,7 +1298,6 @@ func dailyEquipmentShopPrice(item catalogItem, characterID, businessDate string,
 	for _, value := range item.Stats {
 		statPremium += value
 	}
-	variance := 0.92 + deterministicFloat(item.CatalogID, characterID+"|"+businessDate, offset+53)*0.16
 	price := int(math.Round((float64(base+statPremium/10)*slotMultiplier*variance)/5.0)) * 5
 	if price < 100 {
 		return 100
@@ -1411,9 +1415,9 @@ func rarityScore(rarity string) int {
 		return 40
 	case "gold":
 		return 35
-	case "epic":
+	case "purple", "epic":
 		return 30
-	case "rare":
+	case "blue", "rare":
 		return 20
 	default:
 		return 10
@@ -1692,7 +1696,9 @@ func enhancementMaterialCost(item EquipmentItem, level int) []map[string]any {
 func salvageYieldFor(item EquipmentItem) int {
 	base := map[string]int{
 		"common":    1,
+		"blue":      3,
 		"rare":      3,
+		"purple":    7,
 		"epic":      7,
 		"gold":      14,
 		"red":       24,
@@ -1706,9 +1712,9 @@ func salvageYieldFor(item EquipmentItem) int {
 
 func rarityEnhancementMultiplier(rarity string) float64 {
 	switch strings.ToLower(strings.TrimSpace(rarity)) {
-	case "rare":
+	case "blue", "rare":
 		return 1.3
-	case "epic":
+	case "purple", "epic":
 		return 1.7
 	case "gold":
 		return 2.2
@@ -1820,21 +1826,28 @@ func (s *Service) ConsumeConsumables(characterID string, usage map[string]int) {
 }
 
 func sellPriceFor(item EquipmentItem) int {
-	if entry, ok := shopCatalogByID[item.CatalogID]; ok {
-		if entry.PriceGold <= 1 {
-			return 1
+	template, ok := catalogByID(item.CatalogID)
+	if !ok {
+		template = catalogItem{
+			CatalogID:           item.CatalogID,
+			Name:                item.Name,
+			Slot:                item.Slot,
+			Rarity:              item.Rarity,
+			SetID:               item.SetID,
+			RequiredClass:       item.RequiredClass,
+			RequiredWeaponStyle: item.RequiredWeaponStyle,
+			Stats:               copyStats(item.BaseStats),
 		}
-		return entry.PriceGold / 2
+		if len(template.Stats) == 0 {
+			template.Stats = copyStats(item.Stats)
+		}
 	}
 
-	base := 8 + rarityScore(item.Rarity)
-	for _, value := range item.Stats {
-		base += value
-	}
-	if base <= 1 {
+	estimate := equipmentShopEstimatedPrice(template, 1.0)
+	if estimate <= 1 {
 		return 1
 	}
-	return base / 2
+	return estimate / 2
 }
 
 func catalogByID(catalogID string) (catalogItem, bool) {

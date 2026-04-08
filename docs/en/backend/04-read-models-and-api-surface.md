@@ -377,6 +377,21 @@ Recommendation:
 
 ### 12.3 Actions APIs
 
+Action-layer design goal:
+
+- bots should not need to infer executable operations from prose or page structure
+- planner answers "what opportunities are worth looking at"
+- `/me/actions` answers "what machine actions are directly available right now"
+- dedicated endpoints remain the preferred typed contracts for stable systems
+- `/me/actions` exists as the bot-first fallback bus that keeps discovery and execution in one consistent envelope
+
+Current design split:
+
+- `GET /api/v1/me/actions` is the lightweight discovery surface
+- `POST /api/v1/me/actions` is the generic execution surface
+- these two surfaces are related, but the current repo does not yet keep them perfectly aligned
+- until that alignment work is done, bots should treat planner as the primary source of opportunity discovery and use `/me/actions` as a compact machine action layer
+
 #### `GET /api/v1/me/actions`
 
 Purpose:
@@ -392,10 +407,62 @@ Fields per action:
 Current repo note:
 
 - this endpoint is intentionally lightweight and does not include full planner context
+- the current result is assembled from two sources:
+  - region-local actions from the caller's current region
+  - accepted-quest runtime actions such as branch choices or scripted interactions
+- it also appends account-local follow-up actions that are immediately executable from the current state
+  - completed quest submission
+  - dungeon reward claiming and claim-quota exchange
+  - directly equippable inventory upgrades and equipped-slot removal
 - when the character is in a field region, the current implementation returns three explicit field interaction actions instead of one generic encounter action
 - the current canonical values are `resolve_field_encounter:hunt`, `resolve_field_encounter:gather`, and `resolve_field_encounter:curio`
 - quest-step actions may also appear here as `quest_interact` or `quest_choice`
 - when they appear, `label` and `args_schema` should surface the currently suggested quest step so OpenClaw does not need to infer the payload shape from free text alone
+- common region actions now also embed concrete `suggested_*` target IDs in `args_schema` so bots can execute the next step without parsing labels
+
+Current action families returned by `GET /me/actions`:
+
+- region travel actions
+  - action type: `travel`
+  - one action entry is emitted for each current `travel_option`
+  - current `args_schema`: `{"region_id": "string", "suggested_region_id": "<target-region-id>"}`
+- building entry actions
+  - action type: `enter_building`
+  - one action entry is emitted for each building in the current region
+  - current `args_schema`: `{"building_id": "string", "suggested_building_id": "<target-building-id>"}`
+- field-region actions
+  - action types: `resolve_field_encounter:hunt`, `resolve_field_encounter:gather`, `resolve_field_encounter:curio`
+  - returned only when the current region type is `field`
+  - current `args_schema`: `{}`
+- dungeon entry action
+  - action type: `enter_dungeon`
+  - returned when the current region itself is a dungeon or when the current region links to one enterable dungeon
+  - current `args_schema` includes `dungeon_id`, `suggested_dungeon_id`, linked `dungeon_region_id`, and optional `potion_loadout`
+- quest runtime actions
+  - action types: `quest_interact`, `quest_choice`
+  - returned only when an accepted quest runtime is currently waiting for an explicit interaction or choice
+  - current `args_schema` may include `suggested_interaction` or `choice_options`
+- completed-quest submission actions
+  - action type: `submit_quest`
+  - one action entry is emitted for each completed objective in `state.objectives`
+  - current `args_schema` includes `quest_id`, `suggested_quest_id`, and reward metadata
+- dungeon reward follow-up actions
+  - action types: `claim_dungeon_rewards`, `exchange_dungeon_reward_claims`
+  - `claim_dungeon_rewards` is emitted for each pending cleared run
+  - `exchange_dungeon_reward_claims` is emitted when a pending claim exists, free daily quota is exhausted, and the character has enough reputation
+  - current `args_schema` includes `suggested_run_id` or `suggested_quantity` plus current quota-cost context
+- equipment follow-up actions
+  - action types: `equip_item`, `unequip_item`
+  - `equip_item` is emitted for directly equippable inventory upgrades
+  - `unequip_item` is emitted for currently occupied slots
+  - current `args_schema` includes `suggested_item_id` or `suggested_slot`
+
+Important current limitations:
+
+- `GET /me/actions` is not a complete list of all executable bot actions in the account state
+- planner is still the richer source for medium-horizon reasoning, daily priorities, and preparation context
+- `GET /me/actions` is still intentionally scoped to actions that are directly executable from the current state, not every hypothetical action that could become legal after additional prep
+- `sell_item` and `enhance_item` are intentionally not emitted as discovery recommendations here because item selection, quotes, and explicit building choice remain clearer through planner context plus the dedicated inventory/building endpoints
 
 Building-model note:
 
@@ -414,6 +481,7 @@ Building-model note:
 Purpose:
 
 - generic action execution endpoint
+- the endpoint is intended to be the bot-first execution bus when the caller wants one stable envelope instead of many endpoint-specific payloads
 
 Request:
 
@@ -451,12 +519,12 @@ Supported canonical `action_type` values:
 - `resolve_field_encounter:gather`
 - `resolve_field_encounter:curio`
 - `submit_quest`
+- `quest_choice`
+- `quest_interact`
 - `exchange_dungeon_reward_claims`
 - `equip_item`
 - `unequip_item`
 - `sell_item`
-- `restore_hp`
-- `remove_status`
 - `enhance_item`
 - `enter_dungeon`
 - `claim_dungeon_rewards`
@@ -464,10 +532,44 @@ Supported canonical `action_type` values:
 
 - `client_turn_id` may be sent by callers, but the current repo does not interpret it yet
 
+Current execution groups:
+
+- fully handled action types
+  - `travel`
+  - `enter_building`
+  - `resolve_field_encounter`
+  - `resolve_field_encounter:hunt`
+  - `resolve_field_encounter:gather`
+  - `resolve_field_encounter:curio`
+  - `submit_quest`
+  - `quest_choice`
+  - `quest_interact`
+  - `exchange_dungeon_reward_claims`
+  - `enter_dungeon`
+  - `claim_dungeon_rewards`
+  - `equip_item`
+  - `unequip_item`
+  - `sell_item`
+  - `enhance_item`
+  - `arena_signup`
+
+Current execution caveats:
+
+- `sell_item` and `enhance_item` now execute real building-backed state mutation on the generic action bus
+- dedicated building endpoints are still the better discovery and typed-contract surface when the caller needs shop context, enhancement quotes, or explicit building selection
+- when `building_id` is omitted for building-backed bus actions, the server only auto-resolves a unique matching building in the current region; this is not a global bypass of travel or location constraints
+
 Recommendation:
 
 - keep dedicated endpoints for clarity and better typed contracts
 - use the generic action router as a fallback or compatibility layer
+- use planner first, then `/me/actions` for a compact machine-readable next-step layer, then dedicated endpoints when the current system already has a stable typed contract
+
+Development changes that should follow:
+
+1. keep planner, `/me/actions`, OpenAPI, and tool-facing docs synchronized whenever action families or action semantics change
+2. preserve the current locality rule for building-backed generic actions: they should only resolve buildings that are actually available in the character's current region
+3. continue expanding machine-usable `suggested_*` fields when future action families gain concrete current-context targets
 
 ### 12.4 Region APIs
 
@@ -612,7 +714,7 @@ Current V1 facility taxonomy should be kept intentionally small:
 Facility-scope note:
 
 - `equipment_shop` is the current umbrella for basic weapon and armor buying/selling
-- `apothecary` is the preferred V1 label for potion purchase and paid HP recovery
+- `apothecary` is the preferred V1 label for potion purchase and route-preparation consumables
 - product, backend, and tool-facing documentation should use only the six building families above
 
 #### `GET /api/v1/buildings/{buildingId}`
@@ -632,19 +734,16 @@ Returns:
 
 Building action endpoints:
 
-- `POST /api/v1/buildings/{buildingId}/heal`
-- `POST /api/v1/buildings/{buildingId}/cleanse`
 - `POST /api/v1/buildings/{buildingId}/enhance`
 - `POST /api/v1/buildings/{buildingId}/salvage`
-- `POST /api/v1/buildings/{buildingId}/repair`
 - `POST /api/v1/buildings/{buildingId}/purchase`
 - `POST /api/v1/buildings/{buildingId}/sell`
 
 Current repo note:
 
 - these endpoints return generic action-style envelopes
-- `heal` maps to the lightweight action result `restore_hp`
-- `cleanse` maps to `remove_status`
+- outside continuous multi-room challenge flows, characters are treated as full HP and clear of persisted debuffs between combats
+- equipment durability and repair are not part of the current V1 loop
 
 Current V1 action boundary:
 
@@ -673,7 +772,6 @@ Current V1 action boundary:
   - rounded to nearest `5`, floored at `100`
 - `apothecary` should currently focus on:
   - `purchase`
-  - `heal`
 - `blacksmith` should currently focus on:
   - `enhance`
   - `salvage`

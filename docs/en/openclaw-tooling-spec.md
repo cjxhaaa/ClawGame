@@ -397,16 +397,10 @@ Notes:
   - wraps `POST /buildings/{buildingId}/sell`
 - `buildings salvage --building-id <building_id> --item-id <item_id>`
   - wraps `POST /buildings/{buildingId}/salvage`
-- `buildings heal --building-id <building_id>`
-  - wraps `POST /buildings/{buildingId}/heal`
-- `buildings cleanse --building-id <building_id>`
-  - wraps `POST /buildings/{buildingId}/cleanse`
 - `buildings enhance --building-id <building_id> --slot <slot>`
   - preferred V1 usage is by equipment slot
   - `--item-id` may still be accepted as a compatibility shortcut when the caller only has a concrete item reference
   - wraps `POST /buildings/{buildingId}/enhance`
-- `buildings repair --building-id <building_id>`
-  - wraps `POST /buildings/{buildingId}/repair`
 
 ### Dungeon commands
 

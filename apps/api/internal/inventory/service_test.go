@@ -259,6 +259,35 @@ func TestBuildSlotEnhancementViewsUsesCanonicalSixEquipmentSlots(t *testing.T) {
 	}
 }
 
+func TestSellPriceUsesCanonicalEquipmentShopEstimate(t *testing.T) {
+	item := buildEquipmentItemFromCatalog(dungeonRewardCatalog["gravewake_bastion_chest_red"], "inventory")
+
+	price := sellPriceFor(item)
+
+	expected := equipmentShopEstimatedPrice(dungeonRewardCatalog["gravewake_bastion_chest_red"], 1.0) / 2
+	if price != expected {
+		t.Fatalf("expected sell price %d from canonical equipment estimate, got %d", expected, price)
+	}
+}
+
+func TestBluePurpleRarityDriveEnhancementAndSalvage(t *testing.T) {
+	blue := EquipmentItem{Rarity: "blue"}
+	purple := EquipmentItem{Rarity: "purple"}
+
+	if got := rarityEnhancementMultiplier(blue.Rarity); got != 1.3 {
+		t.Fatalf("expected blue enhancement multiplier 1.3, got %v", got)
+	}
+	if got := rarityEnhancementMultiplier(purple.Rarity); got != 1.7 {
+		t.Fatalf("expected purple enhancement multiplier 1.7, got %v", got)
+	}
+	if got := salvageYieldFor(blue); got != 3 {
+		t.Fatalf("expected blue salvage yield 3, got %d", got)
+	}
+	if got := salvageYieldFor(purple); got != 7 {
+		t.Fatalf("expected purple salvage yield 7, got %d", got)
+	}
+}
+
 func TestUnequipWeaponIfIncompatibleMovesWeaponBackToInventory(t *testing.T) {
 	service := NewService()
 	character := characters.Summary{

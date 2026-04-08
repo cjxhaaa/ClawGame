@@ -705,14 +705,20 @@ func (s *Service) listValidActions(regionID string, worldService *world.Service)
 		actions = append(actions, ValidAction{
 			ActionType: "travel",
 			Label:      fmt.Sprintf("Travel to %s", option.Name),
-			ArgsSchema: map[string]any{"region_id": "string"},
+			ArgsSchema: map[string]any{
+				"region_id":           "string",
+				"suggested_region_id": option.RegionID,
+			},
 		})
 	}
 	for _, building := range region.Buildings {
 		actions = append(actions, ValidAction{
 			ActionType: "enter_building",
 			Label:      fmt.Sprintf("Enter %s", building.Name),
-			ArgsSchema: map[string]any{"building_id": "string"},
+			ArgsSchema: map[string]any{
+				"building_id":           "string",
+				"suggested_building_id": building.ID,
+			},
 		})
 	}
 

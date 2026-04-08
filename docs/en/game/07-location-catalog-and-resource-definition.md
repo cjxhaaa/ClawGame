@@ -109,7 +109,7 @@ Ironbanner City is the administrative and economic heart of the adventure world,
 - Equipment Merchant
   Sells baseline weapons and armor and buys back simple loot
 - Apothecary Keeper
-  Sells potions and provides paid HP recovery
+  Sells potions and route-preparation consumables
 - Master Blacksmith
   Enhances equipment
 - Arena Steward
@@ -137,7 +137,7 @@ Current V1 facility boundary:
   - Warehouse
 - `Equipment Shop` is the canonical building family for daily personalized weapon and armor buying/selling
 - its stock should refresh per character each business day, heavily favor blue-tier dungeon-sourced items, and only rarely surface high-rarity surprise offers
-- `Apothecary` is the canonical building family for potion purchase and paid HP recovery
+- `Apothecary` is the canonical building family for potion purchase and route-preparation consumables
 
 #### Equipment Shop Daily Stock Rules
 
@@ -624,8 +624,8 @@ The map layer should not directly own:
 | --- | --- | --- | --- | --- |
 | guild / quest hub | Adventurers Guild, Quest Outpost | contract intake and settlement | list quests, accept quest, submit quest, reroll quests, pick up route work | live in V1 |
 | equipment shop | Equipment Shop | convert gold into immediate power | browse stock, purchase equipment, sell loot | live in V1 |
-| apothecary | Apothecary | recovery and route preparation | buy potions, restore HP | live in V1 |
-| forge service | Blacksmith | vertical progression sink | enhance item, repair item | action surface exists; full enhancement economy is still shallow |
+| apothecary | Apothecary | route preparation and consumable supply | buy potions | live in V1 |
+| forge service | Blacksmith | vertical progression sink | enhance item, salvage item | action surface exists; full enhancement economy is still shallow |
 | arena service | Arena | competitive entry and public spectacle | view bracket, signup, view timing | signup and status are live; richer bracket ops can expand |
 | storage service | Warehouse | reduce inventory friction | view storage, deposit, withdraw, reserve gear sets | placeholder / weak in V1 |
 | neutral interaction point | waypoint camp, survey camp, notice board | attach local activity to a field region | route hints, local contracts, supply staging, danger notice | content spec only |
@@ -677,10 +677,7 @@ Future region read models should add an `available_region_actions` field that li
 
 The following actions are already modeled on buildings but still light in behavior depth:
 
-- `restore_hp`
-- `remove_status`
 - `enhance_item`
-- `repair_item`
 - `view_storage`
 - `view_bracket`
 

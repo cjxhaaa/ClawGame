@@ -368,6 +368,21 @@
 
 ### 12.3 Actions APIs
 
+动作层设计目标：
+
+- Bot 不应该再从 prose、页面结构或描述文案里反推可执行操作
+- `planner` 负责回答“当前有哪些值得关注的机会”
+- `/me/actions` 负责回答“现在有哪些可直接执行的机器动作”
+- 当某个系统已经有成熟的专用接口时，专用接口仍然是首选 typed contract
+- `/me/actions` 的存在意义，是为 Bot 提供一个统一 envelope 的兜底动作总线
+
+当前设计分层：
+
+- `GET /api/v1/me/actions` 是轻量级发现面
+- `POST /api/v1/me/actions` 是统一执行面
+- 两者相关，但当前仓库还没有做到完全对齐
+- 在这项对齐工作完成前，Bot 应把 planner 当作主要机会发现入口，把 `/me/actions` 当作紧凑的机器动作层
+
 #### `GET /api/v1/me/actions`
 
 用途：
@@ -383,10 +398,62 @@
 当前仓库说明：
 
 - 这个接口刻意保持轻量，不返回完整 planner 语义
+- 当前结果由两部分拼接而成：
+  - 当前区域的地区动作
+  - 当前已接受任务的 runtime 动作
+- 它现在还会补上“当前状态下立刻可执行”的账号后续动作
+  - 已完成任务的提交
+  - 副本奖励领取与领取次数兑换
+  - 可直接装备的背包升级件与当前已装备槽位的卸下
 - 当角色位于野外区域时，当前实现会直接返回 3 个明确的野外交互动作，而不是单一的泛化遭遇动作
 - 当前规范为 `resolve_field_encounter:hunt`、`resolve_field_encounter:gather`、`resolve_field_encounter:curio`
 - 任务步骤动作也可能出现在这里，当前包括 `quest_interact` 与 `quest_choice`
 - 当它们出现时，`label` 与 `args_schema` 应尽量直接暴露当前建议步骤与参数形状，避免 OpenClaw 再从描述文本里反推
+- 常见地区动作现在也会在 `args_schema` 里补入具体的 `suggested_*` 目标 ID，方便 Bot 直接执行下一步
+
+`GET /me/actions` 当前会返回的动作家族：
+
+- 区域旅行动作
+  - 动作类型：`travel`
+  - 当前地区的每个 `travel_option` 都会生成一条
+  - 当前 `args_schema`：`{"region_id": "string", "suggested_region_id": "<target-region-id>"}`
+- 建筑进入动作
+  - 动作类型：`enter_building`
+  - 当前地区的每个 building 都会生成一条
+  - 当前 `args_schema`：`{"building_id": "string", "suggested_building_id": "<target-building-id>"}`
+- 野外地区动作
+  - 动作类型：`resolve_field_encounter:hunt`、`resolve_field_encounter:gather`、`resolve_field_encounter:curio`
+  - 仅在当前地区类型为 `field` 时返回
+  - 当前 `args_schema`：`{}`
+- 副本进入动作
+  - 动作类型：`enter_dungeon`
+  - 当前地区本身是副本，或当前地区挂接了一个可进入副本时返回
+  - 当前 `args_schema` 包含 `dungeon_id`、`suggested_dungeon_id`、关联 `dungeon_region_id` 与可选 `potion_loadout`
+- 任务 runtime 动作
+  - 动作类型：`quest_interact`、`quest_choice`
+  - 仅当某个已接受任务当前确实停在一个显式交互或分支选择步骤时返回
+  - 当前 `args_schema` 可能包含 `suggested_interaction` 或 `choice_options`
+- 已完成任务提交动作
+  - 动作类型：`submit_quest`
+  - `state.objectives` 中每个已完成 objective 都会生成一条
+  - 当前 `args_schema` 会包含 `quest_id`、`suggested_quest_id` 与奖励元数据
+- 副本奖励后续动作
+  - 动作类型：`claim_dungeon_rewards`、`exchange_dungeon_reward_claims`
+  - `claim_dungeon_rewards` 会为每个待领取的 cleared run 生成一条
+  - `exchange_dungeon_reward_claims` 会在“存在待领奖励 + 免费日配额已用完 + 声望足够”时返回
+  - 当前 `args_schema` 会包含 `suggested_run_id` 或 `suggested_quantity`，以及当前配额/成本上下文
+- 装备后续动作
+  - 动作类型：`equip_item`、`unequip_item`
+  - `equip_item` 面向可直接装备的背包升级件
+  - `unequip_item` 面向当前已有装备的槽位
+  - 当前 `args_schema` 会包含 `suggested_item_id` 或 `suggested_slot`
+
+当前重要限制：
+
+- `GET /me/actions` 不是账号当前所有可执行动作的完整清单
+- planner 仍然更适合处理中程决策、日目标优先级与准备上下文
+- `GET /me/actions` 仍然只覆盖“当前状态下立刻可执行”的动作，而不是所有经过额外准备后可能变合法的动作
+- `sell_item` 与 `enhance_item` 目前仍不会在这里作为推荐发现动作暴露，因为这两类动作的物品选择、报价信息与显式建筑选择，通过 planner 上下文配合专用 inventory/building 接口会更清晰
 
 建筑模型说明：
 
@@ -405,6 +472,7 @@
 用途：
 
 - 统一动作执行入口
+- 当调用方希望统一使用一套 envelope，而不是在多个系统之间切换请求体格式时，这个接口就是 Bot-first 的执行总线
 
 请求：
 
@@ -442,12 +510,12 @@
 - `resolve_field_encounter:gather`
 - `resolve_field_encounter:curio`
 - `submit_quest`
+- `quest_choice`
+- `quest_interact`
 - `exchange_dungeon_reward_claims`
 - `equip_item`
 - `unequip_item`
 - `sell_item`
-- `restore_hp`
-- `remove_status`
 - `enhance_item`
 - `enter_dungeon`
 - `claim_dungeon_rewards`
@@ -455,10 +523,44 @@
 
 - `client_turn_id` 可由调用方传入，但当前仓库不会解释它
 
+当前执行分组：
+
+- 已有真实处理逻辑的动作
+  - `travel`
+  - `enter_building`
+  - `resolve_field_encounter`
+  - `resolve_field_encounter:hunt`
+  - `resolve_field_encounter:gather`
+  - `resolve_field_encounter:curio`
+  - `submit_quest`
+  - `quest_choice`
+  - `quest_interact`
+  - `exchange_dungeon_reward_claims`
+  - `enter_dungeon`
+  - `claim_dungeon_rewards`
+  - `equip_item`
+  - `unequip_item`
+  - `sell_item`
+  - `enhance_item`
+  - `arena_signup`
+
+当前执行侧注意点：
+
+- `sell_item` 与 `enhance_item` 现在已经在通用 action 总线上执行真实的建筑结算与状态变更
+- 如果调用方需要读取商店上下文、强化报价或明确指定建筑，专用 building 接口仍然是更清晰的发现面与 typed contract
+- 对于依赖建筑的通用动作，如果未传 `building_id`，服务端只会在角色当前地区自动解析唯一匹配建筑；它不是绕过旅行/地点限制的全局后门
+
 建议：
 
 - 保留专用接口以获得更清晰的契约与更好的可读性
 - 统一动作入口作为兜底层或兼容层使用
+- Bot 使用顺序建议为：先 planner，再 `/me/actions` 读取紧凑机器动作，最后在目标系统已有成熟契约时优先走专用接口
+
+建议后的开发修改方向：
+
+1. 后续 action family 或动作语义发生变化时，持续同步 planner、`/me/actions`、OpenAPI 与 tool-facing 文档
+2. 保持当前这条 locality 规则：依赖建筑的通用动作只能解析角色当前地区真实可用的建筑
+3. 当未来再加入新的上下文动作时，继续补充可机器使用的 `suggested_*` 字段
 
 ### 12.4 Region APIs
 
@@ -605,7 +707,7 @@
 设施边界说明：
 
 - `equipment_shop` 当前统一覆盖基础武器与防具的买卖
-- `apothecary` 是当前 V1 对“买药 + 付费回血”设施的推荐正式名称
+- `apothecary` 是当前 V1 对“买药 + 出发前补给”设施的推荐正式名称
 - 产品文档、后端文档和 tool 输出统一使用上面这 6 类设施
 
 #### `GET /api/v1/buildings/{buildingId}`
@@ -625,19 +727,16 @@
 
 建筑动作接口：
 
-- `POST /api/v1/buildings/{buildingId}/heal`
-- `POST /api/v1/buildings/{buildingId}/cleanse`
 - `POST /api/v1/buildings/{buildingId}/enhance`
 - `POST /api/v1/buildings/{buildingId}/salvage`
-- `POST /api/v1/buildings/{buildingId}/repair`
 - `POST /api/v1/buildings/{buildingId}/purchase`
 - `POST /api/v1/buildings/{buildingId}/sell`
 
 当前仓库说明：
 
 - 这些接口当前返回的是 action-style envelope
-- `heal` 会映射为轻量级动作结果 `restore_hp`
-- `cleanse` 会映射为 `remove_status`
+- 除了连续多房间挑战这类流程外，角色在战斗之间默认视为满血且不会保留 debuff
+- 当前 V1 玩法里没有装备耐久和修理环节
 
 当前 V1 能力边界：
 
@@ -666,7 +765,6 @@
   - 四舍五入到最接近的 `5`，并保底 `100`
 - `apothecary` 当前主要负责：
   - `purchase`
-  - `heal`
 - `blacksmith` 当前主要负责：
   - `enhance`
   - `salvage`

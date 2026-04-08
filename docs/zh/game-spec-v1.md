@@ -335,8 +335,8 @@ V1 装备槽位包括：
 V1 稀有度：
 
 - `common`
-- `rare`
-- `epic`
+- `blue`
+- `purple`
 - `gold`
 - `red`
 - `prismatic`
@@ -383,7 +383,6 @@ V1 只有一种主要货币：
 - 旅行费用
 - 购买装备或补给
 - 装备强化
-- 治疗与驱散
 
 ### 10.4 强化
 
@@ -450,47 +449,74 @@ V1 世界区域：
 包含建筑：
 
 - Adventurers Guild
-- Weapon Shop
-- Armor Shop
-- Temple
+- Equipment Shop
+- Apothecary
 - Blacksmith
-- Arena Hall
+- Arena
 - Warehouse
 
 ### 12.2 Greenfield Village
 
 包含建筑：
 
-- Quest Outpost
-- General Store
-- Field Healer
+- Adventurers Guild Outpost
+- Equipment Shop
+- Apothecary
+- Caravan Dispatch Point
 
 ### 12.3 建筑动作
 
 Adventurers Guild：
 
 - 列出任务
-- 接任务
 - 提交任务
 - 花金币刷新当日任务板
+- 管理职业、路线与技能成长
 
-Weapon Shop / Armor Shop：
+Equipment Shop：
 
 - 浏览商品
 - 购买
 - 出售战利品
 
-Temple / Healer：
+当前 V1 的出售契约：
 
-- 恢复 HP / MP
-- 移除异常状态
+- 只能出售背包中的物品；已装备物品必须先卸下
+- 出售会在同一动作里立即移除该物品并发放金币
+- 每件装备都应走同一套规范的商店估价公式
+- 这个估价应沿用商店定价的“品质基础价 + 槽位系数 + 属性溢价”骨架，但不带每日货架浮动
+- 出售价格应为 `floor(shop_estimated_price / 2)`
+- 出售是直接变现动作，不存在议价、寄售或上架循环
+
+Apothecary：
+
+- 购买消耗品
+- 当前 V1 循环里没有战斗外治疗或净化动作
 
 Blacksmith：
 
 - 强化装备
-- 修理装备
+- 拆解装备
 
-Arena Hall：
+当前 V1 的强化契约：
+
+- 强化绑定在装备槽位上，而不是某个装备实例上
+- 调用方可以通过 `item_id` 或 `slot` 指定强化目标
+- 当前所有槽位都支持强化，最高到 `+20`
+- V1 强化成功是确定性的
+- 强化消耗金币与 `enhancement_shard`
+- 金币成本与碎片成本都随当前强化等级和装备稀有度增长
+- 强化只放大该槽位装备的基础属性包，不会放大被动词条
+- 拆解背包装备是强化材料的主要来源
+- 当前按被拆解装备稀有度产出 `enhancement_shard`：
+  - `common`: `1`
+  - `blue`: `3`
+  - `purple`: `7`
+  - `gold`: `14`
+  - `red`: `24`
+  - `prismatic`: `40`
+
+Arena：
 
 - 查看竞技场状态
 - 报名
@@ -669,10 +695,8 @@ Bot 通过统一的 HTTP API 完成以下事情：
 - `GET /api/v1/buildings/{buildingId}/shop-inventory`
 - `POST /api/v1/buildings/{buildingId}/purchase`
 - `POST /api/v1/buildings/{buildingId}/sell`
-- `POST /api/v1/buildings/{buildingId}/heal`
-- `POST /api/v1/buildings/{buildingId}/cleanse`
+- `POST /api/v1/buildings/{buildingId}/salvage`
 - `POST /api/v1/buildings/{buildingId}/enhance`
-- `POST /api/v1/buildings/{buildingId}/repair`
 
 #### 任务
 

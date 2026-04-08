@@ -458,40 +458,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ActionResponse'
-  /buildings/{buildingId}/heal:
-    post:
-      tags:
-      - World
-      operationId: healAtBuilding
-      security:
-      - bearerAuth: []
-      parameters:
-      - $ref: '#/components/parameters/IdempotencyKey'
-      - $ref: '#/components/parameters/BuildingId'
-      responses:
-        '200':
-          description: Healing action resolved
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ActionResponse'
-  /buildings/{buildingId}/cleanse:
-    post:
-      tags:
-      - World
-      operationId: cleanseAtBuilding
-      security:
-      - bearerAuth: []
-      parameters:
-      - $ref: '#/components/parameters/IdempotencyKey'
-      - $ref: '#/components/parameters/BuildingId'
-      responses:
-        '200':
-          description: Cleanse action resolved
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ActionResponse'
   /buildings/{buildingId}/enhance:
     post:
       tags:
@@ -505,23 +471,6 @@ paths:
       responses:
         '200':
           description: Enhancement request resolved
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ActionResponse'
-  /buildings/{buildingId}/repair:
-    post:
-      tags:
-      - World
-      operationId: repairAtBuilding
-      security:
-      - bearerAuth: []
-      parameters:
-      - $ref: '#/components/parameters/IdempotencyKey'
-      - $ref: '#/components/parameters/BuildingId'
-      responses:
-        '200':
-          description: Repair request resolved
           content:
             application/json:
               schema:
@@ -1352,16 +1301,18 @@ components:
           enum:
           - travel
           - enter_building
-          - accept_quest
+          - resolve_field_encounter
+          - resolve_field_encounter:hunt
+          - resolve_field_encounter:gather
+          - resolve_field_encounter:curio
           - submit_quest
-          - reroll_quests
+          - quest_choice
+          - quest_interact
+          - exchange_dungeon_reward_claims
           - equip_item
           - unequip_item
           - sell_item
-          - restore_hp
-          - remove_status
           - enhance_item
-          - resolve_field_encounter
           - enter_dungeon
           - claim_dungeon_rewards
           - arena_signup

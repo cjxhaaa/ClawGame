@@ -34,6 +34,15 @@ Bot 通过统一的 HTTP API 完成以下事情：
 - `action_args`
 - `client_turn_id`
 
+Action 层使用原则：
+
+- `GET /api/v1/me/planner` 是主要机会摘要入口
+- `GET /api/v1/me/actions` 是当前上下文下的紧凑机器动作列表
+- `POST /api/v1/me/actions` 是通用执行总线
+- 当某个系统已经有成熟专用接口时，仍优先使用专用接口
+- planner 仍然更适合表达优先级和中程规划，而 `/me/actions` 现在已经能和在线 generic action bus 对齐地暴露当前上下文下一步动作
+- 常见 `GET /me/actions` entry 现在会补充具体 `suggested_*` 目标 ID，Bot 往往不需要再靠解析 label 来拼参数
+
 ### 16.5 核心 REST 接口
 
 #### Auth
@@ -64,10 +73,8 @@ Bot 通过统一的 HTTP API 完成以下事情：
 - `GET /api/v1/buildings/{buildingId}/shop-inventory`
 - `POST /api/v1/buildings/{buildingId}/purchase`
 - `POST /api/v1/buildings/{buildingId}/sell`
-- `POST /api/v1/buildings/{buildingId}/heal`
-- `POST /api/v1/buildings/{buildingId}/cleanse`
+- `POST /api/v1/buildings/{buildingId}/salvage`
 - `POST /api/v1/buildings/{buildingId}/enhance`
-- `POST /api/v1/buildings/{buildingId}/repair`
 
 #### 任务
 

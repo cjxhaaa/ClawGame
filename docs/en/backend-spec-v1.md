@@ -94,7 +94,7 @@ Responsibilities:
 - equip and unequip flows
 - sell flows
 - starter gear assignment
-- enhancement and repair requests
+- enhancement requests and related item-mutation flows
 
 ### 3.6 Combat
 
@@ -155,7 +155,7 @@ Responsibilities:
 
 Responsibilities:
 
-- state repair endpoints
+- state recovery and reconciliation endpoints
 - bot support operations
 - manual grant or reset actions
 - observability-facing admin commands
@@ -215,7 +215,7 @@ Compatibility note:
 ### 6.2 Equipment enums
 
 - `equipment_slot`: `head`, `chest`, `necklace`, `ring`, `boots`, `weapon`
-- `item_rarity`: `common`, `rare`, `epic`
+- `item_rarity`: `common`, `blue`, `purple`, `gold`, `red`, `prismatic`
 - `item_bind_type`: `bound_character`
 - `item_instance_state`: `inventory`, `equipped`, `sold`, `consumed`
 
@@ -229,7 +229,7 @@ Compatibility note:
 ### 6.4 Travel and world enums
 
 - `region_type`: `safe_hub`, `field`, `dungeon`
-- `building_type`: `guild`, `weapon_shop`, `armor_shop`, `temple`, `blacksmith`, `warehouse`, `arena_hall`, `general_store`, `healer`, `quest_outpost`
+- `building_type`: `guild`, `equipment_shop`, `apothecary`, `blacksmith`, `arena`, `warehouse`, `caravan_dispatch`
 
 ### 6.5 Dungeon enums
 
@@ -1444,6 +1444,13 @@ Recommendation:
 
 ### 12.3 Actions APIs
 
+Why the action layer exists:
+
+- Bot-first callers need a machine-readable action surface instead of prose interpretation.
+- `planner` is the high-level opportunity summary.
+- `/me/actions` is the compact action-bus surface.
+- dedicated endpoints remain the preferred typed contracts when a system already has a mature API.
+
 #### `GET /api/v1/me/actions`
 
 Purpose:
@@ -1459,6 +1466,17 @@ Fields per action:
 Current repo note:
 
 - this endpoint is intentionally lightweight and does not include full planner context
+- current results come from region-local actions, accepted-quest runtime actions, and immediate follow-up actions inferred from the current account state
+- current region-local families are `travel`, `enter_building`, field encounter variants, and `enter_dungeon` when the current region is a dungeon or links to one
+- current quest-runtime families are `quest_interact` and `quest_choice`
+- current follow-up families include `submit_quest`, `claim_dungeon_rewards`, `exchange_dungeon_reward_claims`, `equip_item`, and `unequip_item`
+- common region and follow-up entries now embed concrete `suggested_*` target IDs in `args_schema`
+- this is a compact discovery surface, not a complete list of every executable account action
+
+Current practical limitations:
+
+- planner still carries richer medium-horizon planning context than this endpoint
+- `sell_item` and `enhance_item` are supported on the generic action bus, but are still intentionally omitted from this discovery surface because item choice, quotes, and explicit building selection remain clearer through planner context and the dedicated inventory/building endpoints
 
 #### `POST /api/v1/me/actions`
 
@@ -1497,13 +1515,17 @@ Supported canonical `action_type` values:
 
 - `travel`
 - `enter_building`
+- `resolve_field_encounter`
+- `resolve_field_encounter:hunt`
+- `resolve_field_encounter:gather`
+- `resolve_field_encounter:curio`
 - `submit_quest`
+- `quest_choice`
+- `quest_interact`
 - `exchange_dungeon_reward_claims`
 - `equip_item`
 - `unequip_item`
 - `sell_item`
-- `restore_hp`
-- `remove_status`
 - `enhance_item`
 - `enter_dungeon`
 - `claim_dungeon_rewards`
@@ -1511,10 +1533,21 @@ Supported canonical `action_type` values:
 
 - `client_turn_id` may be sent by callers, but the current repo does not interpret it yet
 
+Current repo note:
+
+- `sell_item` and `enhance_item` now perform real building-backed state mutation on the generic action bus
+- dedicated building endpoints remain the clearer typed-contract surface when the caller needs enhancement quotes, shop context, or explicit building selection
+
 Recommendation:
 
 - keep dedicated endpoints for clarity and better typed contracts
 - use the generic action router as a fallback or compatibility layer
+
+Recommended development follow-up:
+
+1. keep planner, `/me/actions`, OpenAPI, and tool-facing docs synchronized when action families or action semantics change
+2. preserve the current locality rule for building-backed generic actions so they only resolve buildings that are actually available in the character's current region
+3. continue adding machine-usable `suggested_*` target IDs as new action families gain concrete current-context targets
 
 ### 12.4 Region APIs
 
@@ -1576,18 +1609,60 @@ Returns:
 
 Building action endpoints:
 
-- `POST /api/v1/buildings/{buildingId}/heal`
-- `POST /api/v1/buildings/{buildingId}/cleanse`
 - `POST /api/v1/buildings/{buildingId}/enhance`
-- `POST /api/v1/buildings/{buildingId}/repair`
+- `POST /api/v1/buildings/{buildingId}/salvage`
 - `POST /api/v1/buildings/{buildingId}/purchase`
 - `POST /api/v1/buildings/{buildingId}/sell`
 
 Current repo note:
 
 - these endpoints return generic action-style envelopes
-- `heal` maps to the lightweight action result `restore_hp`
-- `cleanse` maps to `remove_status`
+- outside continuous multi-room challenge flows, characters are treated as full HP and clear of persisted debuffs between combats
+- equipment durability and repair are not part of the current V1 loop
+
+Current dedicated action contracts:
+
+- `POST /api/v1/buildings/{buildingId}/sell`
+  - building must expose the `sell_loot` capability
+  - request body requires `item_id`
+  - validation:
+    - item must belong to the caller
+    - item must not currently be equipped
+  - side effects:
+    - remove the item from inventory
+    - grant gold immediately
+    - current design target is `floor(shop_estimated_price / 2)` using the canonical equipment shop-estimate formula
+    - emit `inventory.item_sold`
+  - current response payload includes updated `inventory`, sold `item`, and `gain_gold`
+- `POST /api/v1/buildings/{buildingId}/enhance`
+  - building must expose the `enhance_item` capability
+  - request body accepts `item_id`, `slot`, or both
+  - targeting rule:
+    - if `item_id` is present, its slot is the enhancement target
+    - otherwise `slot` is used as the slot-level enhancement target
+  - validation:
+    - target item must belong to the caller when `item_id` is provided
+    - target must be enhanceable
+    - current slot enhancement level must be below the max cap
+    - caller must have enough gold and enhancement materials
+  - side effects:
+    - spend gold
+    - spend `enhancement_shard`
+    - increment the target slot enhancement level
+    - emit `inventory.item_enhanced`
+  - current response payload includes updated `inventory`, `item_before`, enhanced `item`, `enhancement_quote`, and post-spend `materials`
+- `POST /api/v1/buildings/{buildingId}/salvage`
+  - building must expose the `salvage_item` capability
+  - request body requires `item_id`
+  - validation:
+    - item must belong to the caller
+    - item must not currently be equipped
+  - side effects:
+    - remove the item from inventory
+    - grant salvage materials immediately
+    - emit `inventory.item_salvaged`
+  - current primary material output is `enhancement_shard`
+  - current shard yield by salvaged item rarity is `1 / 3 / 7 / 14 / 24 / 40` for `common / blue / purple / gold / red / prismatic`
 
 ### 12.6 Quest APIs
 
@@ -2129,7 +2204,7 @@ Responsibilities:
 
 - only one active run per character
 - run owner must equal request actor
-- finished runs are immutable except admin repair
+- finished runs are immutable except admin reconciliation
 
 ### 15.6 Arena
 
@@ -2223,7 +2298,7 @@ Recommended backend delivery order:
 6. Dungeon runs
 7. Public read APIs and SSE
 8. Arena tournament pipeline
-9. Admin repair APIs
+9. Admin recovery and reconciliation APIs
 
 ## 19. Definition of Done for Backend
 

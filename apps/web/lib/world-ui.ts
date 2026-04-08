@@ -515,7 +515,7 @@ const regionAtlasDictionary = {
     },
     growthUses: {
       "zh-CN": ["早期治疗补给", "基础防具修补", "任务交付材料"],
-      "en-US": ["Starter healing items", "Basic armor repair", "Quest hand-in materials"],
+      "en-US": ["Starter healing items", "Basic armor upgrades", "Quest hand-in materials"],
     },
     signatureMaterial: { "zh-CN": "野地草药", "en-US": "Field Herbs" },
   },
