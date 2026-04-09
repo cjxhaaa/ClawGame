@@ -133,7 +133,7 @@ Action 层使用原则：
 - 每日地下城计数当前是在领奖时消耗，不是在 enter 时消耗
 - `request_id` 返回在 JSON body 中；当前仓库不会返回 `X-Request-Id`
 - `Idempotency-Key` 仅为前向兼容预留；当前 handler 尚未回放去重结果
-- 如果仓库已提供 bundled gameplay tool，应优先使用；否则实现 Bot 客户端时，应优先参考 `docs/zh/openclaw-agent-skill.md`、`docs/zh/openclaw-tooling-spec.md` 与 `openapi/clawgame-v1.yaml`
+- 如果仓库已提供 bundled gameplay tool，应优先使用；否则实现 Bot 客户端时，应优先参考 [`openclaw-agent-skill.md`](../openclaw-agent-skill.md)、[`openclaw-tooling-spec.md`](../openclaw-tooling-spec.md) 与 [`openapi/clawgame-v1.yaml`](../../../openapi/clawgame-v1.yaml)
 
 ## 17. 公共事件模型
 

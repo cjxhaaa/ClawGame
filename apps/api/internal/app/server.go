@@ -23,6 +23,7 @@ import (
 	"clawgame/apps/api/internal/platform/config"
 	"clawgame/apps/api/internal/platform/store"
 	"clawgame/apps/api/internal/quests"
+	"clawgame/apps/api/internal/social"
 	"clawgame/apps/api/internal/world"
 	"clawgame/apps/api/internal/worldboss"
 
@@ -37,6 +38,7 @@ type Server struct {
 	dungeonService   *dungeons.Service
 	inventoryService *inventory.Service
 	questService     *quests.Service
+	socialService    *social.Service
 	worldService     *world.Service
 	worldBossService *worldboss.Service
 }
@@ -51,6 +53,7 @@ func NewServer(cfg config.API) *Server {
 	dungeonService := dungeons.NewService()
 	inventoryService := inventory.NewService()
 	questService := quests.NewService()
+	socialService := social.NewService()
 	worldService := world.NewService()
 	worldBossService := worldboss.NewService()
 
@@ -71,10 +74,16 @@ func NewServer(cfg config.API) *Server {
 					if err != nil {
 						log.Printf("api persistence disabled: failed to load quest boards: %v", err)
 					} else {
-						authService = persistentAuth
-						characterService = persistentCharacters
-						questService = persistentQuests
-						log.Printf("api persistence enabled with postgres runtime storage")
+						persistentSocial, err := social.NewServiceWithRepository(postgresStore)
+						if err != nil {
+							log.Printf("api persistence disabled: failed to load social state: %v", err)
+						} else {
+							authService = persistentAuth
+							characterService = persistentCharacters
+							questService = persistentQuests
+							socialService = persistentSocial
+							log.Printf("api persistence enabled with postgres runtime storage")
+						}
 					}
 				}
 			}
@@ -497,6 +506,203 @@ func NewServer(cfg config.API) *Server {
 
 			writeEnvelope(w, r, http.StatusOK, state)
 		})
+
+		r.Get("/me/follows", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+			character, ok := characterService.GetCharacterByAccount(account)
+			if !ok {
+				writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before requesting follows")
+				return
+			}
+			writeEnvelope(w, r, http.StatusOK, map[string]any{
+				"items": buildSocialRefs(socialService.ListFollowing(character.CharacterID), characterService, socialService, character.CharacterID),
+			})
+		})
+
+		r.Get("/me/friends", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+			character, ok := characterService.GetCharacterByAccount(account)
+			if !ok {
+				writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before requesting friends")
+				return
+			}
+			writeEnvelope(w, r, http.StatusOK, map[string]any{
+				"items": buildSocialRefs(socialService.ListFriends(character.CharacterID), characterService, socialService, character.CharacterID),
+			})
+		})
+
+		r.Post("/me/follows/{botId}", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+			character, ok := characterService.GetCharacterByAccount(account)
+			if !ok {
+				writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before following bots")
+				return
+			}
+			targetID := chi.URLParam(r, "botId")
+			if _, _, _, _, exists := characterService.GetRuntimeDetailByCharacterID(targetID); !exists {
+				writeError(w, r, http.StatusNotFound, "BOT_NOT_FOUND", "target bot does not exist")
+				return
+			}
+			if err := socialService.Follow(character.CharacterID, targetID); err != nil {
+				if errors.Is(err, social.ErrFollowSelf) {
+					writeError(w, r, http.StatusBadRequest, "FOLLOW_SELF_NOT_ALLOWED", "bot cannot follow itself")
+					return
+				}
+				writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to follow bot")
+				return
+			}
+			writeEnvelope(w, r, http.StatusOK, map[string]any{
+				"relation_status": socialService.RelationStatus(character.CharacterID, targetID),
+			})
+		})
+
+		r.Delete("/me/follows/{botId}", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+			character, ok := characterService.GetCharacterByAccount(account)
+			if !ok {
+				writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before unfollowing bots")
+				return
+			}
+			targetID := chi.URLParam(r, "botId")
+			socialService.Unfollow(character.CharacterID, targetID)
+			writeEnvelope(w, r, http.StatusOK, map[string]any{
+				"relation_status": socialService.RelationStatus(character.CharacterID, targetID),
+			})
+		})
+
+		r.Get("/me/assist-template", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+			character, ok := characterService.GetCharacterByAccount(account)
+			if !ok {
+				writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before requesting assist template")
+				return
+			}
+			writeEnvelope(w, r, http.StatusOK, socialService.GetAssistTemplate(character.CharacterID))
+		})
+
+		r.Put("/me/assist-template", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+			character, ok := characterService.GetCharacterByAccount(account)
+			if !ok {
+				writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before updating assist template")
+				return
+			}
+			var request struct {
+				TemplateName string `json:"template_name"`
+			}
+			if !decodeJSONBody(w, r, &request) {
+				return
+			}
+			writeEnvelope(w, r, http.StatusOK, socialService.SetAssistTemplate(character.CharacterID, request.TemplateName))
+		})
+
+		r.Get("/chat/world", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+			if _, ok := characterService.GetCharacterByAccount(account); !ok {
+				writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before reading chat")
+				return
+			}
+			limit := parseLimit(r, 20, 50)
+			cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
+			messageType := strings.TrimSpace(r.URL.Query().Get("message_type"))
+			items := socialService.ListChat("world", "", messageType)
+			start := parseCursorOffset(cursor, len(items))
+			end := min(start+limit, len(items))
+			nextCursor := any(nil)
+			if end < len(items) {
+				nextCursor = strconv.Itoa(end)
+			}
+			writeEnvelope(w, r, http.StatusOK, map[string]any{"items": items[start:end], "next_cursor": nextCursor})
+		})
+
+		r.Get("/chat/region", func(w http.ResponseWriter, r *http.Request) {
+			account, ok := requireAccount(w, r, authService)
+			if !ok {
+				return
+			}
+			character, ok := characterService.GetCharacterByAccount(account)
+			if !ok {
+				writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before reading chat")
+				return
+			}
+			limit := parseLimit(r, 20, 50)
+			cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
+			messageType := strings.TrimSpace(r.URL.Query().Get("message_type"))
+			items := socialService.ListChat("region", character.LocationRegionID, messageType)
+			start := parseCursorOffset(cursor, len(items))
+			end := min(start+limit, len(items))
+			nextCursor := any(nil)
+			if end < len(items) {
+				nextCursor = strconv.Itoa(end)
+			}
+			writeEnvelope(w, r, http.StatusOK, map[string]any{"items": items[start:end], "next_cursor": nextCursor})
+		})
+
+		postChatHandler := func(channelType string) http.HandlerFunc {
+			return func(w http.ResponseWriter, r *http.Request) {
+				account, ok := requireAccount(w, r, authService)
+				if !ok {
+					return
+				}
+				character, ok := characterService.GetCharacterByAccount(account)
+				if !ok {
+					writeError(w, r, http.StatusNotFound, "CHARACTER_NOT_FOUND", "create a character before posting chat")
+					return
+				}
+				var request struct {
+					MessageType string `json:"message_type"`
+					Content     string `json:"content"`
+				}
+				if !decodeJSONBody(w, r, &request) {
+					return
+				}
+				regionID := ""
+				if channelType == "region" {
+					regionID = character.LocationRegionID
+				}
+				message, err := socialService.PostChat(character.CharacterID, character.Name, regionID, channelType, request.MessageType, request.Content)
+				if err != nil {
+					switch {
+					case errors.Is(err, social.ErrChatMessageEmpty):
+						writeError(w, r, http.StatusBadRequest, "CHAT_MESSAGE_EMPTY", "chat message cannot be empty")
+					case errors.Is(err, social.ErrChatMessageTooLong):
+						writeError(w, r, http.StatusBadRequest, "CHAT_MESSAGE_TOO_LONG", "chat message exceeds the 120-character limit")
+					case errors.Is(err, social.ErrChatDailyCap):
+						writeError(w, r, http.StatusBadRequest, "CHAT_DAILY_CAP_REACHED", "daily chat cap has been reached")
+					case errors.Is(err, social.ErrChatCooldown):
+						writeError(w, r, http.StatusBadRequest, "CHAT_CHANNEL_COOLDOWN_ACTIVE", "chat channel cooldown is still active")
+					default:
+						writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to post chat message")
+					}
+					return
+				}
+				writeEnvelope(w, r, http.StatusOK, message)
+			}
+		}
+
+		r.Post("/chat/world", postChatHandler("world"))
+		r.Post("/chat/region", postChatHandler("region"))
 
 		r.Get("/me/planner", func(w http.ResponseWriter, r *http.Request) {
 			account, ok := requireAccount(w, r, authService)
@@ -2231,13 +2437,72 @@ func NewServer(cfg config.API) *Server {
 				writeEnvelope(w, r, http.StatusOK, buildPublicLeaderboards(snapshot))
 			})
 
+			r.Get("/chat/world", func(w http.ResponseWriter, r *http.Request) {
+				limit := parseLimit(r, 20, 50)
+				cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
+				messageType := strings.TrimSpace(r.URL.Query().Get("message_type"))
+				items := buildObserverChatMessages(socialService.ListChat("world", "", messageType), buildPublicChatMessages(characterService.SnapshotRuntime().Events, publicChatFilters{
+					channelType: "world",
+					messageType: messageType,
+					limit:       1000,
+				}))
+				start := parseCursorOffset(cursor, len(items))
+				end := start + limit
+				if end > len(items) {
+					end = len(items)
+				}
+
+				nextCursor := any(nil)
+				if end < len(items) {
+					nextCursor = strconv.Itoa(end)
+				}
+
+				writeEnvelope(w, r, http.StatusOK, map[string]any{
+					"items":       items[start:end],
+					"next_cursor": nextCursor,
+				})
+			})
+
+			r.Get("/chat/region", func(w http.ResponseWriter, r *http.Request) {
+				regionID := strings.TrimSpace(r.URL.Query().Get("region_id"))
+				if regionID == "" {
+					writeError(w, r, http.StatusBadRequest, "REGION_ID_REQUIRED", "region_id is required")
+					return
+				}
+
+				limit := parseLimit(r, 20, 50)
+				cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
+				messageType := strings.TrimSpace(r.URL.Query().Get("message_type"))
+				items := buildObserverChatMessages(socialService.ListChat("region", regionID, messageType), buildPublicChatMessages(characterService.SnapshotRuntime().Events, publicChatFilters{
+					channelType: "region",
+					regionID:    regionID,
+					messageType: messageType,
+					limit:       500,
+				}))
+				start := parseCursorOffset(cursor, len(items))
+				end := start + limit
+				if end > len(items) {
+					end = len(items)
+				}
+
+				nextCursor := any(nil)
+				if end < len(items) {
+					nextCursor = strconv.Itoa(end)
+				}
+
+				writeEnvelope(w, r, http.StatusOK, map[string]any{
+					"items":       items[start:end],
+					"next_cursor": nextCursor,
+				})
+			})
+
 			r.Get("/bots", func(w http.ResponseWriter, r *http.Request) {
 				limit := parseLimit(r, 20, 100)
 				cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
 				queryName := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
 				queryCharacterID := strings.TrimSpace(r.URL.Query().Get("character_id"))
 				snapshot := characterService.SnapshotRuntime()
-				items := buildPublicBots(snapshot.Characters, characterService, inventoryService, dungeonService)
+				items := buildPublicBots(snapshot.Characters, characterService, inventoryService, dungeonService, socialService)
 				if queryName != "" || queryCharacterID != "" {
 					filtered := make([]map[string]any, 0, len(items))
 					for _, item := range items {
@@ -2288,6 +2553,14 @@ func NewServer(cfg config.API) *Server {
 				completedToday := filterQuestHistoryByDay(questHistory, now)
 				dungeonToday := filterDungeonHistoryByDay(dungeonHistory, now)
 				recentRuns := dungeonService.ListRunsByCharacter(botID)
+				recentPublicChat := buildObserverChatMessages(
+					socialService.ListChatByBot(botID, 10),
+					buildPublicChatMessages(events, publicChatFilters{
+						channelType: "world",
+						actorID:     botID,
+						limit:       10,
+					}),
+				)
 				if len(recentRuns) > 5 {
 					recentRuns = recentRuns[:5]
 				}
@@ -2297,6 +2570,10 @@ func NewServer(cfg config.API) *Server {
 
 				writeEnvelope(w, r, http.StatusOK, map[string]any{
 					"character_summary":      summary,
+					"social_summary":         socialService.SocialSummary(botID),
+					"following":              buildSocialRefs(socialService.ListFollowing(botID), characterService, socialService, botID),
+					"followers":              buildSocialRefs(socialService.ListFollowers(botID), characterService, socialService, botID),
+					"recent_public_chat":     recentPublicChat,
 					"stats_snapshot":         stats,
 					"equipment":              inventoryView,
 					"equipment_item_scores":  itemScores,
@@ -2780,6 +3057,146 @@ func buildPublicEvents(events []world.WorldEvent, limit int) []world.WorldEvent 
 	}
 
 	return publicEvents[:limit]
+}
+
+type publicChatFilters struct {
+	channelType string
+	regionID    string
+	actorID     string
+	messageType string
+	limit       int
+}
+
+func buildPublicChatMessages(events []world.WorldEvent, filters publicChatFilters) []map[string]any {
+	publicEvents := buildPublicEvents(events, len(events))
+	if filters.limit <= 0 {
+		filters.limit = 20
+	}
+
+	items := make([]map[string]any, 0, len(publicEvents))
+	for _, event := range publicEvents {
+		if filters.actorID != "" && event.ActorCharacterID != filters.actorID {
+			continue
+		}
+		if filters.channelType == "region" {
+			if event.RegionID == "" || event.RegionID != filters.regionID {
+				continue
+			}
+		}
+
+		channelType := filters.channelType
+		if channelType == "" {
+			if event.RegionID != "" {
+				channelType = "region"
+			} else {
+				channelType = "world"
+			}
+		}
+		messageType, content := deriveChatMessageFromEvent(event)
+		if filters.messageType != "" && filters.messageType != messageType {
+			continue
+		}
+
+		item := map[string]any{
+			"message_id":   "chat_" + event.EventID,
+			"channel_type": channelType,
+			"bot_id":       event.ActorCharacterID,
+			"bot_name":     event.ActorName,
+			"message_type": messageType,
+			"content":      content,
+			"created_at":   event.OccurredAt,
+		}
+		if channelType == "region" {
+			item["region_id"] = event.RegionID
+		} else {
+			item["region_id"] = nil
+		}
+		items = append(items, item)
+		if len(items) >= filters.limit {
+			break
+		}
+	}
+
+	return items
+}
+
+func buildObserverChatMessages(real []social.ChatMessage, fallback []map[string]any) []map[string]any {
+	if len(real) == 0 {
+		return fallback
+	}
+
+	items := make([]map[string]any, 0, len(real))
+	for _, message := range real {
+		item := map[string]any{
+			"message_id":   message.MessageID,
+			"channel_type": message.ChannelType,
+			"bot_id":       message.BotID,
+			"bot_name":     message.BotName,
+			"message_type": message.MessageType,
+			"content":      message.Content,
+			"created_at":   message.CreatedAt,
+		}
+		if message.ChannelType == "region" {
+			item["region_id"] = message.RegionID
+		} else {
+			item["region_id"] = nil
+		}
+		items = append(items, item)
+	}
+
+	return items
+}
+
+func buildSocialRefs(ids []string, characterService *characters.Service, socialService *social.Service, viewerID string) []map[string]any {
+	if len(ids) == 0 {
+		return []map[string]any{}
+	}
+
+	items := make([]map[string]any, 0, len(ids))
+	for _, botID := range ids {
+		summary, _, _, _, ok := characterService.GetRuntimeDetailByCharacterID(botID)
+		if !ok {
+			continue
+		}
+		items = append(items, map[string]any{
+			"bot_id":         summary.CharacterID,
+			"bot_name":       summary.Name,
+			"class":          summary.Class,
+			"weapon_style":   summary.WeaponStyle,
+			"region_id":      summary.LocationRegionID,
+			"relation_label": socialService.RelationStatus(viewerID, summary.CharacterID),
+		})
+	}
+	return items
+}
+
+func deriveChatMessageFromEvent(event world.WorldEvent) (string, string) {
+	content := strings.TrimSpace(event.Summary)
+	if content == "" {
+		content = "Observed a public world event."
+	}
+
+	messageType := "free_text"
+	switch {
+	case event.EventType == "dungeon.cleared":
+		content = fmt.Sprintf("%s", strings.TrimSpace(event.Summary))
+		messageType = "assist_ad"
+	case event.EventType == "quest.submitted":
+		content = fmt.Sprintf("%s", strings.TrimSpace(event.Summary))
+		messageType = "friend_recruit"
+	}
+
+	return messageType, content
+}
+
+func parseCursorOffset(cursor string, length int) int {
+	if cursor == "" {
+		return 0
+	}
+	if value, err := strconv.Atoi(cursor); err == nil && value >= 0 && value < length {
+		return value
+	}
+	return 0
 }
 
 func buildPublicLeaderboards(snapshot characters.RuntimeSnapshot) world.Leaderboards {
@@ -3561,12 +3978,12 @@ func appendContextualValidActions(actions []characters.ValidAction, state charac
 			ActionType: "submit_quest",
 			Label:      fmt.Sprintf("Submit %s", objective.Title),
 			ArgsSchema: map[string]any{
-				"quest_id":             "string",
-				"suggested_quest_id":   objective.QuestID,
-				"reward_gold":          objective.RewardGold,
-				"reward_reputation":    objective.RewardReputation,
-				"quest_template_type":  objective.TemplateType,
-				"target_region_id":     objective.TargetRegionID,
+				"quest_id":            "string",
+				"suggested_quest_id":  objective.QuestID,
+				"reward_gold":         objective.RewardGold,
+				"reward_reputation":   objective.RewardReputation,
+				"quest_template_type": objective.TemplateType,
+				"target_region_id":    objective.TargetRegionID,
 			},
 		})
 	}
@@ -3588,10 +4005,10 @@ func appendContextualValidActions(actions []characters.ValidAction, state charac
 				ActionType: "claim_dungeon_rewards",
 				Label:      label,
 				ArgsSchema: map[string]any{
-					"run_id":               "string",
-					"suggested_run_id":     runID,
-					"remaining_claims":     state.DungeonDaily.RemainingClaims,
-					"has_remaining_quota":  state.DungeonDaily.HasRemainingQuota,
+					"run_id":              "string",
+					"suggested_run_id":    runID,
+					"remaining_claims":    state.DungeonDaily.RemainingClaims,
+					"has_remaining_quota": state.DungeonDaily.HasRemainingQuota,
 				},
 			})
 		}
@@ -3602,10 +4019,10 @@ func appendContextualValidActions(actions []characters.ValidAction, state charac
 			ActionType: "exchange_dungeon_reward_claims",
 			Label:      "Exchange reputation for one more dungeon reward claim",
 			ArgsSchema: map[string]any{
-				"quantity":                   "integer",
-				"suggested_quantity":         1,
-				"reputation_cost_per_claim":  state.Limits.ReputationPerBonusClaim,
-				"has_claimable_run":          state.DungeonDaily.HasClaimableRun,
+				"quantity":                  "integer",
+				"suggested_quantity":        1,
+				"reputation_cost_per_claim": state.Limits.ReputationPerBonusClaim,
+				"has_claimable_run":         state.DungeonDaily.HasClaimableRun,
 			},
 		})
 	}
@@ -3618,11 +4035,11 @@ func appendContextualValidActions(actions []characters.ValidAction, state charac
 			ActionType: "equip_item",
 			Label:      fmt.Sprintf("Equip %s", hint.Name),
 			ArgsSchema: map[string]any{
-				"item_id":            "string",
-				"suggested_item_id":  hint.ItemID,
-				"slot":               hint.Slot,
-				"item_catalog_id":    hint.CatalogID,
-				"score_delta":        hint.ScoreDelta,
+				"item_id":           "string",
+				"suggested_item_id": hint.ItemID,
+				"slot":              hint.Slot,
+				"item_catalog_id":   hint.CatalogID,
+				"score_delta":       hint.ScoreDelta,
 			},
 		})
 	}
@@ -3635,9 +4052,9 @@ func appendContextualValidActions(actions []characters.ValidAction, state charac
 			ActionType: "unequip_item",
 			Label:      fmt.Sprintf("Unequip %s", item.Name),
 			ArgsSchema: map[string]any{
-				"slot":              "string",
-				"suggested_slot":    item.Slot,
-				"equipped_item_id":  item.ItemID,
+				"slot":             "string",
+				"suggested_slot":   item.Slot,
+				"equipped_item_id": item.ItemID,
 			},
 		})
 	}
@@ -3670,10 +4087,10 @@ func appendDungeonEntryActions(actions []characters.ValidAction, regionID string
 		ActionType: "enter_dungeon",
 		Label:      fmt.Sprintf("Enter %s", definition.Name),
 		ArgsSchema: map[string]any{
-			"dungeon_id":            "string",
-			"suggested_dungeon_id":  dungeonID,
-			"dungeon_region_id":     targetRegionID,
-			"potion_loadout":        "string[0..2]",
+			"dungeon_id":           "string",
+			"suggested_dungeon_id": dungeonID,
+			"dungeon_region_id":    targetRegionID,
+			"potion_loadout":       "string[0..2]",
 		},
 	})
 }
@@ -4081,7 +4498,7 @@ func resolveBuildingActionTarget(account auth.Account, actionName string, action
 	return character, matched, nil
 }
 
-func buildPublicBots(charactersList []characters.Summary, characterService *characters.Service, inventoryService *inventory.Service, dungeonService *dungeons.Service) []map[string]any {
+func buildPublicBots(charactersList []characters.Summary, characterService *characters.Service, inventoryService *inventory.Service, dungeonService *dungeons.Service, socialService *social.Service) []map[string]any {
 	items := make([]map[string]any, 0, len(charactersList))
 	for _, character := range charactersList {
 		combatPowerSummary := map[string]any{}
@@ -4100,6 +4517,7 @@ func buildPublicBots(charactersList []characters.Summary, characterService *char
 			"combat_power":             combatPowerSummary,
 			"current_activity_type":    activityTypeFromRegion(character.LocationRegionID),
 			"current_activity_summary": fmt.Sprintf("Active in %s", character.LocationRegionID),
+			"social_summary":           socialService.SocialSummary(character.CharacterID),
 			"last_seen_at":             time.Now().Format(time.RFC3339),
 		})
 	}

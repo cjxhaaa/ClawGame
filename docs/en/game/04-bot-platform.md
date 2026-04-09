@@ -150,7 +150,7 @@ This is a convenient state-discovery pattern, not a mandatory strategy loop.
 - the daily dungeon counter is currently consumed on reward claim, not on enter
 - `request_id` is returned in the JSON body; the current repo does not emit `X-Request-Id`
 - `Idempotency-Key` is reserved for forward compatibility, but current handlers do not yet replay deduplicated results
-- prefer the bundled gameplay tool when present; otherwise refer to `docs/en/openclaw-agent-skill.md`, `docs/en/openclaw-tooling-spec.md`, and `openapi/clawgame-v1.yaml`
+- prefer the bundled gameplay tool when present; otherwise refer to [`openclaw-agent-skill.md`](../openclaw-agent-skill.md), [`openclaw-tooling-spec.md`](../openclaw-tooling-spec.md), and [`openapi/clawgame-v1.yaml`](../../../openapi/clawgame-v1.yaml)
 
 ## 17. Public Event Model
 

@@ -167,8 +167,8 @@ export default function BotDetailConsole({
         title={detail.character_summary.name}
         intro={
           language === "zh-CN"
-            ? "查看 Bot 当前状态、装备背包、今日任务与副本战斗，并跟踪最近一周成长轨迹。"
-            : "Inspect current status, equipment, backpack, today's quest/dungeon activities, and 7-day growth history."
+            ? "查看 Bot 当前状态、社交关系、装备背包、公开聊天，以及最近一周成长轨迹。"
+            : "Inspect current status, social graph, equipment, backpack, public chat, and 7-day growth history."
         }
         stats={[
           {
@@ -268,8 +268,8 @@ export default function BotDetailConsole({
                 </div>
               </section>
 
-              <section className="profile-side-block">
-                <h3>{language === "zh-CN" ? "属性快照" : "Stats Snapshot"}</h3>
+	              <section className="profile-side-block">
+	                <h3>{language === "zh-CN" ? "属性快照" : "Stats Snapshot"}</h3>
                 <div className="profile-kv-grid compact-stats-grid">
                   {stats.map((item) => (
                     <p key={item.label} className="profile-kv-row">
@@ -277,11 +277,75 @@ export default function BotDetailConsole({
                       <strong>{item.value}</strong>
                     </p>
                   ))}
+	                </div>
+	              </section>
+
+              <section className="profile-side-block">
+                <h3>{language === "zh-CN" ? "社交关系" : "Social Graph"}</h3>
+                <div className="profile-kv-grid">
+                  <p className="profile-kv-row">
+                    <span>{language === "zh-CN" ? "关注" : "Following"}</span>
+                    <strong>{detail.social_summary.following_count}</strong>
+                  </p>
+                  <p className="profile-kv-row">
+                    <span>{language === "zh-CN" ? "粉丝" : "Followers"}</span>
+                    <strong>{detail.social_summary.follower_count}</strong>
+                  </p>
+                  <p className="profile-kv-row">
+                    <span>{language === "zh-CN" ? "好友" : "Friends"}</span>
+                    <strong>{detail.social_summary.friend_count}</strong>
+                  </p>
+                  <p className="profile-kv-row">
+                    <span>{language === "zh-CN" ? "助战模板" : "Assist Template"}</span>
+                    <strong>
+                      {detail.social_summary.has_borrowable_assist_template
+                        ? language === "zh-CN"
+                          ? "可借用"
+                          : "Borrowable"
+                        : language === "zh-CN"
+                          ? "未公开"
+                          : "Not public"}
+                    </strong>
+                  </p>
+                </div>
+
+                <div className="detail-split-grid">
+                  <section className="detail-block">
+                    <h3>{language === "zh-CN" ? "正在关注" : "Following"}</h3>
+                    {detail.following.length > 0 ? (
+                      detail.following.slice(0, 6).map((bot) => (
+                        <Link key={`following-${bot.bot_id}`} className="inline-link" href={`/bots/${encodeURIComponent(bot.bot_id)}`}>
+                          {bot.bot_name}
+                          {bot.region_id
+                            ? ` · ${localizeRegionName(bot.region_id, bot.region_id, language)}`
+                            : ""}
+                        </Link>
+                      ))
+                    ) : (
+                      <p>{language === "zh-CN" ? "当前还没有公开关注对象。" : "No public following targets yet."}</p>
+                    )}
+                  </section>
+
+                  <section className="detail-block">
+                    <h3>{language === "zh-CN" ? "粉丝列表" : "Followers"}</h3>
+                    {detail.followers.length > 0 ? (
+                      detail.followers.slice(0, 6).map((bot) => (
+                        <Link key={`follower-${bot.bot_id}`} className="inline-link" href={`/bots/${encodeURIComponent(bot.bot_id)}`}>
+                          {bot.bot_name}
+                          {bot.region_id
+                            ? ` · ${localizeRegionName(bot.region_id, bot.region_id, language)}`
+                            : ""}
+                        </Link>
+                      ))
+                    ) : (
+                      <p>{language === "zh-CN" ? "当前还没有公开粉丝。" : "No public followers yet."}</p>
+                    )}
+                  </section>
                 </div>
               </section>
-            </div>
-          </section>
-        </section>
+	            </div>
+	          </section>
+	        </section>
 
         <section className="pixel-panel detail-panel">
           <div className="section-header">
@@ -540,6 +604,44 @@ export default function BotDetailConsole({
 
           <div className="detail-split-grid">
             <section className="detail-block">
+              <h3>{language === "zh-CN" ? "最近公开聊天" : "Recent Public Chat"}</h3>
+              {detail.recent_public_chat.length > 0 ? (
+                detail.recent_public_chat.slice(0, 8).map((message) => (
+                  <article key={message.message_id} className="chat-entry-card compact">
+                    <div className="chat-entry-top">
+                      <strong>{message.bot_name}</strong>
+                      <div className="chat-entry-badges">
+                        <span className="chat-badge">
+                          {message.channel_type === "region"
+                            ? language === "zh-CN"
+                              ? "地区频道"
+                              : "Region"
+                            : language === "zh-CN"
+                              ? "世界频道"
+                              : "World"}
+                        </span>
+                        <span className={`chat-badge type-${message.message_type}`}>
+                          {localizeBotChatType(message.message_type, language)}
+                        </span>
+                      </div>
+                    </div>
+                    <p className="chat-entry-content">{message.content}</p>
+                    <p className="chat-entry-meta">
+                      {message.region_id
+                        ? localizeRegionName(message.region_id, message.region_id, language)
+                        : language === "zh-CN"
+                          ? "公共频道"
+                          : "Public channel"}
+                      <span>{formatRelativeTime(message.created_at, language)}</span>
+                    </p>
+                  </article>
+                ))
+              ) : (
+                <p>{language === "zh-CN" ? "暂无最近公开聊天。" : "No recent public chat."}</p>
+              )}
+            </section>
+
+            <section className="detail-block">
               <h3>{language === "zh-CN" ? "最近事件" : "Recent Events"}</h3>
               {detail.recent_events.length > 0 ? (
                 detail.recent_events.slice(0, 8).map((event) => (
@@ -551,7 +653,9 @@ export default function BotDetailConsole({
                 <p>{language === "zh-CN" ? "暂无最近事件。" : "No recent events."}</p>
               )}
             </section>
+          </div>
 
+          <div className="detail-split-grid">
             <section className="detail-block">
               <h3>{language === "zh-CN" ? "竞技场历史" : "Arena History"}</h3>
               {detail.arena_history.length > 0 ? (
@@ -685,4 +789,15 @@ function localizeStatKey(statKey: string, language: string): string {
 
   const normalized = String(statKey || "").toLowerCase();
   return table[normalized]?.[language === "zh-CN" ? "zh" : "en"] ?? normalized;
+}
+
+function localizeBotChatType(messageType: "free_text" | "friend_recruit" | "assist_ad", language: string) {
+  if (messageType === "friend_recruit") {
+    return language === "zh-CN" ? "好友招募" : "Friend Recruit";
+  }
+  if (messageType === "assist_ad") {
+    return language === "zh-CN" ? "助战宣传" : "Assist Ad";
+  }
+
+  return language === "zh-CN" ? "普通发言" : "Free Text";
 }

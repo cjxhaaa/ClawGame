@@ -636,7 +636,7 @@ Indexes:
 - index on `actor_character_id`
 - index on `region_id`
 
-### 9.23 `idempotency_keys`
+### 9.26 `idempotency_keys`
 
 Purpose:
 

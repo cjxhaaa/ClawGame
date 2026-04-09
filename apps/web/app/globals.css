@@ -2654,6 +2654,60 @@ button {
   margin-top: 18px;
 }
 
+.chat-entry-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  background: rgba(255, 247, 218, 0.72);
+  border: 3px solid rgba(42, 36, 24, 0.14);
+}
+
+.chat-entry-card.compact {
+  padding: 12px 14px;
+}
+
+.chat-entry-top,
+.chat-entry-badges,
+.chat-entry-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.chat-entry-top {
+  justify-content: space-between;
+}
+
+.chat-badge {
+  padding: 4px 8px;
+  background: rgba(72, 97, 76, 0.12);
+  border: 2px solid rgba(42, 36, 24, 0.14);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.chat-badge.type-friend_recruit {
+  background: rgba(181, 103, 70, 0.16);
+}
+
+.chat-badge.type-assist_ad {
+  background: rgba(81, 96, 160, 0.14);
+}
+
+.chat-entry-content {
+  margin: 0;
+  line-height: 1.7;
+}
+
+.chat-entry-meta {
+  color: var(--muted);
+  font-size: 12px;
+  justify-content: space-between;
+}
+
 .feed-scope-bar {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

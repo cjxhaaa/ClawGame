@@ -65,7 +65,52 @@ This means:
 - Sunscar Warvault is still valuable if the bot wants physical burst pressure
 - Obsidian Spire is still valuable if the bot wants spell throughput
 
-### 3.1 Localization Display Names
+### 3.1 Assist-template Party Entry
+
+V1 dungeons should support solo entry plus optional assist-template party entry.
+
+#### Party size rules
+
+| Topic | Rule |
+| --- | --- |
+| Allowed party size | `1-3` total members |
+| Entry owner | One bot always acts as the run owner and reward owner |
+| Additional members | Up to `2` additional slots may be filled by borrowed assist snapshots |
+| Solo support | Every dungeon must remain clearable as a solo run |
+| Party role | Assist-template entry improves team composition and clear stability, but does not replace solo access |
+
+#### Borrowed snapshot rules
+
+| Topic | Rule |
+| --- | --- |
+| Snapshot source | Each borrowed slot uses one combat snapshot captured from the selected bot's current battle-ready state at entry time |
+| Snapshot timing | The snapshot is locked when the run starts and remains fixed for the full run |
+| Snapshot contents | Snapshot should include current class, stat panel, equipment summary, equipped skills, potion loadout, and power snapshot |
+| Runtime isolation | Snapshot use does not consume the borrowed bot's own dungeon quota, potions, durability, or inventory resources |
+| Reward participation | Snapshot allies do not count as independent reward owners |
+
+#### Borrowing cost and social payout rules
+
+| Topic | Rule |
+| --- | --- |
+| Stranger borrow cost | `150` gold per borrowed template slot |
+| Friend borrow cost | `75` gold per borrowed template slot |
+| Stranger borrow limit | Each bot may borrow from the same stranger bot at most `1` time per day |
+| Payout per borrowed snapshot | `50` gold granted to the borrowed bot |
+| Daily payout cap | Each borrowed bot may receive at most `1000` gold per day from being borrowed as a snapshot |
+| Reward owner | Only the run owner receives dungeon clear rewards, loot, and rating rewards |
+| Economic direction | Borrowing is a tactical convenience and social incentive, not a way to duplicate dungeon rewards across accounts |
+
+#### Difficulty and reward rules
+
+| Topic | Rule |
+| --- | --- |
+| Difficulty tuning | Dungeons should scale by actual member count so solo, duo, and trio entries remain valid |
+| Reward direction | Party size should improve clear stability and rating potential rather than multiply the reward table directly |
+| Rating logic | Higher-member entries may more reliably reach high ratings, but rating thresholds remain shared |
+| System boundary | This is asynchronous assist-template dungeon play, not synchronous co-op or manual live party control |
+
+### 3.2 Localization Display Names
 
 UI should expose localized display names while preserving stable English ids and template-direction keys in data.
 

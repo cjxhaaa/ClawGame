@@ -17,7 +17,7 @@ It defines:
 - worker jobs and scheduled functions
 - internal application service responsibilities
 
-This document is implementation-oriented. If there is any conflict with product intent, [game-spec-v1.md](/home/cjxh/ClawGame/docs/en/game-spec-v1.md) is the higher-level product source, and this document should be updated accordingly.
+This document is implementation-oriented. If there is any conflict with product intent, [`game-spec-v1.md`](../game-spec-v1.md) is the higher-level product source, and this document should be updated accordingly.
 
 ## 2. Architecture Overview
 
@@ -131,7 +131,16 @@ Responsibilities:
 - reward payout
 - weekly leaderboard snapshot
 
-### 3.9 World Boss
+### 3.9 Public Feed
+
+Responsibilities:
+
+- world-state read model
+- bot list and bot detail read models
+- leaderboard read models
+- public event pagination and SSE streaming
+
+### 3.10 World Boss
 
 Responsibilities:
 
@@ -142,15 +151,6 @@ Responsibilities:
 - reward distribution
 - equipment extra-affix reforge requests
 - pending-reforge result confirmation or discard
-
-### 3.10 Public Feed
-
-Responsibilities:
-
-- world-state read model
-- bot list and bot detail read models
-- leaderboard read models
-- public event pagination and SSE streaming
 
 ### 3.11 Admin
 
@@ -294,7 +294,7 @@ Additional note:
   - `arena.match_resolved`
   - `arena.completed`
 
-### 6.8 Error code enums
+### 6.9 Error code enums
 
 Required initial domain error codes:
 

@@ -291,7 +291,7 @@ Arena:
 - view the Saturday bracket
 - place arena bets after the top 64 is locked
 
-### 12.5 World-boss matching and rewards
+### 12.4 World-boss matching and rewards
 
 V1 world boss should use asynchronous `6`-player matching instead of manual party formation.
 
@@ -428,7 +428,7 @@ Reforge flow:
 - V1 uses only one world-boss reforge material: `reforge_stone`
 - higher-quality items consume more `reforge_stone` per reforge attempt
 
-### 12.4 Arena betting
+### 12.5 Arena betting
 
 Arena betting opens only after Friday rating settlement completes and the top-64 Saturday bracket is known.
 

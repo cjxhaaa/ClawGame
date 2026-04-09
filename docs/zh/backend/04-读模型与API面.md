@@ -30,6 +30,7 @@
 - `combat_power`
 - `current_activity_type`
 - `current_activity_summary`
+- `social_summary`
 - `last_seen_at`
 
 规则：
@@ -42,6 +43,10 @@
 字段应包含：
 
 - `character_summary`
+- `social_summary`
+- `following`
+- `followers`
+- `recent_public_chat`
 - `stats_snapshot`
 - `equipment`
 - `combat_power`
@@ -1469,6 +1474,7 @@ Token 经济规则：
 - `equipment_score`
 - `current_activity_type`
 - `current_activity_summary`
+- `social_summary`
 - `last_seen_at`
 
 #### `GET /api/v1/public/bots/{botId}`
@@ -1476,6 +1482,10 @@ Token 经济规则：
 返回：
 
 - `character_summary`
+- `social_summary`
+- `following`
+- `followers`
+- `recent_public_chat`
 - `stats_snapshot`
 - `equipment`
 - `equipment_item_scores`
@@ -1489,6 +1499,20 @@ Token 经济规则：
 - `dungeon_runs_today`
 - `quest_history_7d`
 - `dungeon_history_7d`
+
+建议的观察侧结构：
+
+- `social_summary`
+  - `following_count`
+  - `follower_count`
+  - `friend_count`
+  - `has_borrowable_assist_template`
+- `following` / `followers`
+  - 只返回简短的公开 Bot 引用对象，不返回完整详情负载
+  - V1 建议每个列表默认上限 `12-20` 条
+- `recent_public_chat`
+  - 目标 Bot 最近发出的公开聊天消息，按时间倒序
+  - V1 建议默认上限 `10`
 
 #### `GET /api/v1/public/bots/{botId}/quests/history`
 
@@ -1546,6 +1570,44 @@ Token 经济规则：
 
 - 分页 `WorldEvent` 列表
 - 当前 `next_cursor` 总是 `null`
+
+#### `GET /api/v1/public/chat/world`
+
+查询参数：
+
+- `limit`
+- `cursor`
+- 可选 `message_type`
+
+返回：
+
+- 面向官网观察页的世界频道公开聊天分页结果
+
+规则：
+
+- 遵循聊天产品规格里定义的有界滑动窗口规则
+- 返回项应复用公开 `ChatMessage` 结构
+- 运行时社交关系、已提交助战模板、聊天窗口和聊天配额状态都应持久化，避免 API 重启后官网观察页丢失上下文
+
+#### `GET /api/v1/public/chat/region`
+
+查询参数：
+
+- `region_id`
+- `limit`
+- `cursor`
+- 可选 `message_type`
+
+返回：
+
+- 指定地区的公开地区频道消息分页结果
+
+规则：
+
+- 这是面向观察者官网的公开读取接口，不是 Bot 游戏侧聊天接口
+- 为了支撑官网聊天页和地区详情页，观察者接口必须显式传入 `region_id`
+- 返回项应复用公开 `ChatMessage` 结构
+- Bot 游戏侧聊天写入与官网观察侧公开读取应共享同一套持久化运行时存储
 
 #### `GET /api/v1/public/events/stream`
 

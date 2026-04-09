@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 
 import {
   type BotCard,
+  type ChatMessage,
   type Leaderboards,
   type PublicWorldState,
   type Region,
@@ -48,6 +49,7 @@ type HomeConsoleProps = {
   regions: Region[];
   regionDetails: RegionDetail[];
   events: WorldEvent[];
+  chatMessages: ChatMessage[];
   leaderboards: Leaderboards;
   botDirectory: BotCard[];
 };
@@ -57,6 +59,7 @@ export default function HomeConsole({
   regions,
   regionDetails,
   events,
+  chatMessages,
   leaderboards,
   botDirectory,
 }: HomeConsoleProps) {
@@ -279,6 +282,9 @@ export default function HomeConsole({
             </Link>
             <Link className="portal-link" href={`/regions/${selectedRegionID}`}>
               {common.navRegions}
+            </Link>
+            <Link className="portal-link" href="/chat">
+              {common.navChat}
             </Link>
             <Link className="portal-link" href="/events">
               {common.navEvents}
@@ -534,6 +540,48 @@ export default function HomeConsole({
         <section className="pixel-panel bots-panel">
           <div className="section-header">
             <div>
+              <p className="eyebrow">{copy.worldChat}</p>
+              <h2>{copy.worldChatTitle}</h2>
+            </div>
+            <Link className="section-link" href="/chat">
+              {copy.openChat}
+            </Link>
+          </div>
+          <p className="section-note">{copy.worldChatNote}</p>
+
+          <div className="log-list">
+            {chatMessages.length > 0 ? (
+              chatMessages.map((message) => (
+                <article key={message.message_id} className="chat-entry-card">
+                  <div className="chat-entry-top">
+                    <Link className="inline-link" href={`/bots/${encodeURIComponent(message.bot_id)}`}>
+                      {message.bot_name}
+                    </Link>
+                    <div className="chat-entry-badges">
+                      <span className="chat-badge">{localizeChatChannel(message.channel_type, language, copy)}</span>
+                      <span className={`chat-badge type-${message.message_type}`}>
+                        {localizeChatType(message.message_type, language, copy)}
+                      </span>
+                    </div>
+                  </div>
+                  <p className="chat-entry-content">{message.content}</p>
+                  <p className="chat-entry-meta">
+                    {message.region_id
+                      ? localizeRegionName(message.region_id, message.region_id, language)
+                      : localizeChatChannel(message.channel_type, language, copy)}
+                    <span>{formatRelativeTime(message.created_at, language)}</span>
+                  </p>
+                </article>
+              ))
+            ) : (
+              <p className="empty-state">{copy.emptyChat}</p>
+            )}
+          </div>
+        </section>
+
+        <section className="pixel-panel bots-panel">
+          <div className="section-header">
+            <div>
               <p className="eyebrow">{copy.featuredBots}</p>
               <h2>{copy.featuredBotsTitle}</h2>
             </div>
@@ -672,4 +720,31 @@ function MetricBlock({ label, value }: { label: string; value: string }) {
       <strong>{value}</strong>
     </article>
   );
+}
+
+function localizeChatChannel(
+  channelType: ChatMessage["channel_type"],
+  language: string,
+  copy: typeof uiText["zh-CN"]["home"] | typeof uiText["en-US"]["home"],
+) {
+  if (channelType === "region") {
+    return copy.channelRegion;
+  }
+
+  return copy.channelWorld;
+}
+
+function localizeChatType(
+  messageType: ChatMessage["message_type"],
+  language: string,
+  copy: typeof uiText["zh-CN"]["home"] | typeof uiText["en-US"]["home"],
+) {
+  if (messageType === "friend_recruit") {
+    return copy.recruitChip;
+  }
+  if (messageType === "assist_ad") {
+    return copy.assistChip;
+  }
+
+  return language === "zh-CN" ? "普通发言" : "Free Text";
 }

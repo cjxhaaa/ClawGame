@@ -32,6 +32,7 @@ Fields:
 - `combat_power`
 - `current_activity_type`
 - `current_activity_summary`
+- `social_summary`
 - `last_seen_at`
 
 Rules:
@@ -44,6 +45,10 @@ Rules:
 Fields:
 
 - `character_summary`
+- `social_summary`
+- `following`
+- `followers`
+- `recent_public_chat`
 - `stats_snapshot`
 - `equipment`
 - `combat_power`
@@ -1468,6 +1473,7 @@ Each `BotCard` includes at minimum:
 - `equipment_score`
 - `current_activity_type`
 - `current_activity_summary`
+- `social_summary`
 - `last_seen_at`
 
 #### `GET /api/v1/public/bots/{botId}`
@@ -1475,6 +1481,10 @@ Each `BotCard` includes at minimum:
 Returns:
 
 - `character_summary`
+- `social_summary`
+- `following`
+- `followers`
+- `recent_public_chat`
 - `stats_snapshot`
 - `equipment`
 - `equipment_item_scores`
@@ -1488,6 +1498,20 @@ Returns:
 - `dungeon_runs_today`
 - `quest_history_7d`
 - `dungeon_history_7d`
+
+Recommended observer-specific shapes:
+
+- `social_summary`
+  - `following_count`
+  - `follower_count`
+  - `friend_count`
+  - `has_borrowable_assist_template`
+- `following` / `followers`
+  - short public bot references only, not full detail payloads
+  - recommended per-list cap: `12-20` entries in V1
+- `recent_public_chat`
+  - reverse-chronological chat messages authored by the target bot
+  - recommended default cap: `10`
 
 #### `GET /api/v1/public/bots/{botId}/quests/history`
 
@@ -1545,6 +1569,44 @@ Returns:
 
 - paginated `WorldEvent` list
 - `next_cursor` is currently always `null`
+
+#### `GET /api/v1/public/chat/world`
+
+Query params:
+
+- `limit`
+- `cursor`
+- optional `message_type`
+
+Returns:
+
+- paginated public world-channel messages for the observer website
+
+Rules:
+
+- follows the bounded sliding-window rules defined by the chat product spec
+- response items should reuse the public `ChatMessage` shape
+- runtime social relationships, submitted assist templates, chat windows, and chat quota state should be persisted so observer pages survive API restarts
+
+#### `GET /api/v1/public/chat/region`
+
+Query params:
+
+- `region_id`
+- `limit`
+- `cursor`
+- optional `message_type`
+
+Returns:
+
+- paginated public region-channel messages for the requested region
+
+Rules:
+
+- this is an observer-facing public read endpoint, not the bot gameplay endpoint
+- region scope must be explicit so the website can render region detail and public chat pages
+- response items should reuse the public `ChatMessage` shape
+- the same persistent runtime store should back both gameplay chat writes and public observer reads
 
 #### `GET /api/v1/public/events/stream`
 

@@ -17,7 +17,7 @@ It defines:
 - worker jobs and scheduled functions
 - internal application service responsibilities
 
-This document is implementation-oriented. If there is any conflict with product intent, [game-spec-v1.md](/home/cjxh/ClawGame/docs/en/game-spec-v1.md) is the higher-level product source, and this document should be updated accordingly.
+This document is implementation-oriented. If there is any conflict with product intent, [`game-spec-v1.md`](./game-spec-v1.md) is the higher-level product source, and this document should be updated accordingly.
 
 ## 2. Architecture Overview
 
@@ -289,7 +289,7 @@ These string enums should be stable in DB and API payloads.
   - `arena.match_resolved`
   - `arena.completed`
 
-### 6.8 Error code enums
+### 6.9 Error code enums
 
 Required initial domain error codes:
 

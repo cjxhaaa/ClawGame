@@ -2467,6 +2467,106 @@ func TestPublicRoutesReflectRuntimeData(t *testing.T) {
 
 	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/runs/"+enterResponse.Data.RunID+"/claim", nil, token, http.StatusOK, nil)
 
+	account, err := server.authService.Authenticate(token)
+	if err != nil {
+		t.Fatalf("expected public test token to authenticate: %v", err)
+	}
+	publicCharacter, exists := server.characterService.GetCharacterByAccount(account)
+	if !exists {
+		t.Fatal("expected public test character to exist")
+	}
+
+	peerToken := createQuestE2ECharacter(t, server, "bot-public-peer", "PublicPeer")
+	peerAccount, err := server.authService.Authenticate(peerToken)
+	if err != nil {
+		t.Fatalf("expected peer token to authenticate: %v", err)
+	}
+	peerCharacter, exists := server.characterService.GetCharacterByAccount(peerAccount)
+	if !exists {
+		t.Fatal("expected peer character to exist")
+	}
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/follows/"+peerCharacter.CharacterID, nil, token, http.StatusOK, nil)
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/me/follows/"+publicCharacter.CharacterID, nil, peerToken, http.StatusOK, nil)
+	doJSONRequest(t, server, http.MethodPut, "/api/v1/me/assist-template", map[string]any{
+		"template_name": "Public Runner Assist",
+	}, token, http.StatusOK, nil)
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/chat/world", map[string]any{
+		"message_type": "assist_ad",
+		"content":      "PublicRunner is available for assist duty.",
+	}, token, http.StatusOK, nil)
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/chat/region", map[string]any{
+		"message_type": "friend_recruit",
+		"content":      "PublicRunner recruiting in Greenfield Village.",
+	}, token, http.StatusOK, nil)
+
+	var meFollows struct {
+		Data struct {
+			Items []struct {
+				BotID         string `json:"bot_id"`
+				RelationLabel string `json:"relation_label"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/follows", nil, token, http.StatusOK, &meFollows)
+	if len(meFollows.Data.Items) != 1 || meFollows.Data.Items[0].BotID != peerCharacter.CharacterID {
+		t.Fatal("expected /me/follows to expose the followed peer bot")
+	}
+	if meFollows.Data.Items[0].RelationLabel != "friends" {
+		t.Fatalf("expected mutual follow relation label friends, got %q", meFollows.Data.Items[0].RelationLabel)
+	}
+
+	var meFriends struct {
+		Data struct {
+			Items []struct {
+				BotID string `json:"bot_id"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/friends", nil, token, http.StatusOK, &meFriends)
+	if len(meFriends.Data.Items) != 1 || meFriends.Data.Items[0].BotID != peerCharacter.CharacterID {
+		t.Fatal("expected /me/friends to expose the mutual friend bot")
+	}
+
+	var assistTemplate struct {
+		Data struct {
+			TemplateName string `json:"template_name"`
+			IsSubmitted  bool   `json:"is_submitted"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/me/assist-template", nil, token, http.StatusOK, &assistTemplate)
+	if !assistTemplate.Data.IsSubmitted || assistTemplate.Data.TemplateName != "Public Runner Assist" {
+		t.Fatal("expected /me/assist-template to return the submitted template")
+	}
+
+	var privateWorldChat struct {
+		Data struct {
+			Items []struct {
+				Content string `json:"content"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/chat/world?limit=10", nil, token, http.StatusOK, &privateWorldChat)
+	if len(privateWorldChat.Data.Items) == 0 || privateWorldChat.Data.Items[0].Content != "PublicRunner is available for assist duty." {
+		t.Fatal("expected /chat/world to expose the posted runtime world message")
+	}
+
+	var privateRegionChat struct {
+		Data struct {
+			Items []struct {
+				Content  string `json:"content"`
+				RegionID string `json:"region_id"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/chat/region?limit=10", nil, token, http.StatusOK, &privateRegionChat)
+	if len(privateRegionChat.Data.Items) == 0 || privateRegionChat.Data.Items[0].Content != "PublicRunner recruiting in Greenfield Village." {
+		t.Fatal("expected /chat/region to expose the posted runtime region message")
+	}
+	if privateRegionChat.Data.Items[0].RegionID != "greenfield_village" {
+		t.Fatalf("expected /chat/region to bind to current region greenfield_village, got %q", privateRegionChat.Data.Items[0].RegionID)
+	}
+
 	var worldStateResponse struct {
 		Data struct {
 			ActiveBotCount       int `json:"active_bot_count"`
@@ -2538,6 +2638,20 @@ func TestPublicRoutesReflectRuntimeData(t *testing.T) {
 	botID := ""
 	var publicBotDetail struct {
 		Data struct {
+			SocialSummary struct {
+				FollowingCount              int  `json:"following_count"`
+				FollowerCount               int  `json:"follower_count"`
+				FriendCount                 int  `json:"friend_count"`
+				HasBorrowableAssistTemplate bool `json:"has_borrowable_assist_template"`
+			} `json:"social_summary"`
+			Following        []any `json:"following"`
+			Followers        []any `json:"followers"`
+			RecentPublicChat []struct {
+				MessageID   string `json:"message_id"`
+				ChannelType string `json:"channel_type"`
+				MessageType string `json:"message_type"`
+				Content     string `json:"content"`
+			} `json:"recent_public_chat"`
 			CompletedQuestsToday []any `json:"completed_quests_today"`
 			DungeonRunsToday     []any `json:"dungeon_runs_today"`
 			QuestHistory7D       []any `json:"quest_history_7d"`
@@ -2556,6 +2670,67 @@ func TestPublicRoutesReflectRuntimeData(t *testing.T) {
 	}
 	if botID == "" {
 		t.Fatal("expected one searched public bot to expose both quest and dungeon 7-day history")
+	}
+	if publicBotDetail.Data.SocialSummary.FollowingCount != 1 || publicBotDetail.Data.SocialSummary.FollowerCount != 1 || publicBotDetail.Data.SocialSummary.FriendCount != 1 {
+		t.Fatal("expected public bot detail to reflect real social counts")
+	}
+	if !publicBotDetail.Data.SocialSummary.HasBorrowableAssistTemplate {
+		t.Fatal("expected public bot detail to reflect submitted assist template")
+	}
+	if len(publicBotDetail.Data.Following) != 1 || len(publicBotDetail.Data.Followers) != 1 {
+		t.Fatal("expected public bot detail to expose following and follower lists")
+	}
+	if len(publicBotDetail.Data.RecentPublicChat) == 0 {
+		t.Fatal("expected public bot detail to expose recent public chat")
+	}
+
+	var publicWorldChat struct {
+		Data struct {
+			Items []struct {
+				MessageID   string `json:"message_id"`
+				ChannelType string `json:"channel_type"`
+				BotName     string `json:"bot_name"`
+				MessageType string `json:"message_type"`
+			} `json:"items"`
+			NextCursor any `json:"next_cursor"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/public/chat/world?limit=10", nil, "", http.StatusOK, &publicWorldChat)
+	if len(publicWorldChat.Data.Items) == 0 {
+		t.Fatal("expected public world chat endpoint to return observer messages")
+	}
+	if publicWorldChat.Data.Items[0].MessageID == "" || publicWorldChat.Data.Items[0].BotName == "" {
+		t.Fatal("expected public world chat items to include message id and bot name")
+	}
+	if publicWorldChat.Data.Items[0].ChannelType != "world" {
+		t.Fatalf("expected world chat channel_type world, got %q", publicWorldChat.Data.Items[0].ChannelType)
+	}
+	if publicWorldChat.Data.Items[0].MessageType != "assist_ad" {
+		t.Fatalf("expected world chat to prefer runtime assist_ad messages, got %q", publicWorldChat.Data.Items[0].MessageType)
+	}
+
+	var publicRegionChat struct {
+		Data struct {
+			Items []struct {
+				ChannelType string `json:"channel_type"`
+				RegionID    string `json:"region_id"`
+				MessageType string `json:"message_type"`
+				Content     string `json:"content"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	doJSONRequest(t, server, http.MethodGet, "/api/v1/public/chat/region?region_id=greenfield_village&limit=10", nil, "", http.StatusOK, &publicRegionChat)
+	if len(publicRegionChat.Data.Items) == 0 {
+		t.Fatal("expected public region chat endpoint to return region-scoped observer messages")
+	}
+	if publicRegionChat.Data.Items[0].ChannelType != "region" {
+		t.Fatalf("expected region chat channel_type region, got %q", publicRegionChat.Data.Items[0].ChannelType)
+	}
+	if publicRegionChat.Data.Items[0].RegionID != "greenfield_village" {
+		t.Fatalf("expected region chat items scoped to greenfield_village, got %q", publicRegionChat.Data.Items[0].RegionID)
+	}
+	if publicRegionChat.Data.Items[0].Content != "PublicRunner recruiting in Greenfield Village." {
+		t.Fatalf("expected public region chat to prefer runtime region messages, got %q", publicRegionChat.Data.Items[0].Content)
 	}
 
 	var questHistoryResponse struct {

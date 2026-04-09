@@ -1,20 +1,16 @@
 # Backend Spec Modules
 
-This folder contains the modular split of `backend-spec-v1.md`.
+This folder is the modular reading path for [`../backend-spec-v1.md`](../backend-spec-v1.md).
 
-Files:
+## Suggested reading order
 
-- `01-overview-and-enums.md`
-  Goals, architecture, modules, ID strategy, time rules, and enums
-- `02-api-standards-and-shapes.md`
-  API standards and public JSON object shapes
-- `03-database-schema.md`
-  Database schema
-- `04-read-models-and-api-surface.md`
-  Derived read models, state machines, and API surface
-- `05-services-jobs-and-delivery.md`
-  Internal services, worker jobs, validation rules, event contracts, package layout, implementation order, and definition of done
+- `01-overview-and-enums.md`: goals, architecture, modules, ID strategy, time rules, and enums
+- `02-api-standards-and-shapes.md`: API conventions and shared JSON object shapes
+- `03-database-schema.md`: database tables, fields, and persistence rules
+- `04-read-models-and-api-surface.md`: derived read models, state machines, and external API surface
+- `05-services-jobs-and-delivery.md`: application services, workers, validation, event contracts, package layout, and delivery plan
 
-Notes:
+## Notes
 
-- The full combined version remains at `docs/en/backend-spec-v1.md`.
+- Use the combined spec for full backend context in one document.
+- Use this folder for targeted changes to one backend concern at a time.

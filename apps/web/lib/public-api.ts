@@ -212,6 +212,38 @@ export type PublicEventsPage = {
   next_cursor?: string | null;
 };
 
+export type ChatMessage = {
+  message_id: string;
+  channel_type: "world" | "region";
+  region_id?: string | null;
+  bot_id: string;
+  bot_name: string;
+  message_type: "free_text" | "friend_recruit" | "assist_ad";
+  content: string;
+  created_at: string;
+};
+
+export type PublicChatPage = {
+  items: ChatMessage[];
+  next_cursor?: string | null;
+};
+
+export type SocialSummary = {
+  following_count: number;
+  follower_count: number;
+  friend_count: number;
+  has_borrowable_assist_template: boolean;
+};
+
+export type SocialBotRef = {
+  bot_id: string;
+  bot_name: string;
+  class?: string;
+  weapon_style?: string;
+  region_id?: string;
+  relation_label?: string;
+};
+
 export type LeaderboardEntry = {
   rank: number;
   character_id: string;
@@ -254,6 +286,7 @@ export type BotCard = {
   };
   current_activity_type: string;
   current_activity_summary: string;
+  social_summary?: SocialSummary;
   last_seen_at: string;
 };
 
@@ -347,6 +380,10 @@ export type DungeonRunDetail = {
 
 export type BotDetail = {
   character_summary: CharacterSummary;
+  social_summary: SocialSummary;
+  following: SocialBotRef[];
+  followers: SocialBotRef[];
+  recent_public_chat: ChatMessage[];
   stats_snapshot: {
     max_hp: number;
     max_mp?: number;
@@ -405,6 +442,7 @@ export const fallbackWorldState: PublicWorldState = {
 export const fallbackRegions: Region[] = [];
 export const fallbackRegionDetails: RegionDetail[] = [];
 export const fallbackEvents: WorldEvent[] = [];
+export const fallbackChatMessages: ChatMessage[] = [];
 export const fallbackEvent: WorldEvent = {
   event_id: "",
   event_type: "unknown",
@@ -454,6 +492,15 @@ export const fallbackBotDetail: BotDetail = {
     location_region_id: "main_city",
     status: "offline",
   },
+  social_summary: {
+    following_count: 0,
+    follower_count: 0,
+    friend_count: 0,
+    has_borrowable_assist_template: false,
+  },
+  following: [],
+  followers: [],
+  recent_public_chat: [],
   stats_snapshot: {
     max_hp: 0,
     max_mp: 0,
@@ -531,10 +578,11 @@ export const fallbackDungeonRunDetail: DungeonRunDetail = {
 };
 
 export async function getHomepageData() {
-  const [worldState, regions, events, leaderboards, botDirectory] = await Promise.all([
+  const [worldState, regions, events, chatMessages, leaderboards, botDirectory] = await Promise.all([
     getWorldState(),
     getRegions(),
     getEvents(6),
+    getPublicWorldChatMessages(10),
     getLeaderboards(),
     getPublicBots({ limit: 80 }),
   ]);
@@ -546,6 +594,7 @@ export async function getHomepageData() {
     regions,
     regionDetails,
     events,
+    chatMessages,
     leaderboards,
     botDirectory,
   };
@@ -620,6 +669,48 @@ export async function getPublicEventsPage(params?: {
   });
 }
 
+export async function getPublicWorldChatMessages(limit = 10) {
+  const payload = await getPublicWorldChatPage({ limit });
+
+  return payload.items;
+}
+
+export async function getPublicWorldChatPage(params?: {
+  limit?: number;
+  cursor?: string;
+  messageType?: ChatMessage["message_type"];
+}) {
+  const search = new URLSearchParams();
+  if (params?.limit) search.set("limit", String(params.limit));
+  if (params?.cursor) search.set("cursor", params.cursor);
+  if (params?.messageType) search.set("message_type", params.messageType);
+  const suffix = search.toString();
+
+  return fetchData<PublicChatPage>(`/api/v1/public/chat/world${suffix ? `?${suffix}` : ""}`, {
+    items: fallbackChatMessages,
+    next_cursor: null,
+  });
+}
+
+export async function getPublicRegionChatPage(params: {
+  regionID: string;
+  limit?: number;
+  cursor?: string;
+  messageType?: ChatMessage["message_type"];
+}) {
+  const search = new URLSearchParams();
+  search.set("region_id", params.regionID);
+  if (params.limit) search.set("limit", String(params.limit));
+  if (params.cursor) search.set("cursor", params.cursor);
+  if (params.messageType) search.set("message_type", params.messageType);
+  const suffix = search.toString();
+
+  return fetchData<PublicChatPage>(`/api/v1/public/chat/region?${suffix}`, {
+    items: fallbackChatMessages,
+    next_cursor: null,
+  });
+}
+
 export async function getPublicEventDetail(eventID: string): Promise<WorldEvent | null> {
   try {
     const response = await fetch(`${apiBaseUrl()}/api/v1/public/events/${encodeURIComponent(eventID)}`, {
@@ -683,11 +774,19 @@ export async function getPublicBots(params?: {
     { items: fallbackBotDirectory },
   );
 
-  return payload.items;
+  return payload.items.map((item) => ({
+    ...item,
+    social_summary: {
+      following_count: item.social_summary?.following_count ?? 0,
+      follower_count: item.social_summary?.follower_count ?? 0,
+      friend_count: item.social_summary?.friend_count ?? 0,
+      has_borrowable_assist_template: item.social_summary?.has_borrowable_assist_template ?? false,
+    },
+  }));
 }
 
 export async function getPublicBotDetail(botID: string) {
-  return fetchData<BotDetail>(
+  const payload = await fetchData<BotDetail>(
     `/api/v1/public/bots/${encodeURIComponent(botID)}`,
     {
       ...fallbackBotDetail,
@@ -697,6 +796,19 @@ export async function getPublicBotDetail(botID: string) {
       },
     },
   );
+
+  return {
+    ...payload,
+    social_summary: {
+      following_count: payload.social_summary?.following_count ?? 0,
+      follower_count: payload.social_summary?.follower_count ?? 0,
+      friend_count: payload.social_summary?.friend_count ?? 0,
+      has_borrowable_assist_template: payload.social_summary?.has_borrowable_assist_template ?? false,
+    },
+    following: payload.following ?? [],
+    followers: payload.followers ?? [],
+    recent_public_chat: payload.recent_public_chat ?? [],
+  };
 }
 
 export async function getBotQuestHistory(botID: string, days = 7) {

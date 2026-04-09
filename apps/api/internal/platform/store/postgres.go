@@ -9,6 +9,7 @@ import (
 	"clawgame/apps/api/internal/auth"
 	"clawgame/apps/api/internal/characters"
 	"clawgame/apps/api/internal/quests"
+	"clawgame/apps/api/internal/social"
 	"clawgame/apps/api/internal/world"
 
 	_ "github.com/lib/pq"
@@ -638,6 +639,223 @@ func (s *PostgresStore) SaveBoard(board quests.StoredBoard) error {
 	return tx.Commit()
 }
 
+func (s *PostgresStore) LoadFollows() ([]social.StoredFollow, error) {
+	rows, err := s.db.Query(`
+		SELECT actor_character_id, target_character_id, created_at
+		FROM social_follows
+		ORDER BY created_at ASC, actor_character_id ASC, target_character_id ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]social.StoredFollow, 0)
+	for rows.Next() {
+		var item social.StoredFollow
+		var createdAt time.Time
+		if err := rows.Scan(&item.ActorID, &item.TargetID, &createdAt); err != nil {
+			return nil, err
+		}
+		item.CreatedAt = createdAt.In(s.loc).Format(time.RFC3339)
+		items = append(items, item)
+	}
+
+	return items, rows.Err()
+}
+
+func (s *PostgresStore) SaveFollow(stored social.StoredFollow) error {
+	createdAt := parseRFC3339InLocation(stored.CreatedAt, s.loc)
+	now := time.Now().In(s.loc)
+	_, err := s.db.Exec(`
+		INSERT INTO social_follows (actor_character_id, target_character_id, created_at, updated_at)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (actor_character_id, target_character_id) DO UPDATE
+		SET created_at = EXCLUDED.created_at,
+		    updated_at = EXCLUDED.updated_at
+	`, stored.ActorID, stored.TargetID, createdAt, now)
+	return err
+}
+
+func (s *PostgresStore) DeleteFollow(actorID, targetID string) error {
+	_, err := s.db.Exec(`DELETE FROM social_follows WHERE actor_character_id = $1 AND target_character_id = $2`, actorID, targetID)
+	return err
+}
+
+func (s *PostgresStore) LoadAssistTemplates() ([]social.AssistTemplate, error) {
+	rows, err := s.db.Query(`
+		SELECT character_id, template_name, is_submitted, updated_at
+		FROM assist_templates
+		ORDER BY updated_at DESC, character_id ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]social.AssistTemplate, 0)
+	for rows.Next() {
+		var item social.AssistTemplate
+		var updatedAt time.Time
+		if err := rows.Scan(&item.BotID, &item.TemplateName, &item.IsSubmitted, &updatedAt); err != nil {
+			return nil, err
+		}
+		item.UpdatedAt = updatedAt.In(s.loc).Format(time.RFC3339)
+		items = append(items, item)
+	}
+
+	return items, rows.Err()
+}
+
+func (s *PostgresStore) SaveAssistTemplate(template social.AssistTemplate) error {
+	updatedAt := parseRFC3339InLocation(template.UpdatedAt, s.loc)
+	_, err := s.db.Exec(`
+		INSERT INTO assist_templates (character_id, template_name, is_submitted, updated_at)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (character_id) DO UPDATE
+		SET template_name = EXCLUDED.template_name,
+		    is_submitted = EXCLUDED.is_submitted,
+		    updated_at = EXCLUDED.updated_at
+	`, template.BotID, template.TemplateName, template.IsSubmitted, updatedAt)
+	return err
+}
+
+func (s *PostgresStore) LoadChatMessages() ([]social.ChatMessage, error) {
+	rows, err := s.db.Query(`
+		SELECT id, channel_type, COALESCE(region_id, ''), bot_id, bot_name, message_type, content, created_at
+		FROM chat_messages
+		ORDER BY created_at DESC, id DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]social.ChatMessage, 0)
+	for rows.Next() {
+		var item social.ChatMessage
+		var createdAt time.Time
+		if err := rows.Scan(&item.MessageID, &item.ChannelType, &item.RegionID, &item.BotID, &item.BotName, &item.MessageType, &item.Content, &createdAt); err != nil {
+			return nil, err
+		}
+		item.CreatedAt = createdAt.In(s.loc).Format(time.RFC3339)
+		items = append(items, item)
+	}
+
+	return items, rows.Err()
+}
+
+func (s *PostgresStore) LoadChatQuotas() ([]social.StoredChatQuota, error) {
+	rows, err := s.db.Query(`
+		SELECT bot_id, reset_date, world_count, region_count,
+		       world_cooldown_until, region_cooldown_until
+		FROM chat_quotas
+		ORDER BY bot_id ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]social.StoredChatQuota, 0)
+	for rows.Next() {
+		var item social.StoredChatQuota
+		var worldCooldown sql.NullTime
+		var regionCooldown sql.NullTime
+		if err := rows.Scan(
+			&item.BotID,
+			&item.ResetDate,
+			&item.WorldCount,
+			&item.RegionCount,
+			&worldCooldown,
+			&regionCooldown,
+		); err != nil {
+			return nil, err
+		}
+		if worldCooldown.Valid {
+			item.WorldCooldown = worldCooldown.Time.In(s.loc).Format(time.RFC3339)
+		}
+		if regionCooldown.Valid {
+			item.RegionCooldown = regionCooldown.Time.In(s.loc).Format(time.RFC3339)
+		}
+		items = append(items, item)
+	}
+
+	return items, rows.Err()
+}
+
+func (s *PostgresStore) SaveChatMessageAndQuota(message social.ChatMessage, quota social.StoredChatQuota) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	createdAt := parseRFC3339InLocation(message.CreatedAt, s.loc)
+	worldCooldown := parseNullableRFC3339InLocation(quota.WorldCooldown, s.loc)
+	regionCooldown := parseNullableRFC3339InLocation(quota.RegionCooldown, s.loc)
+	now := time.Now().In(s.loc)
+
+	if _, err := tx.Exec(`
+		INSERT INTO chat_quotas (
+			bot_id, reset_date, world_count, region_count,
+			world_cooldown_until, region_cooldown_until, updated_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (bot_id) DO UPDATE
+		SET reset_date = EXCLUDED.reset_date,
+		    world_count = EXCLUDED.world_count,
+		    region_count = EXCLUDED.region_count,
+		    world_cooldown_until = EXCLUDED.world_cooldown_until,
+		    region_cooldown_until = EXCLUDED.region_cooldown_until,
+		    updated_at = EXCLUDED.updated_at
+	`, quota.BotID, quota.ResetDate, quota.WorldCount, quota.RegionCount, nullableTime(worldCooldown), nullableTime(regionCooldown), now); err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(`
+		INSERT INTO chat_messages (id, channel_type, region_id, bot_id, bot_name, message_type, content, created_at)
+		VALUES ($1, $2, NULLIF($3, ''), $4, $5, $6, $7, $8)
+		ON CONFLICT (id) DO NOTHING
+	`, message.MessageID, message.ChannelType, message.RegionID, message.BotID, message.BotName, message.MessageType, message.Content, createdAt); err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(`
+		DELETE FROM chat_messages
+		WHERE channel_type = 'world'
+		  AND id NOT IN (
+		    SELECT id
+		    FROM chat_messages
+		    WHERE channel_type = 'world'
+		    ORDER BY created_at DESC, id DESC
+		    LIMIT 1000
+		  )
+	`); err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(`
+		DELETE FROM chat_messages
+		WHERE id IN (
+			SELECT id FROM (
+				SELECT id,
+				       ROW_NUMBER() OVER (
+				         PARTITION BY COALESCE(region_id, '')
+				         ORDER BY created_at DESC, id DESC
+				       ) AS row_num
+				FROM chat_messages
+				WHERE channel_type = 'region'
+			) ranked
+			WHERE ranked.row_num > 500
+		)
+	`); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
 func parseRFC3339InLocation(raw string, loc *time.Location) time.Time {
 	if raw == "" {
 		return time.Now().In(loc)
@@ -649,6 +867,13 @@ func parseRFC3339InLocation(raw string, loc *time.Location) time.Time {
 	}
 
 	return parsed.In(loc)
+}
+
+func parseNullableRFC3339InLocation(raw string, loc *time.Location) time.Time {
+	if raw == "" {
+		return time.Time{}
+	}
+	return parseRFC3339InLocation(raw, loc)
 }
 
 func businessDate(now time.Time) string {
@@ -717,6 +942,42 @@ func (s *PostgresStore) ensureSchema() error {
 			updated_at timestamptz NOT NULL
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_auth_challenges_expires_at ON auth_challenges(expires_at)`,
+		`CREATE TABLE IF NOT EXISTS social_follows (
+			actor_character_id text NOT NULL,
+			target_character_id text NOT NULL,
+			created_at timestamptz NOT NULL,
+			updated_at timestamptz NOT NULL,
+			PRIMARY KEY (actor_character_id, target_character_id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_social_follows_target ON social_follows(target_character_id, created_at DESC)`,
+		`CREATE TABLE IF NOT EXISTS assist_templates (
+			character_id text PRIMARY KEY,
+			template_name text NOT NULL,
+			is_submitted boolean NOT NULL DEFAULT true,
+			updated_at timestamptz NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS chat_messages (
+			id text PRIMARY KEY,
+			channel_type text NOT NULL,
+			region_id text,
+			bot_id text NOT NULL,
+			bot_name text NOT NULL,
+			message_type text NOT NULL,
+			content text NOT NULL,
+			created_at timestamptz NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_chat_messages_world ON chat_messages(channel_type, created_at DESC, id DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_chat_messages_region ON chat_messages(channel_type, region_id, created_at DESC, id DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_chat_messages_bot ON chat_messages(bot_id, created_at DESC, id DESC)`,
+		`CREATE TABLE IF NOT EXISTS chat_quotas (
+			bot_id text PRIMARY KEY,
+			reset_date text NOT NULL,
+			world_count integer NOT NULL DEFAULT 0,
+			region_count integer NOT NULL DEFAULT 0,
+			world_cooldown_until timestamptz,
+			region_cooldown_until timestamptz,
+			updated_at timestamptz NOT NULL
+		)`,
 	}
 
 	for _, statement := range statements {
@@ -730,6 +991,13 @@ func (s *PostgresStore) ensureSchema() error {
 
 func nullableString(value string) any {
 	if value == "" {
+		return nil
+	}
+	return value
+}
+
+func nullableTime(value time.Time) any {
+	if value.IsZero() {
 		return nil
 	}
 	return value

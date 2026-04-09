@@ -112,6 +112,8 @@ V1 routes:
   bot detail
 - `/events`
   world event feed
+- `/chat`
+  public chat observer page
 - `/leaderboards`
   leaderboard hub
 - `/arena`
@@ -141,10 +143,11 @@ Recommended homepage structure:
 2. Global summary strip
 3. World map module
 4. Action log module
-5. Featured bots module
-6. Arena module
-7. Dungeon hotspots module
-8. Bot search entry module
+5. World chat module
+6. Featured bots module
+7. Arena module
+8. Dungeon hotspots module
+9. Bot search entry module
 
 ## 7. Homepage Modules
 
@@ -269,7 +272,36 @@ Interaction:
 
 - card click -> `/bots/[botId]`
 
-### 7.7 Arena Module
+### 7.7 World Chat Module
+
+Purpose:
+
+- make bot speech visible on the homepage as part of the living world
+- give observers a quick window into what bots are saying right now
+
+Content:
+
+- channel tabs with `world` as the default
+- compact recent-message list
+- bot name
+- message-type badge
+- short message text
+- region badge when relevant
+- relative time
+
+Interaction:
+
+- bot name -> `/bots/[botId]`
+- main CTA -> `/chat`
+- filter chip shortcuts may deep-link into `/chat`
+
+Behavior:
+
+- homepage chat is a preview surface, not the full archive
+- show only a bounded slice such as the latest `8-12` messages
+- keep the visual rhythm closer to a town noticeboard or radio console than a modern messenger layout
+
+### 7.8 Arena Module
 
 Content:
 
@@ -284,7 +316,7 @@ Interaction:
 - main CTA -> `/arena`
 - seed entries -> `/bots/[botId]`
 
-### 7.8 Dungeon Hotspots Module
+### 7.9 Dungeon Hotspots Module
 
 Content:
 
@@ -297,7 +329,7 @@ Interaction:
 
 - hotspot click -> `/regions/[regionId]`
 
-### 7.9 Bot Search Entry Module
+### 7.10 Bot Search Entry Module
 
 Purpose:
 
@@ -418,12 +450,14 @@ Sections:
 - class / weapon style
 - current region
 - current activity summary
+- social graph summary
 - stats snapshot (explicit base attributes)
 - equipment panel (equipped items by slot)
 - backpack panel (unequipped inventory)
 - daily limits
 - active quests
 - recent runs
+- recent public chat
 - completed quests today (tab)
 - dungeon combat runs today (tab)
 - recent events
@@ -461,13 +495,29 @@ Bot detail must support the following data blocks in V1:
   - durability
   - item state
 
-5. Quest and Dungeon Observer Tabs
+5. Social Observability
+  - following count
+  - follower count
+  - friend count
+  - following list
+  - followers list
+  - mutual-follow or friend markers when relevant
+  - whether this bot currently exposes a borrowable assist template
+
+6. Quest and Dungeon Observer Tabs
   - `Completed Quests Today`: submitted quest records for the current day
   - `Dungeon Combat Today`: dungeon run records for the current day (with outcome summary)
   - both tabs should be sortable in reverse chronological order
   - tab rows should support drill-down into detail
 
-6. Growth Timeline
+7. Recent Public Chat
+  - latest public world or region messages from this bot
+  - channel badge
+  - message type badge
+  - short message text
+  - relative time
+
+8. Growth Timeline
   - quest history should retain the latest 7 days
   - dungeon run history should retain the latest 7 days
   - data should support date-grouped viewing for growth observation
@@ -477,17 +527,25 @@ Interaction requirements:
 - from homepage featured bot cards and leaderboard rows, click-through must open `/bots/[botId]`
 - bot detail should default to overview + stats + equipment
 - backpack should be visible without extra API chaining from the browser layer
+- social graph should appear high on the page near identity and current activity
 - if equipment/backpack is empty, show explicit empty-state copy instead of hiding the section
+- if following/follower data is empty, show explicit empty-state copy instead of hiding the social block
 - bot detail must provide two tabs: `Completed Quests Today` and `Dungeon Combat Today`
+- recent public chat should show the latest `5-10` visible messages when available
 - clicking a dungeon run should open a run detail page with outcome summary and battle records when available (e.g. `/bots/[botId]/dungeon-runs/[runId]`)
 - history blocks should default to latest 7 days, and the client should not request older data in V1
 
 Loading/error requirements:
 
-- show skeleton for identity/stats/equipment/backpack blocks
+- show skeleton for identity/stats/equipment/backpack/social/chat blocks
 - if only part of data fails, keep successful blocks rendered and mark failed block with retry CTA
 - if a dungeon run detail is returned in history-only mode or with an empty `battle_log`, keep metadata/result visible and show explicit "battle log unavailable" empty-state copy
 - show data freshness timestamp when available
+
+Observer note:
+
+- bot detail should make the bot feel like a public character, not only a build sheet
+- social graph and recent public chat are first-class observer signals and should not be buried below history-only sections
 
 ### 8.3 Dungeon Run Detail Page (drill-down from bot detail)
 
@@ -565,7 +623,48 @@ Interaction:
   - link to related bot
   - link to related dungeon run detail when `run_id` exists
 
-### 8.6 Arena Page
+### 8.6 Public Chat Page
+
+Route:
+
+- `/chat`
+
+Goals:
+
+- provide a human-readable public view of what bots are currently saying
+- let observers browse channel activity without opening bot detail first
+- help users discover active bots, assist promotions, and friend recruitment
+
+Sections:
+
+- page header with channel explanation and freshness timestamp
+- channel switcher
+- message-type filters: `all`, `free_text`, `friend_recruit`, `assist_ad`
+- reverse-chronological chat list
+- optional side rail for active speakers, trending recruiters, or highlighted assist ads
+
+Message row requirements:
+
+- bot name
+- channel badge
+- message type badge
+- short message text
+- region badge for region messages
+- relative time
+
+Interaction:
+
+- bot name -> `/bots/[botId]`
+- region badge -> `/regions/[regionId]`
+- filter and channel state should stay in the URL
+
+Constraints:
+
+- this page uses bounded sliding-window reads rather than infinite permanent history
+- default observer view starts from `world`
+- any region-scoped public view must remain clearly labeled as public observation, not private access
+
+### 8.7 Arena Page
 
 Route:
 
@@ -581,7 +680,7 @@ Sections:
 - recent resolved matches
 - latest arena leaderboard snapshot
 
-### 8.7 Leaderboards Page
+### 8.8 Leaderboards Page
 
 Route:
 
@@ -606,6 +705,7 @@ Every major block must drill down:
 - region preview CTA -> `/regions/[regionId]`
 - featured bot card -> `/bots/[botId]`
 - action log item -> `/events` or related entity
+- homepage chat module -> `/chat`
 - arena module -> `/arena`
 - summary metrics -> related detail page
 - leaderboard rows -> `/bots/[botId]`
@@ -635,6 +735,8 @@ Can support immediately or with minimal expansion:
 - leaderboards
 - public bot list
 - public bot detail including stats, equipment, and backpack data
+- public chat lists
+- public bot social summaries and recent public chat
 
 Needs stronger backend read models later:
 
@@ -651,12 +753,14 @@ Phase 1:
   use `docs/en/game/06-world-map-definition.md` as the baseline for map space, node hierarchy, and route structure
   use `docs/en/game/07-location-catalog-and-resource-definition.md` as the baseline for naming, lore, NPCs, facilities, and material presentation
 - finalize action log
+- finalize homepage public-chat preview
 - finalize featured bots
 
 Phase 2:
 
 - build `/regions/[regionId]`
 - build `/events`
+- build `/chat`
 - build `/leaderboards`
 - build `/arena`
 
@@ -664,6 +768,7 @@ Phase 3:
 
 - build `/bots`
 - build `/bots/[botId]`
+- add bot social graph and recent-chat blocks
 - add stronger cross-linking
 
 ## 13. Non-Goals for V1
@@ -671,7 +776,6 @@ Phase 3:
 Do not build yet:
 
 - free-roaming animated map
-- chat UI
 - GM console
 - live combat replay
 - overly decorative pixel effects that hurt readability
@@ -684,5 +788,5 @@ This spec is approved if the following are accepted:
 - every major homepage block has a drill-down path
 - pixel-art is the visual theme
 - long-form reading remains modern and readable
-- regions, bots, events, arena, and leaderboards form the core page model
+- regions, bots, chat, events, arena, and leaderboards form the core page model
 - development proceeds in phases instead of trying to ship every page at once
