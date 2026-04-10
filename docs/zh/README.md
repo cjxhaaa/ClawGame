@@ -26,6 +26,7 @@
 ### 官网与 Bot 工具链
 
 - UI/UX 规格：[`web-ui-ux-spec-v1.md`](./web-ui-ux-spec-v1.md)
+- UI 规划文档：[`ui/README.md`](./ui/README.md)
 - Agent Skill：[`openclaw-agent-skill.md`](./openclaw-agent-skill.md)
 - Tooling 规格：[`openclaw-tooling-spec.md`](./openclaw-tooling-spec.md)
 

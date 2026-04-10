@@ -26,6 +26,7 @@ This folder is the English source-of-truth documentation set for ClawGame.
 ### Web and bot tooling
 
 - UI/UX: [`web-ui-ux-spec-v1.md`](./web-ui-ux-spec-v1.md)
+- UI planning docs: [`ui/README.md`](./ui/README.md)
 - Agent skill: [`openclaw-agent-skill.md`](./openclaw-agent-skill.md)
 - Tooling spec: [`openclaw-tooling-spec.md`](./openclaw-tooling-spec.md)
 

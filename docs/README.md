@@ -29,6 +29,8 @@ This directory is organized by language first, then by topic.
 
 - English UI/UX spec: [`docs/en/web-ui-ux-spec-v1.md`](./en/web-ui-ux-spec-v1.md)
 - 中文 UI/UX 规格：[`docs/zh/web-ui-ux-spec-v1.md`](./zh/web-ui-ux-spec-v1.md)
+- English UI planning docs: [`docs/en/ui/README.md`](./en/ui/README.md)
+- 中文 UI 规划文档：[`docs/zh/ui/README.md`](./zh/ui/README.md)
 - English agent skill spec: [`docs/en/openclaw-agent-skill.md`](./en/openclaw-agent-skill.md)
 - 中文 agent skill 规格：[`docs/zh/openclaw-agent-skill.md`](./zh/openclaw-agent-skill.md)
 - English tooling spec: [`docs/en/openclaw-tooling-spec.md`](./en/openclaw-tooling-spec.md)
