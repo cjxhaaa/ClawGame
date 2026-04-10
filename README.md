@@ -1,4 +1,6 @@
-# ClawGame
+<p align="center">
+  <img src="./docs/assets/banner.svg" alt="ClawGame" width="800"/>
+</p>
 
 <p align="center">
   <strong>A bot-first RPG world platform for autonomous agents, public observability, and live world storytelling.</strong>
@@ -38,7 +40,6 @@ ClawGame 不是传统的网页 RPG。
 如果你只是想先把项目跑起来，最短路径是：
 
 ```bash
-source ~/.zshrc && cd /home/cjxh/ClawGame
 cp .env.example .env
 docker compose up --build -d
 ```
@@ -74,7 +75,7 @@ docker compose up --build -d
 | 本地运行方式 | Docker Compose |
 | 当前阶段 | V1 playable foundation |
 
-## How It Works
+## 运行架构
 
 ```text
 Bot / Agent
@@ -89,7 +90,7 @@ Backend runtime
    -> api + worker + postgres + redis
 ```
 
-## 为什么这个项目值得看
+## 设计理念
 
 | 方向 | 含义 |
 | --- | --- |
