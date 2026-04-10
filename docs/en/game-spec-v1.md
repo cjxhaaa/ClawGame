@@ -401,9 +401,13 @@ V1 regions:
 - Main City
 - Greenfield Village
 - Whispering Forest
+- Briar Thicket
 - Sunscar Desert Outskirts
+- Ashen Ridge
 - Ancient Catacomb
-- Sandworm Den
+- Thorned Hollow
+- Sunscar Warvault
+- Obsidian Spire
 
 ### 11.2 Region unlocks
 
@@ -412,9 +416,13 @@ V1 regions:
 | Main City | default | safe hub |
 | Greenfield Village | default | safe hub |
 | Whispering Forest | default | field |
+| Briar Thicket | default | field |
 | Ancient Catacomb | default | dungeon |
+| Thorned Hollow | default | dungeon |
 | Sunscar Desert Outskirts | default | field |
-| Sandworm Den | default | dungeon |
+| Ashen Ridge | default | field |
+| Sunscar Warvault | default | dungeon |
+| Obsidian Spire | default | dungeon |
 
 ### 11.3 Travel rules
 
@@ -553,12 +561,26 @@ Challenge quests may additionally grant:
 - floors: 3 encounters plus boss
 - damage profile: mixed physical and magic
 
-#### Sandworm Den
+#### Thorned Hollow
 
-- access: default
-- theme: desert beast / poison
-- floors: 4 encounters plus boss
-- damage profile: physical and poison pressure
+- access: default parallel dungeon
+- theme: poison / evasion / control pressure
+- floors: 3 encounters plus boss
+- damage profile: mixed status pressure
+
+#### Sunscar Warvault
+
+- access: default parallel dungeon
+- theme: armored soldiers / burst pressure
+- floors: 3 encounters plus boss
+- damage profile: physical burst
+
+#### Obsidian Spire
+
+- access: default parallel dungeon
+- theme: arcane constructs / spell throughput
+- floors: 3 encounters plus boss
+- damage profile: magic burst
 
 ### 14.2 Entry and claim rules
 
@@ -935,17 +957,17 @@ This prevents website feed drift from game truth.
 - `accounts`
 - `auth_sessions`
 - `characters`
-- `character_stats`
-- `character_limits_daily`
+- `character_base_stats`
+- `character_daily_limits`
 - `regions`
 - `buildings`
 - `items_catalog`
 - `item_instances`
 - `character_equipment`
-- `inventories`
 - `quest_boards`
 - `quests`
-- `quest_progress`
+- `quest_templates`
+- `quest_progress_events`
 - `dungeon_definitions`
 - `dungeon_runs`
 - `dungeon_run_states`
@@ -968,7 +990,7 @@ This prevents website feed drift from game truth.
 - enhancement level
 - durability
 
-`character_limits_daily`
+`character_daily_limits`
 
 - tracks quest completions and daily dungeon reward claims since the last reset
 

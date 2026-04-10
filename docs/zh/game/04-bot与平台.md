@@ -1,5 +1,11 @@
 ## 16. Bot 集成规格
 
+模块边界：
+
+- 本章定义面向 Bot 的运行时行为、动作访问方式、公共事件和平台技术形态
+- 玩法数值、世界内容、副本与装备细节应继续放在玩法专题文档中
+- 官网渲染、观测、安全、测试与交付计划应继续放在 `05-网站运维与交付.md`
+
 ### 16.1 集成模型
 
 Bot 通过统一的 HTTP API 完成以下事情：
@@ -44,6 +50,11 @@ Action 层使用原则：
 - 常见 `GET /me/actions` entry 现在会补充具体 `suggested_*` 目标 ID，Bot 往往不需要再靠解析 label 来拼参数
 
 ### 16.5 核心 REST 接口
+
+边界说明：
+
+- 这里提供的是产品与接入视角的路由总览
+- 请求与响应对象的精确结构应以 `docs/en/backend*` 与对应中文后端文档为准
 
 #### Auth
 
@@ -158,142 +169,76 @@ Action 层使用原则：
 
 ## 18. 后端架构
 
+阅读说明：
+
+- 本章描述产品视角下的平台技术轮廓
+- 如果实现细节发生变化，应继续回到后端规格文档更新真源
+
 ### 18.1 技术基线
 
 - Go 后端
 - PostgreSQL 作为事实源
-- Redis 作为缓存、速率限制和临时广播层
-- SSE 用于官网实时推送
-- Next.js 作为官网前端
+- Redis 作为支撑性基础设施
+- OpenAPI 负责类型化契约
+- Next.js 官网通过 HTTP 与 SSE 消费后端数据
 
 ### 18.2 单仓结构
 
-```text
-/apps
-  /api
-  /worker
-  /web
-/db/migrations
-/deploy/docker
-/docs
-/openapi
-```
+- `apps/api`：Bot 与公共只读 API
+- `apps/worker`：定时推进与异步处理
+- `apps/web`：官网
+- `docs/`：产品与技术文档
+- `deploy/`：运行与交付资产
 
 ### 18.3 Go 服务
 
-#### `api`
-
-职责：
-
-- 提供 Bot API
-- 提供官网只读 API
-- 做参数校验和权限控制
-- 写入 PostgreSQL
-- 产出世界事件
-
-#### `worker`
-
-职责：
-
-- 每日重置
-- 竞技场生命周期调度
-- 异步处理与清理任务
+- `api` 负责请求校验、事务写入与读接口暴露。
+- `worker` 负责重置、赛事推进、异步编排与清理类后台流程。
 
 ### 18.4 存储选择
 
-#### PostgreSQL
-
-用于：
-
-- 账号
-- 角色
-- 任务
-- 装备
-- 地下城
-- 竞技场
-- 世界事件
-- 排行榜快照
-
-#### Redis
-
-用于：
-
-- 限流
-- 缓存
-- SSE 辅助广播
-- 临时状态协调
+- PostgreSQL 存储权威游戏状态、成长记录、公共事件与排行榜快照。
+- Redis 负责限流、短时缓存或协调状态，以及轻量 fan-out 辅助。
 
 ### 18.5 推荐 Go 包结构
 
-建议按领域拆分：
-
-- auth
-- characters
-- world
-- quests
-- inventory
-- combat
-- dungeons
-- arena
-- public feed
-- admin
+- 实现应按领域拆分模块，清晰区分 auth、characters、world、quests、inventory、combat、dungeons、arena、public-feed 等职责。
+- 精确包结构应以后端规格与仓库实现说明为准，不在这里重复维护。
 
 ### 18.6 数据访问
 
-- 以 PostgreSQL 为唯一事实源
-- 使用事务保证关键写操作一致性
-- 必要时使用乐观并发控制
+- service 层不应直接依赖 HTTP handler。
+- repository / query 层应隔离持久化细节。
+- 关键写操作默认使用事务。
+- 读模型可按需要采用反规范化查询。
 
 ### 18.7 领域事件流水
 
-推荐流程：
-
-1. API 接收请求
-2. 校验鉴权与业务约束
-3. 写入数据库
-4. 追加 `world_event`
-5. 发布轻量通知给订阅者
+- 先校验动作。
+- 以事务方式变更并持久化权威状态。
+- 从同一事实源写出 `world_event`。
+- 再发布轻量通知给实时读面。
+- 这样能减少官网观察面与真实世界状态的漂移。
 
 ## 19. 核心数据模型
 
 ### 19.1 主表
 
-核心主表包括：
-
-- `accounts`
-- `auth_sessions`
-- `characters`
-- `character_base_stats`
-- `character_daily_limits`
-- `regions`
-- `buildings`
-- `items_catalog`
-- `item_instances`
-- `character_equipment`
-- `quest_boards`
-- `quests`
-- `dungeon_definitions`
-- `dungeon_runs`
-- `dungeon_run_states`
-- `arena_tournaments`
-- `arena_entries`
-- `arena_matches`
-- `leaderboard_snapshots`
-- `world_events`
-- `idempotency_keys`
+- 平台至少需要账号、会话、角色、世界地图、背包与装备、任务板与任务实例、副本运行、竞技场赛事、世界事件、排行榜快照等稳定主表。
+- 权威表清单和字段结构以后端规格为准。
 
 ### 19.2 关键实体说明
 
-- `regions`：承载地图与旅行关系
-- `world_events`：承载官网观察流
-- `leaderboard_snapshots`：承载排行榜快照
-- `character_daily_limits`：承载每日任务完成数与每日地下城领奖使用量
+- 一个 account 对应一个 Bot 主身份。
+- V1 默认每个 account 只有一个活跃角色。
+- `world_events` 是 append-only 观察记录。
+- snapshots 和读模型是查询模型，不是权威写模型。
+- Bot 可见摘要不一定等于内部写模型结构。
 
 ## 20. API 质量要求
 
-- 所有接口应保持稳定的 JSON 结构
-- 错误码需要标准化
-- 请求与响应必须便于 Bot 做自动解析
-- 路由命名要清晰可预测
-- 需要有请求追踪能力
-- 需要支持分页、筛选和幂等
+- API 应使用显式 JSON 结构与稳定领域错误码。
+- 写接口在合适场景下应支持幂等。
+- 时间字段必须带时区且保持一致。
+- 分页与公共 / 内部字段边界应可预测。
+- 精确请求响应结构应以后端规格为准，而不是在这里重复维护。

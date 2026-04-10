@@ -300,28 +300,120 @@ Public website emphasis:
 - long-distance travel
 - reputation transition into harsher play
 
-### 6.6 Sandworm Den
+### 6.6 Briar Thicket
 
 World role:
 
-- highest-risk V1 dungeon and strongest symbol of frontier danger
+- transitional wild belt between the first forest route and the sharper mid-season danger line
 
 Map silhouette:
 
-- crater mouth
-- sand funnel
-- rib bones
-- exposed underground maw geometry
+- thorn walls
+- tangled roots
+- broken hunting posts
+- narrow clearings with ambush geometry
 
 Player fantasy:
 
-- “this is where strong bots prove they belong”
+- “the world starts feeling predatory instead of merely adventurous”
 
 Public website emphasis:
 
-- rare clears
-- high-value risk
-- prestige and spectacle
+- route pressure
+- hunt-themed activity
+- visible movement into the crit-focused dungeon branch
+
+### 6.7 Thorned Hollow
+
+World role:
+
+- precision-and-predator dungeon branch tied to ambush pressure and crit-focused builds
+
+Map silhouette:
+
+- bramble gate
+- hollowed ravine floor
+- predatory nests
+- overgrown ritual stones
+
+Player fantasy:
+
+- “this is where bots prove they can survive speed, precision, and focus fire”
+
+Public website emphasis:
+
+- high-pressure clears
+- burst deaths
+- visible crit-oriented farming traffic
+
+### 6.8 Ashen Ridge
+
+World role:
+
+- scorched frontier lane bridging desert travel into the hardest southeast branch
+
+Map silhouette:
+
+- black rock spine
+- wind-cut ridge roads
+- ash plumes
+- broken war markers
+
+Player fantasy:
+
+- “this is the road where the frontier stops looking survivable”
+
+Public website emphasis:
+
+- hard travel routes
+- advanced expedition staging
+- movement into late-season dungeon content
+
+### 6.9 Sunscar Warvault
+
+World role:
+
+- fortress-themed dungeon branch focused on armored enemies, burst windows, and battle-rhythm pressure
+
+Map silhouette:
+
+- sealed gatehouse
+- scorched banners
+- collapsed armory halls
+- siege-scarred walls
+
+Player fantasy:
+
+- “this is where a prepared assault build cashes in”
+
+Public website emphasis:
+
+- aggressive farming loops
+- armored-boss spectacle
+- physical-burst identity
+
+### 6.10 Obsidian Spire
+
+World role:
+
+- deepest southeast dungeon branch and the clearest symbol of arcane late-season danger
+
+Map silhouette:
+
+- black-glass tower
+- broken bridges
+- void-lit windows
+- elevated ritual platforms
+
+Player fantasy:
+
+- “this is the place where fragile builds get exposed immediately”
+
+Public website emphasis:
+
+- high-risk magic pressure
+- severe wipe stories
+- late-season prestige clears
 
 ## 7. Homepage Map Presentation Rules
 

@@ -431,9 +431,13 @@ V1 世界区域：
 - Main City
 - Greenfield Village
 - Whispering Forest
+- Briar Thicket
 - Sunscar Desert Outskirts
+- Ashen Ridge
 - Ancient Catacomb
-- Sandworm Den
+- Thorned Hollow
+- Sunscar Warvault
+- Obsidian Spire
 
 ### 11.2 区域解锁
 
@@ -442,9 +446,13 @@ V1 世界区域：
 | Main City | 默认开放 | safe hub |
 | Greenfield Village | 默认开放 | safe hub |
 | Whispering Forest | 默认开放 | field |
+| Briar Thicket | 默认开放 | field |
 | Ancient Catacomb | 默认开放 | dungeon |
+| Thorned Hollow | 默认开放 | dungeon |
 | Sunscar Desert Outskirts | 默认开放 | field |
-| Sandworm Den | 默认开放 | dungeon |
+| Ashen Ridge | 默认开放 | field |
+| Sunscar Warvault | 默认开放 | dungeon |
+| Obsidian Spire | 默认开放 | dungeon |
 
 ### 11.3 旅行规则
 
@@ -585,12 +593,26 @@ V1 任务类型：
 - 1 名死灵法师 Boss
 - 适合新手阶段重复攻略
 
-#### Sandworm Den
+#### Thorned Hollow
 
 - 默认并行地下城
-- 5 场遭遇
-- 1 名沙虫母体 Boss
-- 面向高声望、高配装 Bot
+- 强调毒、闪避与控场压力
+- 由多个递进遭遇组成
+- 面向中后段养成 Bot
+
+#### Sunscar Warvault
+
+- 默认并行地下城
+- 强调物理爆发与破防窗口
+- 由多个递进遭遇组成
+- 面向中后段爆发构筑
+
+#### Obsidian Spire
+
+- 默认并行地下城
+- 强调法术压制与施法节奏
+- 由多个递进遭遇组成
+- 面向中后段法系构筑
 
 ### 14.2 进入与领奖规则
 

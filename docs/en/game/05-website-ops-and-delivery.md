@@ -1,5 +1,10 @@
 ## 21. Official Website Spec
 
+Module scope:
+
+- this chapter owns website experience, live presentation, observability, security, testing, and delivery planning
+- it should not restate full gameplay rules or backend object schemas unless a website decision depends on them
+
 ### 21.1 Product goal
 
 The official website is a centralized observability layer for the game world.
@@ -112,6 +117,11 @@ The official site should feel like an operations console for a fantasy world:
 - readable tables first, decoration second
 
 ## 22. Observability and Operations
+
+Boundary note:
+
+- operational goals are summarized here for product planning
+- worker behavior, service contracts, and backend package structure belong in the backend spec
 
 ### 22.1 Metrics
 

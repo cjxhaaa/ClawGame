@@ -20,12 +20,15 @@ Season-one target coverage:
 Current detailed balance-sheet coverage:
 
 - `ancient_catacomb_v1`
-- `sandworm_den_v1`
+- `thorned_hollow_v1`
+- `sunscar_warvault_v1`
+- `obsidian_spire_v1`
+- `sandworm_den_v1` (archived reference)
 
 Current note:
 
+- the four active seasonal dungeons now have complete room-by-room sheets in this document
 - `sandworm_den_v1` remains an archived high-pressure sample for encounter design and sits outside the four-dungeon seasonal loot plan
-- `thorned_hollow_v1`, `sunscar_warvault_v1`, and `obsidian_spire_v1` still need full room-by-room sheets in a follow-up pass
 
 ## 2. Global Difficulty Multipliers
 

@@ -40,9 +40,13 @@ Recommended V1 mapping:
 | `main_city` | Main City | Ironbanner City | 铁旗城 |
 | `greenfield_village` | Greenfield Village | Greenfield Outpost | 绿野前哨 |
 | `whispering_forest` | Whispering Forest | Whispering Forest | 低语森林 |
+| `briar_thicket` | Briar Thicket | Briar Thicket | 荆棘密丛 |
 | `ancient_catacomb` | Ancient Catacomb | Ancient Catacomb | 远古墓窟 |
 | `sunscar_desert_outskirts` | Sunscar Desert Outskirts | Sunscar Frontier | 灼痕前线 |
-| `sandworm_den` | Sandworm Den | Sandworm Den | 沙虫巢穴 |
+| `thorned_hollow` | Thorned Hollow | Thorned Hollow | 荆棘空洞 |
+| `ashen_ridge` | Ashen Ridge | Ashen Ridge | 灰烬山脊 |
+| `sunscar_warvault` | Sunscar Warvault | Sunscar Warvault | 灼痕战库 |
+| `obsidian_spire` | Obsidian Spire | Obsidian Spire | 黑曜尖塔 |
 
 Reason:
 
@@ -435,7 +439,8 @@ Sunscar Frontier is the dividing line where the world shifts from familiar hunti
 
 ### Dungeon Relationship
 
-- parent field region for `sandworm_den`
+- parent frontier field for `sunscar_warvault`
+- transition lane toward `ashen_ridge`
 
 ### Main Material Outputs
 
@@ -452,59 +457,276 @@ Sunscar Frontier is the dividing line where the world shifts from familiar hunti
 - advanced quest fulfillment materials
 - critical prerequisite resources before high-tier dungeon play
 
-## 3.6 `sandworm_den`
+## 3.6 `briar_thicket`
 
 ### Public Display Name
 
-- English: Sandworm Den
-- Chinese: 沙虫巢穴
+- English: Briar Thicket
+- Chinese: 荆棘密丛
 
 ### One-line Background
 
-Sandworm Den is one of the most dangerous and watchable dungeons in V1, serving as a major power threshold for prepared bots.
+Briar Thicket is a harsher wild-belt hunting zone where ambush pressure, route control, and crit-oriented enemy behavior start shaping how bots travel.
 
 ### Observation Focus
 
-- high-pressure entries and defeats
-- rare clear appearances
-- boss fight heat
-- material monopolies by top-performing bots
+- route interruption and ambush frequency
+- crit-heavy combat logs
+- movement of advancing bots toward the second dungeon branch
+- material farming tied to predator-themed gear paths
 
 ### Interactive NPCs
 
-- Deep Den Watcher
-  Handles entry permissions and warnings
-- Venom Alchemist
-  Purchases poison and worm-derived materials
-- Elite Appraiser
-  Evaluates rare drops
+- Thicket Huntmaster
+  Offers predator cull contracts and precision hunt objectives
+- Trap Salvager
+  Buys thorn, hide, and ambush-tool materials
+- Watchfire Scout
+  Shares route warnings and temporary path intel
+- Bramble Hermit
+  Connects to hidden clues and rare gathering spots
 
 ### Buildings And Facilities
 
-- Den Entrance Camp
-- Venom Lab Cart
-- Elite Loot Exchange
+- thorn-watch camp
+- hunter salvage post
+- root-choked shrine trail
 
-### Dungeon Definition
+### Dungeon Relationship
 
-- type: high-pressure dungeon
-- pacing: 5 encounters plus matriarch boss
-- risk: high physical pressure with medium-high poison damage
+- parent field region for `thorned_hollow`
 
 ### Main Material Outputs
 
-- Sandworm Fang
-- Hardened Carapace Plate
-- Toxic Gland
-- Deep Desert Core
-- Matriarch Spine Shard
+- Briar Resin
+- Razor Thorn
+- Predator Hide
+- Hooked Claw
+- Sharp Pollen
 
 ### Progression Use
 
-- high-tier equipment enhancement
-- rare weapon and armor crafting
-- poison and penetration-oriented build progression
-- endgame-zone and arena gearing prerequisites
+- crit and precision-oriented crafting
+- mid-tier leather and glove upgrades
+- ambush-resistance consumables
+- transition materials before second dungeon progression
+
+## 3.7 `thorned_hollow`
+
+### Public Display Name
+
+- English: Thorned Hollow
+- Chinese: 荆棘空洞
+
+### One-line Background
+
+Thorned Hollow is a predatory dungeon branch built around burst windows, speed pressure, and punishing focus-fire patterns.
+
+### Observation Focus
+
+- wipe spikes during fast enemy rotations
+- burst-clear attempts by prepared parties
+- crit-oriented farming traffic
+- high-pressure boss defeat stories
+
+### Interactive NPCs
+
+- Hollow Gate Warden
+  Handles entry notices and hazard warnings
+- Trophy Binder
+  Purchases predator trophies and claw materials
+- Venom Path Researcher
+  Trades clues tied to deeper branch mechanics
+
+### Buildings And Facilities
+
+- Hollow Gate
+- Predator Trophy Rack
+- Bramble Research Camp
+
+### Dungeon Definition
+
+- type: mid-cycle dungeon
+- pacing: 5 encounters plus apex predator boss
+- risk: burst damage, crit pressure, and positional collapse
+
+### Main Material Outputs
+
+- Thorned Fang
+- Hollow Carapace
+- Predator Core
+- Barbed Tendon
+- Bloodbloom Spore
+
+### Progression Use
+
+- crit and speed-oriented equipment growth
+- mid-high tier weapon upgrades
+- advanced poison and bleed crafting
+- prerequisite materials for stronger burst builds
+
+## 3.8 `ashen_ridge`
+
+### Public Display Name
+
+- English: Ashen Ridge
+- Chinese: 灰烬山脊
+
+### One-line Background
+
+Ashen Ridge is the scorched ridgeway where travel itself becomes part of the challenge and expedition staging starts to look severe and expensive.
+
+### Observation Focus
+
+- long-route survival pressure
+- higher failure rates during frontier movement
+- staging of late-season expedition parties
+- scarcity-driven material loops
+
+### Interactive NPCs
+
+- Ridge Quartermaster
+  Handles late-frontier supplies and route contracts
+- Ash Prospector
+  Purchases scorched minerals and ridge salvage
+- Warpath Courier
+  Connects to high-risk delivery and interception loops
+- Beacon Tender
+  Tracks dangerous travel notices and route status
+
+### Buildings And Facilities
+
+- ridge staging post
+- ash supply depot
+- beacon overlook
+
+### Dungeon Relationship
+
+- parent field region for `obsidian_spire`
+- parallel frontier lane to `sunscar_desert_outskirts`
+
+### Main Material Outputs
+
+- Ashglass Shard
+- Scorched Iron
+- Ember Thread
+- Warbone Fragment
+- Ridge Salt
+
+### Progression Use
+
+- late-mid equipment reinforcement
+- resistance consumables for high-pressure zones
+- expedition logistics materials
+- staging resources before deepest southeast dungeon runs
+
+## 3.9 `sunscar_warvault`
+
+### Public Display Name
+
+- English: Sunscar Warvault
+- Chinese: 灼痕战库
+
+### One-line Background
+
+Sunscar Warvault is a fortress-style dungeon where armored enemies, assault timing, and explosive damage windows define the run.
+
+### Observation Focus
+
+- armored-boss showdown frequency
+- burst-window execution quality
+- aggressive farming loops by mature bots
+- valuable siege-themed loot circulation
+
+### Interactive NPCs
+
+- Warvault Marshal
+  Handles entry verification and assault briefings
+- Armory Broker
+  Purchases war-forged salvage and plated relics
+- Siege Archivist
+  Connects to vault records and hidden rewards
+
+### Buildings And Facilities
+
+- Warvault Gatehouse
+- Siege Briefing Board
+- Armory Exchange
+
+### Dungeon Definition
+
+- type: late-mid fortress dungeon
+- pacing: 5 encounters plus armored commander boss
+- risk: sustained physical damage with burst-check phases
+
+### Main Material Outputs
+
+- Warvault Plate
+- Siege Gear Core
+- Sunscar Alloy
+- Banner Fragment
+- Command Sigil
+
+### Progression Use
+
+- armored weapon and chest upgrades
+- burst-focused build reinforcement
+- siege-themed quest deliveries
+- preparation materials for top-end dungeon and arena setups
+
+## 3.10 `obsidian_spire`
+
+### Public Display Name
+
+- English: Obsidian Spire
+- Chinese: 黑曜尖塔
+
+### One-line Background
+
+Obsidian Spire is the deepest V1 dungeon branch, where arcane pressure, punishing magic bursts, and prestige clears define the public endgame image.
+
+### Observation Focus
+
+- wipe-heavy late-season attempts
+- magic-pressure failures versus clean clears
+- prestige farming by top-performing bots
+- late-cycle boss spectacle
+
+### Interactive NPCs
+
+- Spire Custodian
+  Handles entry seals and threat notices
+- Void Appraiser
+  Purchases arcane relics and spire salvage
+- Ritual Cartographer
+  Tracks deeper chamber rumors and elite objectives
+
+### Buildings And Facilities
+
+- Spire Threshold
+- Arcane Relay Tent
+- Void Exchange Desk
+
+### Dungeon Definition
+
+- type: late-season pinnacle dungeon
+- pacing: 6 encounters plus spire sovereign boss
+- risk: severe magic pressure, control effects, and wipe potential
+
+### Main Material Outputs
+
+- Obsidian Shard
+- Voidglass Core
+- Arcane Thread
+- Spire Sigil
+- Sovereign Ember
+
+### Progression Use
+
+- top-tier equipment enhancement
+- magic and control resistance crafting
+- prestige quest and late-season delivery materials
+- highest-end preparation for showcase clears and elite PvP gearing
 
 ## 4. Map Content Interaction Layers
 
@@ -540,7 +762,9 @@ Special-event rule:
 Applies to:
 
 - `whispering_forest`
+- `briar_thicket`
 - `sunscar_desert_outskirts`
+- `ashen_ridge`
 
 Core purpose:
 
@@ -568,7 +792,9 @@ Current implementation note:
 Applies to:
 
 - `ancient_catacomb`
-- `sandworm_den`
+- `thorned_hollow`
+- `sunscar_warvault`
+- `obsidian_spire`
 
 Core purpose:
 
@@ -729,7 +955,9 @@ The field regions should carry their own monster identity even before a full fie
 | Region | Recommended Monster Families | Combat Tone | Main Outputs |
 | --- | --- | --- | --- |
 | `whispering_forest` | Forest Wolf Pack, Poison Vine Caster, Moss Creeper, Shrine Wisp | fast early skirmish, poison pressure, gather interruption | pelts, herbs, bone shards, vines |
+| `briar_thicket` | Briar Stalker, Thorn Howler, Rootsnare Hunter, Pollen Leech | ambush pressure, crit spikes, route disruption | resin, thorns, hides, claws |
 | `sunscar_desert_outskirts` | Sand Skirmisher, Dust Mage, Dune Burrower, Courier Raider | sharper burst, attrition, elite route pressure | ore, resin, carapace, venom |
+| `ashen_ridge` | Ash Hound, Cinder Spearthrower, Ridge Reaver, Ember Caller | sustained pressure, travel attrition, punishing elite paths | ashglass, scorched iron, ember thread, warbone |
 
 These names are content-spec placeholders until field monster templates are fully dataized.
 
@@ -746,15 +974,32 @@ The dungeon nodes already have much more concrete monster identity.
 - Tomb Hexer
 - Morthis, Chapel Keeper
 
-`sandworm_den` should be documented around:
+`thorned_hollow` should be documented around:
 
-- Dune Skitterer
-- Sand Burrower
-- Scorched Spitter
-- Carapace Crusher
-- Venom Herald
-- Sandworm Larva
-- Kharzug, Dunescourge Matriarch
+- Thorn Prowler
+- Hollow Ripper
+- Barbed Screecher
+- Briar Matron
+- Bloodbloom Stalker
+- Veyra, Hollow Fang
+
+`sunscar_warvault` should be documented around:
+
+- Warvault Legionnaire
+- Scorched Shieldbearer
+- Armory Hound
+- Siege Channeler
+- Banner Captain
+- General Kaelor, Vault Warden
+
+`obsidian_spire` should be documented around:
+
+- Obsidian Acolyte
+- Voidbound Sentinel
+- Spire Hexcaster
+- Glasswing Horror
+- Ritual Anchor
+- Serathis, Spire Sovereign
 
 ### 6.5 Encounter Severity Bands
 
@@ -983,37 +1228,165 @@ Task identity:
 - advancing-route delivery pressure
 - frontier material gathering
 
-### 8.6 `sandworm_den`
+### 8.6 `briar_thicket`
 
 Facility focus:
 
-- Den Entrance Camp
-- Venom Lab Cart
-- Elite Loot Exchange
+- thorn-watch camp
+- hunter salvage post
+- root-choked shrine trail
+
+Hostile monsters:
+
+- yes
+- this is the main ambush-driven wild belt after the first forest route
+
+Recommended encounter emphasis:
+
+- route interruption
+- crit-heavy predator packs
+- pressure that pushes prepared bots toward the second dungeon branch
+
+Recommended curios:
+
+- collapsed hunter cache
+- bramble-trap warning trail
+- hidden predator den clue
+- wounded scout requesting route rescue
+
+Task identity:
+
+- ambush-heavy field contracts
+- predator material farming
+- second-branch route preparation
+
+### 8.7 `thorned_hollow`
+
+Facility focus:
+
+- Hollow Gate
+- Predator Trophy Rack
+- Bramble Research Camp
 
 Hostile monsters:
 
 - yes, always expected
-- highest-risk V1 map node
+- burst-heavy dungeon branch
 
 Recommended encounter emphasis:
 
-- heavier burst and poison pressure
-- elite enemy combinations
-- a run-defining matriarch boss
+- rapid focus-fire deaths
+- crit-oriented predator elites
+- an apex boss that tests recovery timing
 
 Recommended curios:
 
-- venom seep chamber
-- abandoned elite cache
-- trapped survivor near a tunnel split
-- molt-site discovery tied to rare crafting material
+- bloodbloom nest chamber
+- abandoned hunt marker
+- trapped courier in a thorn funnel
+- ritual stone clue tied to burst rewards
 
 Task identity:
 
-- high-tier dungeon clears
+- mid-cycle dungeon clears
+- crit-build farming
+- predator trophy conversion
+
+### 8.8 `ashen_ridge`
+
+Facility focus:
+
+- ridge staging post
+- ash supply depot
+- beacon overlook
+
+Hostile monsters:
+
+- yes
+- this is the harsher expedition field lane before the deepest branch
+
+Recommended encounter emphasis:
+
+- long-route attrition
+- scorched patrol pressure
+- expedition interception squads
+
+Recommended curios:
+
+- fallen war cart
+- unstable beacon flare
+- abandoned ridge camp
+- ash seam discovery tied to supply upgrades
+
+Task identity:
+
+- late-frontier route contracts
+- expedition staging
+- ridge salvage gathering
+
+### 8.9 `sunscar_warvault`
+
+Facility focus:
+
+- Warvault Gatehouse
+- Siege Briefing Board
+- Armory Exchange
+
+Hostile monsters:
+
+- yes, always expected
+- armored fortress dungeon with burst-check phases
+
+Recommended encounter emphasis:
+
+- armored elite formations
+- boss breakpoint execution
+- assault pacing under sustained pressure
+
+Recommended curios:
+
+- sealed armory cache
+- broken siege relay
+- wounded assault scout
+- war-banner relic tied to burst rewards
+
+Task identity:
+
+- fortress dungeon clears
+- siege loot farming
+- burst-build reinforcement
+
+### 8.10 `obsidian_spire`
+
+Facility focus:
+
+- Spire Threshold
+- Arcane Relay Tent
+- Void Exchange Desk
+
+Hostile monsters:
+
+- yes, always expected
+- highest-pressure V1 dungeon node
+
+Recommended encounter emphasis:
+
+- severe spell pressure
+- control-heavy elite combinations
+- a prestige boss fight with heavy wipe potential
+
+Recommended curios:
+
+- void-cracked chamber
+- unstable ritual relay
+- isolated researcher distress signal
+- black-glass cache tied to arcane crafting
+
+Task identity:
+
+- late-season dungeon clears
 - prestige farming
-- endgame-adjacent material conversion
+- top-tier material conversion
 
 ## 9. Map Node State Definition
 

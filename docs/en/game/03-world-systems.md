@@ -1,5 +1,11 @@
 ## 9. Equipment System
 
+Module scope:
+
+- this chapter keeps the player-facing world and progression summary
+- detailed numeric systems should live in the dedicated deep-dive modules under `06-19`
+- backend contracts, API surface, and website delivery concerns should stay in `04-bot-platform.md` and `05-website-ops-and-delivery.md`
+
 This section is a high-level summary.
 
 The detailed specification has moved to:
@@ -46,6 +52,11 @@ Every new adventurer receives:
 When a character reaches level `10`, the Adventurers Guild may offer profession changes among `civilian`, `warrior`, `mage`, and `priest`. Each change costs `800` gold. Moving from `civilian` into a promoted class grants one class-aligned starter weapon.
 
 ## 10. Economy
+
+Boundary note:
+
+- this chapter explains economy intent and player-facing rules
+- pricing formulas, payout models, and backend persistence details should not be duplicated here when a dedicated module already exists
 
 ### 10.1 Currency
 
@@ -199,6 +210,11 @@ Recommended title stat gradients:
 
 ## 11. World Map
 
+Reading note:
+
+- use this chapter for the top-level map, building, quest, dungeon, arena, and world-boss loop
+- use `06-world-map-definition.md` and `07-location-catalog-and-resource-definition.md` when editing geography, route layout, regional identity, or place-by-place content
+
 ### 11.1 Region list
 
 V1 regions:
@@ -237,599 +253,200 @@ V1 regions:
 
 ## 12. Buildings and Interactions
 
+Section role:
+
+- this section explains which places and interaction surfaces exist in the world loop
+- detailed formulas, reward tables, runtime state rules, and API contracts should live in the dedicated modules and backend specs
+
 ### 12.1 Main City
 
-- Adventurers Guild
-- Equipment Shop
-- Apothecary
-- Blacksmith
-- Arena
-- Warehouse
+- `Adventurers Guild`: quests, profession changes, route planning, and skill progression
+- `Equipment Shop`: equipment browsing, buying, and selling
+- `Apothecary`: consumable purchase
+- `Blacksmith`: enhancement and salvage
+- `Arena Hall`: arena state, signup, bracket viewing, and betting entry
+- `Warehouse`: storage-oriented utility surface when enabled
 
 ### 12.2 Greenfield Village
 
-- Adventurers Guild Outpost
-- Equipment Shop
-- Apothecary
-- Caravan Dispatch Point
+- `Adventurers Guild Outpost`: local quest and progression support
+- `Equipment Shop`: early-region trading
+- `Apothecary`: early sustain item access
+- `Caravan Dispatch Point`: travel and delivery support
 
 ### 12.3 Building actions
 
-Adventurers Guild:
+- Guild surfaces handle quest listing, submission, reroll, profession changes, and growth planning.
+- Shop surfaces handle browse, buy, and direct liquidation selling.
+- Apothecary surfaces handle consumable purchase only.
+- Blacksmith surfaces handle deterministic slot-bound enhancement and salvage.
+- Arena surfaces handle schedule viewing, signup, bracket access, and betting.
+- Warehouse surfaces are utility-facing, not a separate primary progression loop.
 
-- list quests
-- accept quest
-- submit quest
-- reroll daily board for gold
-- optionally choose a profession after reaching level `10`
-- unlock available class skills by raising them from level `0` to level `1`
-- upgrade unlocked skills with gold
+Reference modules:
 
-Equipment Shop:
-
-- browse stock
-- buy item
-- sell loot
-
-Blacksmith:
-
-- enhance eligible equipment
-- salvage eligible equipment
-
-Warehouse:
-
-- list inventory
-- equip item
-- unequip item
-
-Arena:
-
-- view schedule
-- initiate a rating challenge
-- inspect nearby rating candidates
-- buy extra challenge attempts
-- view the Saturday bracket
-- place arena bets after the top 64 is locked
+- equipment and enhancement: `09-equipment-dungeon-and-loot-framework.md`
+- bot/platform routing and backend rules: `04-bot-platform.md`
 
 ### 12.4 World-boss matching and rewards
 
-V1 world boss should use asynchronous `6`-player matching instead of manual party formation.
+- World boss is an asynchronous `6`-participant auto-resolved raid rather than a live co-op party feature.
+- Matchmaking forms one shared boss attempt from the active queue while the current boss season window is open.
+- Reward tiers are based on total team damage, not last hit or personal placement.
+- Every valid participant in the same completed raid receives the same tier package.
+- The system is meant to provide long-tail reforge progression without replacing dungeons as the main gear source.
 
-Core rules:
+Reference modules:
 
-- players and bots join one shared world-boss matching pool
-- world-boss participation is open from day one; there is no mid-season unlock gate
-- once `6` valid entries are available, the system creates one world-boss raid instance automatically
-- the raid resolves asynchronously and does not require all six participants to be online at the same moment
-- the raid result is evaluated by the total combined damage dealt by the six participants
-- reward tier is determined by total damage thresholds against the boss maximum HP
-- each valid participant receives the reward package of the reached tier
-- season one uses `4` world-boss variants, each derived from one of the four seasonal dungeon bosses
-- only one world boss is active at a time
-- the active world boss refreshes every `2` days
-- the active boss for a refresh window is selected from the four-boss roster and exposed directly to bots through the boss read model
-
-Recommended difficulty target:
-
-- world boss is available from day one, but it should still sit above ordinary dungeon farming pressure and scale into a long-term cooperative target
-- recommended per-player panel combat power:
-  - floor: `6400`
-  - stable: `7600`
-  - strong: `9000`
-- recommended party panel combat power:
-  - floor: `38400`
-  - stable: `45600`
-  - strong: `54000`
-- intended outcome curve:
-  - early-day or low-power parties usually end in `D-C`
-  - stable mid-season parties should commonly land in `B-A`
-  - well-optimized late-season parties should contest `S`
-
-Recommended boss combat profile:
-
-- boss name: `Ashen Colossus`
-- max turns per participant: `15`
-- max HP: `2100`
-- physical attack: `48`
-- magic attack: `42`
-- physical defense: `24`
-- magic defense: `24`
-- speed: `18`
-- block rate: `8%`
-
-Design intent:
-
-- one participant should rarely solo-kill the boss
-- tanks and sustain builds should matter because the fight lasts long enough to reward survival
-- burst builds should still matter because total-damage thresholds are based on team output, not only survival
-- each boss should feel like the ultimate raid-scale evolution of its dungeon identity rather than a generic stat-only target
-
-Season-one world-boss roster:
-
-| World boss | Origin dungeon | Core identity |
-| --- | --- | --- |
-| `Gravewake Overlord` | `Ancient Catacomb` | defense, block, sustain pressure |
-| `Briarqueen Predator` | `Thorned Hollow` | precision, crit pressure, hunt windows |
-| `Sunscar Warmarshal` | `Sunscar Warvault` | physical burst, armor break, battle-rhythm |
-| `Obsidian Archon` | `Obsidian Spire` | magic pressure, casting disruption, anti-burst |
-
-Mechanic rules:
-
-- every world boss keeps the fantasy and combat identity of its source dungeon boss, but at raid scale
-- each boss has several regular skills plus one ultimate skill
-- the ultimate skill must hit all six participants
-- the ultimate skill should have a long cooldown of roughly `8` rounds
-- the ultimate skill should only unlock after the boss falls below `50%` HP
-- regular skills should reinforce the boss theme with lighter area pressure, self-buffs, or one-target execution tools
-
-Recommended skill outlines:
-
-- `Gravewake Overlord`
-  - `Sepulcher Slam`: heavy single-target physical hit with defense break
-  - `Cryptward Bulwark`: self shield and block spike
-  - `Grave Tide`: moderate raid-wide chip damage with healing reduction
-  - `Catacomb Annihilation`: half-HP-only ultimate that damages all participants
-- `Briarqueen Predator`
-  - `Thornrush Pounce`: high-precision leap on one target
-  - `Needleburst Fan`: light raid-wide thorn barrage with evasion pressure
-  - `Hunter Focus`: self buff that raises crit and precision
-  - `Crown of Thorns`: half-HP-only ultimate that damages all participants
-- `Sunscar Warmarshal`
-  - `Warvault Cleave`: heavy multi-target physical sweep
-  - `Sunder Standard`: raid-wide armor-break window
-  - `March of Iron`: self buff for attack and speed
-  - `Sunfall Bombardment`: half-HP-only ultimate that damages all participants
-- `Obsidian Archon`
-  - `Void Lance`: severe single-target magic burst
-  - `Eclipse Field`: raid-wide magic pressure with brief casting disruption
-  - `Blackglass Mirror`: self anti-burst shield
-  - `Spire's End Requiem`: half-HP-only ultimate that damages all participants
-
-Reward direction:
-
-- world-boss rewards should focus on:
-  - `gold`
-  - extra-affix reforge materials
-- world-boss rewards should not replace dungeon equipment drops
-- dungeon progression remains the source of item base, quality, and sets
-- world-boss participation remains the source of late-game extra-affix optimization
-
-Tier direction:
-
-- reward tiers should use `D / C / B / A / S`
-- each tier should correspond to a clear total-damage threshold
-- reaching a higher tier grants that tier's package directly
-- killing the boss should normally map to `S`
-
-Recommended reward thresholds:
-
-| Tier | Team total damage | Approx. boss HP share | Gold | `reforge_stone` |
-| --- | --- | --- | --- | --- |
-| `D` | `250` | `12%` | `90` | `1` |
-| `C` | `550` | `26%` | `150` | `2` |
-| `B` | `925` | `44%` | `230` | `3` |
-| `A` | `1400` | `67%` | `340` | `5` |
-| `S` | `2100` | `100%` | `500` | `8` |
-
-Damage-reward logic:
-
-- rewards are determined only by final team total damage, not by last hit
-- every valid participant receives the same team-tier package
-- `B` is the point where one run meaningfully supports `Gold`-item reforge progress
-- `A` is the point where one run funds one `Red`-item reforge
-- `S` is the point where one run funds one `Prismatic`-item reforge
-
-Reforge flow:
-
-- the reforge material is used directly on one equipment item
-- the system rolls a new extra-affix result immediately
-- the bot or player may save the new result or discard it
-- discarding reverts to the previous extra-affix state but still consumes the material
-- V1 uses only one world-boss reforge material: `reforge_stone`
-- higher-quality items consume more `reforge_stone` per reforge attempt
+- reforge and equipment direction: `09-equipment-dungeon-and-loot-framework.md`
+- bot/platform and backend behavior: `04-bot-platform.md` and backend specs
 
 ### 12.5 Arena betting
 
-Arena betting opens only after Friday rating settlement completes and the top-64 Saturday bracket is known.
-
-Two bet families should exist:
-
-- single-match winner bets
-- tournament champion bets
-
-Single-match winner bets:
-
-- open for resolved top-64 bracket matches that have not started yet
-- allow choosing either side of one specific matchup
-- resolve immediately when that matchup resolves
-
-Tournament champion bets:
-
-- open once the top-64 bracket is finalized
-- close before the main bracket advances too far
-- resolve only after the final completes
-
-Betting rules:
-
-- betting uses `gold`
-- the stake is consumed immediately
-- payout is based on system-published odds
-- losing the bet forfeits the stake
-- OpenClaw should treat betting as optional speculation, not mandatory seasonal progression
-
-Presentation rules:
-
-- the arena screen should show whether betting is open
-- each available market should display stake limits and published odds
-- settled bets should remain queryable so OpenClaw can review what it predicted correctly or incorrectly
+- Arena betting opens after Friday qualification is locked and the Saturday bracket is known.
+- V1 only needs simple markets such as single-match winner and tournament champion.
+- Betting is an optional spectator-facing `gold` sink, not a required progression loop.
+- The goal is to make the public bracket more watchable without creating a deep prediction economy.
 
 ## 13. Guild Quest System
 
+Section role:
+
+- this section keeps the quest loop readable at a product level
+- detailed template graphs, multi-step runtime rules, and persistence concerns should live in quest-specific docs and backend specs
+
 ### 13.1 Quest board structure
 
-Each adventurer maintains a personal daily contract board with a maximum of four active contracts.
-
-The board contains:
-
-- the business-day reset happens at `04:00 Asia/Shanghai`
-- querying `GET /me/quests` is what triggers board generation or top-up
-- on the first quest query after reset, the server tops the board back up to `4`
-- unfinished accepted or completed contracts from the previous day carry over
-- submitted contracts do not carry over into the next day
-- contracts do not refill again during the same business day after the reset top-up is done
-- contracts are auto-accepted when generated
-- quest states currently center on `accepted`, `completed`, `submitted`, and `expired`
-- `GET /me/quests` returns the whole active board rather than a paged quest list
+- Each adventurer maintains one personal daily contract board.
+- The board should combine reliable daily progress with a smaller number of more valuable goals.
+- Reset, top-up, and carry-over behavior should remain explicit and machine-readable.
+- Exact generation weights and slot composition should live in quest config assets instead of being maintained here.
 
 ### 13.2 Quest difficulty
 
-Daily contracts use two runtime contract kinds:
-
-- `normal`
-- `bounty`
-
-Rules:
-
-- both kinds draw from the same quest-template framework
-- a bounty contract pays exactly `2x` the rolled gold and reputation of the corresponding normal contract
-- bounty contracts should be slightly harder or more procedural than the baseline version, usually through a higher target count or one extra required step
-- the board should still lean toward normal contracts, with bounty contracts appearing less often
+- The daily board should use a small set of difficulty bands so bots can trade off time, travel, and reward value.
+- Lower-friction contracts sustain routine progress.
+- Higher-friction contracts justify more travel, combat risk, or procedural effort.
 
 ### 13.3 Quest types
 
-V1 templates:
-
-- defeat `N` enemies in a region
-- defeat a named elite in a dungeon
-- collect `N` materials from a region encounter pool
-- deliver purchased supplies to an outpost
-- clear a dungeon without defeat
-
-Additional notes:
-
-- field curios can also generate a `curio_followup_delivery` quest
-- this follow-up quest does not consume one of the fixed daily template slots
-- when generated, it is inserted into the board and auto-accepted immediately
-
-Quest content should not be restricted to pure combat. The daily pool should also cover:
-
-- combat clearing
-- gathering and recovery
-- transport and delivery
-- investigation and evidence collection
-- story reasoning
-- multi-step handoff flows
+- Region combat
+- Dungeon combat
+- Material collection
+- Delivery and travel
+- Investigation and multi-step progression
+- Optional follow-up tasks seeded from world interactions such as curios
 
 ### 13.4 Daily contract reward planning
 
-Normal contracts should roll within reward ranges instead of using one fixed reward number.
-
-Recommended normal reward bands:
-
-| Template family | Gold range | Reputation range |
-| --- | --- | --- |
-| kill-region enemies | `90-130` | `16-20` |
-| collect materials | `80-120` | `14-18` |
-| standard delivery | `85-125` | `15-19` |
-| reinforced delivery | `110-150` | `20-24` |
-| investigation | `125-170` | `22-28` |
-| dungeon clear | `155-210` | `28-36` |
-
-Rules:
-
-- the final reward is rolled deterministically inside the configured range when the contract is generated
-- bounty contracts double the already-rolled reward
-- the target daily reputation output should land near `100`, which maps to roughly `2` extra dungeon reward claims at `50` reputation each
-
-#### `normal` daily quests
-
-Role:
-
-- give OpenClaw low-overhead, reliable daily loops
-
-Suitable content:
-
-- defeat a set number of enemies in one region
-- gather a set number of materials in one region
-- deliver standard supplies to one outpost
-- visit one facility and finish a standard interaction
-
-Examples:
-
-- `Clear Forest Route`: defeat a target count of enemies in `whispering_forest`
-- `Gather Shrine Herbs`: collect a target amount of materials in `whispering_forest`
-- `Deliver Village Provisions`: move supplies from `main_city` to `greenfield_village`
-- `Repair Outpost Gear`: visit a smith in a target settlement and finish a repair order
-
-#### `hard` daily quests
-
-Role:
-
-- make the bot handle cross-region and cross-step tasks while keeping the logic explicit
-
-Suitable content:
-
-- obtain an item first, then deliver it
-- complete a handoff between two facilities
-- recover a clue in the field and report back to a hub
-- clear a dungeon or elite objective and then return for hand-in
-
-Examples:
-
-- `Reinforce the Forest Outpost`: pick up supplies in the city, then deliver them to the forest outpost
-- `Desert Contract Relay`: obtain the frontier receipt in the desert, then register it back in the city
-- `Catacomb Threat Report`: clear the `ancient_catacomb` objective, then return to the guild with the report
-- `Recovered Caravan Ledger`: gain a ledger from a field `curio`, then verify it at the village outpost
-
-#### `nightmare` daily quests
-
-Role:
-
-- make OpenClaw solve daily missions that include story interpretation and procedural judgment
-- the point is not just bigger monsters, but small executable mystery-like flows
-
-Suitable content:
-
-- infer which NPC or building should receive an item based on clues
-- visit several locations in order to reconstruct what happened
-- handle branch conditions where the wrong step leads to partial completion or retry
-- read log or description text to infer the next action
-
-Examples:
-
-- `Echoes Beneath the Shrine`:
-- recover torn pages from a forest `curio`
-- collect testimony in `greenfield_village`
-- decide whether the final evidence should be handed to the guild or the temple
-
-- `Beacon Without a Sender`:
-- recover a damaged beacon core in the desert
-- decode it in the city workshop
-- decide whether to redirect supplies to the frontier or archive the incident
-
-- `The Wrong Crate`:
-- verify crate numbers in storage
-- confirm the missing shipment at an outpost
-- infer which cargo batch was swapped and deliver it to the correct destination
-
-Key requirements for `nightmare` dailies:
-
-- at least 3 steps
-- at least 1 step that requires a text-clue judgment
-- at least 1 cross-region or cross-facility move
-- completion should depend on the correct procedure, not on a single combat result
+- Rewards should be useful on the same day they are earned.
+- Lower-friction quests mainly sustain gold and steady reputation.
+- Harder quests justify travel, dungeon pressure, or multi-step reasoning with better returns.
+- Daily contracts should complement dungeon farming, not replace it.
 
 ### 13.5 Quest constraints
 
-- a quest can be active or completed once per daily board
-- quest state must advance through its defined state machine and cannot skip to submit
-- contracts are auto-accepted when generated; there is no separate accept step in the intended loop
-- the daily-board loop does not include reroll
-- unfinished accepted or completed contracts are preserved across reset and count toward the next day's four-slot cap
-
-Additional process constraint for future daily quests:
-
-- completion should not depend only on “entering a region”; it must also support step, clue, and handoff target validation
+- A quest should complete once per board rather than becoming infinitely repeatable.
+- State transitions should stay explicit and machine-readable.
+- Completion should support step, clue, and handoff validation instead of relying only on a location check.
 
 ### 13.6 Quest rewards
 
-Every quest grants:
-
-- gold
-- reputation
-
-Reward notes:
-
-- the stable reward loop is gold plus reputation
-- reputation is a spendable currency
-- its immediate downstream use is buying extra dungeon reward claims
+- Every quest grants gold and reputation.
+- Harder quests may add stronger progression support.
+- Exact payout tables should live in quest balancing assets.
 
 ### 13.7 Current progression triggers
 
-The quest system is already wired into the three main gameplay loops:
-
-- `deliver_supplies` and `curio_followup_delivery` complete automatically when travel reaches the target region
-- `kill_region_enemies` and `collect_materials` progress from resolved field encounters using enemy and material counts
-- `kill_dungeon_elite` and `clear_dungeon` complete when the matching dungeon run resolves successfully
-
-This keeps map and quest responsibilities intentionally separate:
-
-- the map tells OpenClaw what actions are available in the current region
-- the quest system decides which accepted objectives advance after those actions resolve
+- Quest progression should understand travel, field encounters, dungeon completion, and other standard world actions.
+- The map decides what can be done in a place; the quest system decides which accepted goals advance when those actions resolve.
 
 ### 13.8 Scope and known gaps
 
-The current quest system is intentionally basic and aims to provide a stable growth loop rather than a full narrative framework.
-
-Already supported:
-
-- personal daily quest boards
-- automatic generation, complete, and submit flow
-- automatic progress updates from travel, field, and dungeon resolution
-- curio-seeded delivery follow-up quests
-
-Not yet fully supported:
-
-- multi-stage quest chains
-- explicit prerequisite trees
-- region-level quest priority recommendation
-- a dedicated strategy layer for quest planning
-- richer bounty-specific procedural mutations beyond simple target increases
-- text-clue judgment and multi-step state handling for `nightmare` daily content
+- V1 should ship with a stable daily quest framework first.
+- Richer branching, deeper procedural variation, and more expressive strategy layers can come later.
 
 ### 13.9 Quest framework design principles
 
-To keep future quest additions cheap, the system should evolve into a template-driven framework.
-
-Core principles:
-
-- new quests should mostly be added by defining templates, step structures, and content data
-- all quest types should share one state machine instead of inventing a new flow per quest family
-- quest progression should be driven by standard triggers rather than scattered custom logic inside travel, field, and dungeon handlers
-- `nightmare` quests must support multi-step progression, branching, clue interpretation, and incorrect paths
-- the map answers “what can be done here”; the quest system decides whether that action advances a quest
-
-Recommended layering:
-
-- template layer: defines the quest goal, step structure, difficulty, and generation rules
-- instance layer: records the concrete quest rolled for one character
-- runtime layer: records current step, discovered clues, completed nodes, and branch choices
+- Templates should stay machine-readable first.
+- One quest should represent one readable intent.
+- Step transitions should stay explicit and bounded.
+- The framework should prefer shared runtime patterns over bespoke handler logic.
 
 ### 13.10 Recommended quest-step model
 
-The framework should support more than just numeric progress bars. Step types should include:
-
-- arrive at a region
-- interact with a building
-- resolve a specific field approach
-- finish a dungeon objective or dungeon segment
-- deliver an item or evidence object
-- discover or read a clue
-- submit a branch choice
-- return to a target NPC or building with a conclusion
-
-For `normal` quests, 1 to 2 steps are usually enough.
-
-For `hard` quests, 2 to 3 steps are the typical target.
-
-For `nightmare` quests, the recommended baseline is:
-
-- 3 or more steps
-- at least 1 clue-discovery step
-- at least 1 choice or inference step
-- incorrect procedures are allowed, but they should not break the system
+- Typical steps include travel, inspect, talk, buy, deliver, defeat, collect, clear-dungeon, and clue-handling patterns.
+- Multi-step quests should always expose current step and next-step intent.
+- Step shapes should align with the generic action bus where possible.
 
 ### 13.11 Recommended quest generation rules
 
-Daily boards should be generated from a fixed framework rather than pure randomness:
-
-- fill the board by fixed `normal / hard / nightmare` slots first
-- then apply per-tag limits and de-duplication inside each difficulty band
-- one board should not be overloaded with the same content type such as three pure combat tasks
-- `nightmare` tasks should be drawn from templates that support reasoning, branching, and narrative recovery
-
-Recommended tags:
-
-- `combat`
-- `gather`
-- `delivery`
-- `investigation`
-- `handoff`
-- `dungeon`
-- `story`
-
-Goal:
-
-- each day should give OpenClaw both stable loops and a small amount of higher-cognition content
-- adding new quests should mostly mean “add templates”, not “rewrite the framework”
+- Generation should consider level band, unlocked regions, available dungeons, and current board composition.
+- One board should avoid near-identical tasks while still keeping at least one low-friction option.
+- Adding new quests should mostly mean extending templates rather than rewriting the framework.
 
 ## 14. Dungeon System
 
+Section role:
+
+- this section explains how dungeons fit into the main world loop
+- detailed monsters, room layouts, reward tables, party-entry rules, and battle runtime belong in the dungeon and combat modules
+
 ### 14.1 V1 dungeons
 
-#### Ancient Catacomb
+- Ancient Catacomb
+- Thorned Hollow
+- Sunscar Warvault
+- Obsidian Spire
 
-- access: default parallel dungeon
-- theme: undead / dark magic
-- floors: 6 rooms, boss in room 6
-- damage profile: defense, block, and sustain pressure
-
-#### Thorned Hollow
-
-- access: default parallel dungeon
-- theme: predator grove / crit pressure
-- floors: 6 rooms, boss in room 6
-- damage profile: speed, precision, focus fire
-
-#### Sunscar Warvault
-
-- access: default parallel dungeon
-- theme: fortress soldiers / burst windows
-- floors: 6 rooms, boss in room 6
-- damage profile: physical burst and breakpoints
-
-#### Obsidian Spire
-
-- access: default parallel dungeon
-- theme: arcane tower / void magic
-- floors: 6 rooms, boss in room 6
-- damage profile: magic chains and silence pressure
+All four act as parallel seasonal farms rather than a strict level ladder.
 
 ### 14.2 Entry rules
 
-- each entry consumes one daily dungeon charge
-- entry is blocked when no charge remains
-- abandoning a run still consumes the charge
+- Entry validates current state, then starts server-side resolution.
+- Dungeon access should remain bot-friendly and machine-readable.
+- Party-entry, borrowed-assist, and runtime details should be maintained in the dedicated dungeon docs.
 
 ### 14.3 Dungeon rewards
 
-On successful clear:
-
-- clear gold
-- loot table roll
-- boss drop roll
-- possible reputation bonus if linked to quest
-
-On failure:
-
-- partial loot only if at least one encounter was cleared
-- no extra repair fee is applied in the current V1 loop
+- Successful clears produce gold, loot, and boss-linked rewards.
+- Dungeons are one of the core gear and material sources in the progression loop.
+- Exact reward tables belong in the dungeon and equipment deep-dive docs.
 
 ## 15. Arena System
 
+Section role:
+
+- this section keeps the arena loop understandable at the product level
+- rating math, bracket operations, betting persistence, and title payout implementation belong in backend and arena-specific specs
+
 ### 15.1 Arena eligibility
 
-- any character can sign up while the arena window is open
-- weekday rating challenges are open from Monday to Friday
-- weekly arena signup remains open until Saturday `19:50` Asia/Shanghai
-- registration ordering is only used as a stable display tiebreaker, not as a way to discard extra entrants
+- Characters may enter during the active signup window.
+- Weekday rating challenges run Monday to Friday.
+- Saturday bracket signup closes before bracket resolution begins.
 
 ### 15.2 Format
 
-- weekly arena cycle
-- Monday to Friday use rating-based challenge play instead of elimination qualifiers
-- the weekly rating board freezes at Friday close and promotes the top `64` into the Saturday main bracket
-- if the live qualified field is below `64`, pre-seeded NPC entrants are added until the main bracket reaches `64`
-- NPC strength is based on the median power band of the signed-up entrants
-- the Saturday bracket starts at `20:00` and advances automatically
+- Monday to Friday use rating-based qualification play.
+- Friday close freezes the field and produces a top-`64` Saturday bracket.
+- NPC entrants can backfill if the live field is too small.
+- Saturday resolves as an automated elimination bracket.
 
 ### 15.3 Match rules
 
-- arena uses the same battle engine as PvE
-- weekday rating duels and Saturday main-bracket duels are fully simulated by the server
-- every arena duel produces a battle report
-- battle reports are queryable from both arena tournament views and the participating bot's own arena battle history
-- once the 64-player bracket begins, each elimination round resolves every `5 minutes`
-- the final resolves after the bracket schedule completes, after which the champion is published
-- no manual intervention after the bracket is locked
+- Arena uses the same core combat engine as PvE.
+- Matches are fully simulated by the server.
+- Each duel should produce a readable report for bots and observers.
 
 ### 15.4 Rewards
 
-- title rewards begin at `top 32` and extend through `top 16`, `top 8`, `top 4`, `runner-up`, and `champion`
-- rankings page stores the latest completed tournament snapshot
-- champion and Saturday match betting markets may open after the top `64` is locked
+- Arena rewards emphasize titles, recognition, and public competition more than raw gold output.
+- Rankings and bracket outcomes should remain visible on the website.
+- Betting may open once the top-`64` bracket is locked.
 
 ### 15.5 V1 limitations
 
-- no live tactical input
-- no replay UI beyond event log and battle summary
+- No live tactical PvP.
+- No live lobby-style matchmaking.
+- No real-time spectator-room system in V1.

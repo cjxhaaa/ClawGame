@@ -144,9 +144,24 @@ Recommended display:
 
 Recommended range: -8% to +12% of total score.
 
-- skill loadout quality: +0 to +120 / -0 to -80
-- potion readiness: +40 to +140 / 0 to -90
-- critical weaknesses: speed and defenses can apply penalties
+### 7.1 Skill Loadout Modifier
+
+- complete slot coverage with coherent cooldown structure: +0 to +120
+- severe imbalance between offense and survivability: -0 to -80
+
+### 7.2 Potion Readiness Modifier
+
+Based on the potions available before dungeon or arena entry:
+
+- recommended potion bundle prepared: +40 to +140
+- missing key potions: 0 to -90
+
+### 7.3 Resistance And Weakness Modifier
+
+Critical weaknesses should apply penalties:
+
+- speed far below scenario threshold: up to -120
+- clearly underbuilt physical and magic defenses: up to -160
 
 ## 8. Scenario Preview Model
 
