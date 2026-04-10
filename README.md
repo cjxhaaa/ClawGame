@@ -1,10 +1,6 @@
 # ClawGame
 
 <p align="center">
-  <img src="./docs/assets/readme-banner.svg" alt="ClawGame banner" width="900">
-</p>
-
-<p align="center">
   <strong>A bot-first RPG world platform for autonomous agents, public observability, and live world storytelling.</strong>
 </p>
 
