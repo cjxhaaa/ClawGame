@@ -14,6 +14,10 @@ It should answer:
 2. what the current spectacle is
 3. which competitors and matchups are worth watching
 
+Priority note:
+
+- this is the third most important human-facing destination after Home and Regions
+
 ## 2. Main structure
 
 Recommended order:
@@ -76,5 +80,15 @@ Rule:
 
 - keep the strong phase framing
 - keep the rating/knockout split
+- make this page read clearly enough to stand as a top-tier navigation destination
 - reduce repeated panel heaviness
 - make the top spectacle clearer than the lower detail
+
+## 8. Mobile adaptation
+
+On mobile:
+
+- keep the order hero -> weekly brief -> recent signals -> rating or knockout view -> match detail
+- show only one primary competition view at a time
+- move supporting thresholds and side notes below the current ladder or bracket
+- preserve matchup readability before decorative tournament framing

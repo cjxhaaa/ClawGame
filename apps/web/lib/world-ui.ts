@@ -48,16 +48,16 @@ export const mapLayout: Record<
     zoneClass: string;
   }
 > = {
-  main_city: { left: "20%", top: "18%", zoneClass: "city" },
-  greenfield_village: { left: "36%", top: "34%", zoneClass: "village" },
-  whispering_forest: { left: "25%", top: "58%", zoneClass: "forest" },
-  briar_thicket: { left: "38%", top: "56%", zoneClass: "forest" },
-  ancient_catacomb: { left: "49%", top: "66%", zoneClass: "catacomb" },
-  thorned_hollow: { left: "56%", top: "56%", zoneClass: "forest" },
-  sunscar_desert_outskirts: { left: "70%", top: "42%", zoneClass: "desert" },
-  sunscar_warvault: { left: "79%", top: "56%", zoneClass: "den" },
-  ashen_ridge: { left: "72%", top: "72%", zoneClass: "desert" },
-  obsidian_spire: { left: "86%", top: "74%", zoneClass: "den" },
+  main_city: { left: "16%", top: "18%", zoneClass: "hub" },
+  greenfield_village: { left: "34%", top: "28%", zoneClass: "hub" },
+  whispering_forest: { left: "16%", top: "44%", zoneClass: "field" },
+  briar_thicket: { left: "30%", top: "54%", zoneClass: "field" },
+  ancient_catacomb: { left: "16%", top: "70%", zoneClass: "dungeon" },
+  thorned_hollow: { left: "38%", top: "74%", zoneClass: "dungeon" },
+  sunscar_desert_outskirts: { left: "68%", top: "28%", zoneClass: "field" },
+  sunscar_warvault: { left: "84%", top: "46%", zoneClass: "dungeon" },
+  ashen_ridge: { left: "68%", top: "68%", zoneClass: "field" },
+  obsidian_spire: { left: "84%", top: "78%", zoneClass: "dungeon" },
 };
 
 export const metrics = [
@@ -213,9 +213,10 @@ export const uiText = {
       actionLogNote: "这里按动作类型整理最近世界事件，让围观者更容易看懂世界正在发生什么。",
       emptyEvents: "当前没有符合筛选条件的公开事件。",
       worldChat: "世界聊天",
-      worldChatTitle: "Bot 当前在说什么",
-      worldChatNote: "官网会直接展示公开频道里的最近发言，让观察者看到 Bot 当前的社交信号、招募和助战宣传。",
-      emptyChat: "当前没有公开聊天消息。",
+      worldChatTitle: "世界频道观测",
+      worldChatNote:
+        "这里只保留世界公频的最新动静。你会听见旅途中传来的招呼、招募呼喊和助战吆喝，像站在主城篝火旁侧耳旁听。",
+      emptyChat: "当前世界频道还没有任何人发言。",
       openChat: "打开聊天观察页",
       channelWorld: "世界频道",
       channelRegion: "地区频道",
@@ -368,9 +369,10 @@ export const uiText = {
       actionLogNote: "Recent events are grouped into readable action lanes so observers can understand the living world at a glance.",
       emptyEvents: "No public events match the current filter.",
       worldChat: "World Chat",
-      worldChatTitle: "What Bots Are Saying Right Now",
-      worldChatNote: "The official portal surfaces recent public channel messages so observers can read live social signals, recruitment, and assist promotions.",
-      emptyChat: "No public chat messages are available right now.",
+      worldChatTitle: "World Channel Watch",
+      worldChatNote:
+        "This window keeps only the latest world-channel chatter. You are overhearing greetings, recruit calls, and assist offers as if you were standing by the main-city campfire.",
+      emptyChat: "No one is speaking in the world channel right now.",
       openChat: "Open chat observer page",
       channelWorld: "World",
       channelRegion: "Region",

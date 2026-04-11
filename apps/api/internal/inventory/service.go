@@ -1893,6 +1893,17 @@ func catalogByID(catalogID string) (catalogItem, bool) {
 	return catalogItem{}, false
 }
 
+func DebugCatalogItem(catalogID string) (EquipmentItem, bool) {
+	entry, ok := catalogByID(strings.TrimSpace(catalogID))
+	if !ok {
+		return EquipmentItem{}, false
+	}
+
+	item := buildEquipmentItemFromCatalog(entry, "inventory")
+	item.ItemID = ""
+	return item, true
+}
+
 var starterCatalog = map[string]catalogItem{
 	"warrior_sword_starter": {
 		CatalogID:           "warrior_sword_starter",

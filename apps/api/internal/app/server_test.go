@@ -15,8 +15,76 @@ import (
 	"clawgame/apps/api/internal/dungeons"
 	"clawgame/apps/api/internal/inventory"
 	"clawgame/apps/api/internal/platform/config"
+	"clawgame/apps/api/internal/social"
 	"clawgame/apps/api/internal/world"
 )
+
+func TestBuildWorldObserverChatMessagesIncludesCuratedSystemNotices(t *testing.T) {
+	real := []social.ChatMessage{{
+		MessageID:   "msg_world_1",
+		ChannelType: "world",
+		BotID:       "bot_alpha",
+		BotName:     "Alpha",
+		MessageType: "free_text",
+		Content:     "今晚有人去地下城吗？",
+		CreatedAt:   "2026-04-11T12:00:00Z",
+	}}
+	events := []world.WorldEvent{
+		{
+			EventID:          "evt_profession",
+			EventType:        "character.profession_changed",
+			ActorCharacterID: "bot_beta",
+			ActorName:        "Beta",
+			Summary:          "Beta chose the warrior profession.",
+			Payload: map[string]any{
+				"from_class": "civilian",
+				"to_class":   "warrior",
+			},
+			OccurredAt: "2026-04-11T12:02:00Z",
+		},
+		{
+			EventID:          "evt_enhance",
+			EventType:        "inventory.item_enhanced",
+			ActorCharacterID: "bot_gamma",
+			ActorName:        "Gamma",
+			Summary:          "Gamma enhanced Sunscar Assault Chest to +12.",
+			Payload: map[string]any{
+				"catalog_id": "sunscar_assault_chest_red",
+				"to_level":   12,
+			},
+			OccurredAt: "2026-04-11T12:01:00Z",
+		},
+		{
+			EventID:          "evt_noise",
+			EventType:        "dungeon.cleared",
+			ActorCharacterID: "bot_noise",
+			ActorName:        "Noise",
+			Summary:          "Noise cleared a dungeon.",
+			OccurredAt:       "2026-04-11T12:03:00Z",
+		},
+	}
+
+	items := buildWorldObserverChatMessages(real, events, nil, inventory.NewService(), "")
+	if len(items) != 3 {
+		t.Fatalf("expected 3 observer messages, got %d", len(items))
+	}
+	if items[0]["message_type"] != observerSystemNoticeType {
+		t.Fatalf("expected newest item to be system notice, got %v", items[0]["message_type"])
+	}
+	if items[2]["message_type"] != "free_text" {
+		t.Fatalf("expected runtime chat to remain in merged feed, got %v", items[2]["message_type"])
+	}
+
+	systemOnly := buildWorldObserverChatMessages(real, events, nil, inventory.NewService(), observerSystemNoticeType)
+	if len(systemOnly) != 2 {
+		t.Fatalf("expected 2 system notices, got %d", len(systemOnly))
+	}
+	for _, item := range systemOnly {
+		if item["message_type"] != observerSystemNoticeType {
+			t.Fatalf("expected system notice item, got %v", item["message_type"])
+		}
+	}
+}
 
 func TestPublicWorldRoutes(t *testing.T) {
 	server := NewServer(config.API{Port: "8080"})
@@ -2705,8 +2773,21 @@ func TestPublicRoutesReflectRuntimeData(t *testing.T) {
 	if publicWorldChat.Data.Items[0].ChannelType != "world" {
 		t.Fatalf("expected world chat channel_type world, got %q", publicWorldChat.Data.Items[0].ChannelType)
 	}
-	if publicWorldChat.Data.Items[0].MessageType != "assist_ad" {
-		t.Fatalf("expected world chat to prefer runtime assist_ad messages, got %q", publicWorldChat.Data.Items[0].MessageType)
+	hasRuntimeWorldChat := false
+	hasSystemNotice := false
+	for _, item := range publicWorldChat.Data.Items {
+		if item.MessageType == "assist_ad" {
+			hasRuntimeWorldChat = true
+		}
+		if item.MessageType == observerSystemNoticeType {
+			hasSystemNotice = true
+		}
+	}
+	if !hasRuntimeWorldChat {
+		t.Fatal("expected public world chat to keep runtime assist_ad messages in the mixed feed")
+	}
+	if !hasSystemNotice {
+		t.Fatal("expected public world chat to expose curated system notices alongside runtime chat")
 	}
 
 	var publicRegionChat struct {

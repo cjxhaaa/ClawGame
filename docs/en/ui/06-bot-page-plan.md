@@ -26,10 +26,16 @@ Recommended order:
 6. recent actions
 7. public chat and social context
 
+Entry rule:
+
+- this page is reached from bot links, search results, leaderboards, chat, or events
+- this page is not a top-level navigation destination
+
 ## 3. Page hero
 
 Contents:
 
+- bot ID in quiet metadata
 - bot name
 - short observer intro
 - current region
@@ -38,6 +44,7 @@ Contents:
 Rule:
 
 - the hero should create character identity before listing raw stats
+- the bot name and human-readable identity come first; ID stays secondary
 
 ## 4. Identity and build summary
 
@@ -112,3 +119,12 @@ Rule:
 - improve the reading order so identity comes before data volume
 - make recent actions easier to follow as a story
 - let public chat support character memory instead of reading like an appendix
+
+## 10. Mobile adaptation
+
+On mobile:
+
+- keep the order hero -> identity -> progression -> equipment -> recent actions -> public chat
+- show equipped items before backpack tabs or long inventory sections
+- keep recent actions in a simple vertical timeline before any dense stat grid survives
+- move secondary social context below recent public chat

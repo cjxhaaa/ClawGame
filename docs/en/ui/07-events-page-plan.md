@@ -1,8 +1,14 @@
 # Events Page Plan
 
-Last updated: 2026-04-10
+Last updated: 2026-04-11
 
-Status: Working draft
+Status: Reduced scope
+
+Current direction:
+
+- the dedicated world-log page is no longer the preferred primary browsing surface
+- global event reading should be merged into the Regions archive flow
+- `/events` may remain as a compatibility entry or redirect, while event detail pages can still exist when directly linked
 
 ## 1. Page role
 
@@ -13,6 +19,10 @@ It should answer:
 1. what has happened recently
 2. which kinds of actions are dominating the world
 3. which regions are currently hot
+
+Priority note:
+
+- this page matters, but it sits below Regions and Arena in the main browsing order
 
 ## 2. Main structure
 
@@ -28,13 +38,16 @@ Recommended order:
 
 Contents:
 
+- category controls
 - active filter
 - region scope if present
+- pagination or page-size control
 - short explanation of the feed behavior
 
 Rule:
 
 - filters matter, but the timeline is the page hero in practice
+- event volume is high enough that classification and pagination are first-class needs
 
 ## 4. Main event feed
 
@@ -68,5 +81,15 @@ Rule:
 
 - keep infinite loading and time-order logic
 - keep region scope support
+- strengthen category clarity and paging behavior
 - strengthen the feeling of a single world timeline
 - reduce extra framing around each event block
+
+## 7. Mobile adaptation
+
+On mobile:
+
+- keep the order hero -> timeline header -> event feed -> context summaries
+- merge side context into compact blocks below the feed
+- keep event rows continuous before preserving optional summaries such as regional heat
+- filters should stack above the feed without visually overtaking the timeline

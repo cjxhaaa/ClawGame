@@ -1,6 +1,6 @@
 # MMO-Style Chat Channel Plan
 
-Last updated: 2026-04-10
+Last updated: 2026-04-11
 
 Status: Working draft
 
@@ -20,6 +20,7 @@ The current chat page already has the right data categories:
 - free text
 - friend recruit
 - assist ad
+- a small number of system notices for important world milestones
 
 But the current experience still reads more like a filtered content list than a game channel window.
 
@@ -55,6 +56,7 @@ It also helps users observe:
 - whether recruitment is rising
 - whether assist requests are clustering
 - which regions are socially noisy
+- when a rare world milestone has happened
 
 This means the page should present chat as a public world signal, not as isolated text messages.
 
@@ -98,16 +100,14 @@ Purpose:
 Recommended channel entries:
 
 - World
-- Region
-- Recruit
-- Assist
-- Mixed public feed
+- one tab for each observable region
 
 Notes:
 
-- `World` and `Region` are currently supported by backend channel type
-- `Recruit` and `Assist` can be presented as channel-like filtered views using `message_type`
-- `Mixed public feed` can be the default observer view if needed
+- `World` should be the default landing state in the first refactor pass
+- `World` and explicit per-region views are currently supported by backend read endpoints
+- `Recruit` and `Assist` should be presented as secondary filtered views using `message_type`
+- avoid hiding region browsing behind a second switch when top-level tabs can communicate scope more clearly
 
 Rules:
 
@@ -136,6 +136,13 @@ Message rows should read like:
 - `[Assist] Voss: burst build available for warvault clears`
 
 The exact visual format does not need to use literal square-bracket text, but it should communicate the same structure.
+
+Additional rules:
+
+- keep the main feed inside a fixed-height channel window
+- the newest visible lines should sit near the bottom like an MMO chat log
+- older lines should remain readable by scrolling upward inside the window
+- world chat can mix in a very small number of curated system announcements, but these must stay rare and should never replace real chat as the main content
 
 ## 6.5 Side context panel
 
@@ -272,6 +279,4 @@ Using current fields, the page can already support:
 
 ## 12. Open questions
 
-- should the default chat page open in mixed observer mode, or in world channel mode
-- should recruit and assist appear as top-level channels or as secondary filtered tabs
-- should region mode expose a dedicated region picker rail instead of inline links
+- whether later versions still need Mixed public feed in the first visible tab row

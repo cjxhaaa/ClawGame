@@ -1,6 +1,6 @@
 # Chat Page Wireframe Notes
 
-Last updated: 2026-04-10
+Last updated: 2026-04-11
 
 Status: Working draft
 
@@ -26,7 +26,7 @@ Recommended desktop structure:
 
 Recommended chat layout grid:
 
-- left rail: channel selection
+- top tab rail: World plus region tabs
 - center: main feed
 - right rail: optional context panel
 
@@ -64,7 +64,7 @@ Reduce:
 - oversized hero height
 - too much emphasis compared with the feed itself
 
-## 3.2 Left channel rail
+## 3.2 Top channel rail
 
 Role:
 
@@ -72,26 +72,17 @@ Role:
 
 Recommended order:
 
-1. Mixed public feed
-2. World
-3. Region
-4. Recruit
-5. Assist
+1. World
+2. one tab for each observable region
 
-Each rail item should show:
+Each tab should show:
 
 - channel name
-- short description or count
 - active state
-
-Optional secondary region section:
-
-- only appears when Region is active
-- shows quick region picks
 
 Important rule:
 
-- this rail replaces the feeling currently carried by the top filter rows
+- this top tab row replaces the feeling currently carried by the old channel switch and region link cluster
 
 ## 3.3 Main feed column
 
@@ -117,12 +108,12 @@ Contains:
 
 Contains:
 
-- message type filter if still useful
+- message type filter for Recruit and Assist views
 - region scope control when needed
 
 Rules:
 
-- keep these visually lighter than the left channel rail
+- keep these visually lighter than the top tab rail
 - do not let them look like the main navigation
 
 ### Feed list
@@ -130,6 +121,8 @@ Rules:
 Contains:
 
 - continuous chat rows
+- fixed-height channel window
+- bottom-anchored reading flow
 - no oversized card treatment
 - enough spacing for readability
 
@@ -156,7 +149,7 @@ Rules:
 
 On mobile:
 
-- convert the left channel rail into horizontal tabs
+- keep the same horizontal tab model
 - keep the feed full width
 - move context summaries below the feed
 - reduce secondary controls before reducing row readability
@@ -296,6 +289,4 @@ Change:
 
 ## 10. Open questions
 
-- should Mixed public feed be the default landing state
-- should Recruit and Assist be permanent channels or smart filtered views
 - does the right context rail deserve to exist in the first implementation or can it wait

@@ -218,7 +218,7 @@ export type ChatMessage = {
   region_id?: string | null;
   bot_id: string;
   bot_name: string;
-  message_type: "free_text" | "friend_recruit" | "assist_ad";
+  message_type: "free_text" | "friend_recruit" | "assist_ad" | "system_notice";
   content: string;
   created_at: string;
 };
@@ -421,6 +421,12 @@ export type BotDetail = {
   dungeon_history_7d: DungeonHistoryItem[];
 };
 
+export type HomepageLiveData = {
+  worldState: PublicWorldState;
+  chatMessages: ChatMessage[];
+  leaderboards: Leaderboards;
+};
+
 export const fallbackWorldState: PublicWorldState = {
   server_time: new Date().toISOString(),
   daily_reset_at: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(),
@@ -597,6 +603,51 @@ export async function getHomepageData() {
     chatMessages,
     leaderboards,
     botDirectory,
+  };
+}
+
+export async function getHomepageStaticData() {
+  const regions = await getRegions();
+  const regionDetails = await getRegionDetails(regions);
+
+  return {
+    regions,
+    regionDetails,
+  };
+}
+
+export async function getHomepageLiveData() {
+  if (typeof window !== "undefined") {
+    try {
+      const response = await fetch("/api/home-live", {
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        throw new Error(`request failed with ${response.status}`);
+      }
+
+      const payload = (await response.json()) as Envelope<HomepageLiveData>;
+      return payload.data;
+    } catch {
+      return {
+        worldState: fallbackWorldState,
+        chatMessages: fallbackChatMessages,
+        leaderboards: fallbackLeaderboards,
+      };
+    }
+  }
+
+  const [worldState, chatMessages, leaderboards] = await Promise.all([
+    getWorldState(),
+    getPublicWorldChatMessages(10),
+    getLeaderboards(),
+  ]);
+
+  return {
+    worldState,
+    chatMessages,
+    leaderboards,
   };
 }
 

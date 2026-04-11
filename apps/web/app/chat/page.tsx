@@ -5,14 +5,16 @@ export const revalidate = 30;
 
 type ChatPageProps = {
   searchParams: Promise<{
+    scope?: string;
     channel?: string;
     region?: string;
     message_type?: string;
+    cursor?: string;
   }>;
 };
 
 function toMessageType(value?: string) {
-  if (value === "free_text" || value === "friend_recruit" || value === "assist_ad") {
+  if (value === "free_text" || value === "friend_recruit" || value === "assist_ad" || value === "system_notice") {
     return value;
   }
   return "all";
@@ -20,21 +22,29 @@ function toMessageType(value?: string) {
 
 export default async function ChatPage({ searchParams }: ChatPageProps) {
   const query = await searchParams;
-  const channel = query.channel === "region" ? "region" : "world";
   const messageType = toMessageType(query.message_type);
-  const regionID = query.region || "main_city";
+  const cursor = query.cursor;
+  const regions = await getRegions();
+  const legacyScope = query.channel === "region" ? query.region || "main_city" : "world";
+  const requestedScope = query.scope || legacyScope;
+  const activeScope =
+    requestedScope === "world" || regions.some((region) => region.region_id === requestedScope)
+      ? requestedScope
+      : "world";
+  const activeRegionID = activeScope === "world" ? undefined : activeScope;
 
-  const [worldState, regions, chatPage] = await Promise.all([
+  const [worldState, chatPage] = await Promise.all([
     getWorldState(),
-    getRegions(),
-    channel === "region"
+    activeRegionID
       ? getPublicRegionChatPage({
-          regionID,
+          regionID: activeRegionID,
           limit: 30,
+          cursor,
           messageType: messageType === "all" ? undefined : messageType,
         })
       : getPublicWorldChatPage({
           limit: 30,
+          cursor,
           messageType: messageType === "all" ? undefined : messageType,
         }),
   ]);
@@ -43,10 +53,11 @@ export default async function ChatPage({ searchParams }: ChatPageProps) {
     <ChatConsole
       worldState={worldState}
       regions={regions}
-      channel={channel}
-      regionID={channel === "region" ? regionID : undefined}
+      activeScope={activeScope}
       messageType={messageType}
       messages={chatPage.items}
+      nextCursor={chatPage.next_cursor ?? undefined}
+      cursor={cursor}
     />
   );
 }

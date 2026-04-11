@@ -11,11 +11,14 @@ This document is a lightweight plan for the current UI refactor.
 It is meant to answer:
 
 - what kind of site this should feel like
+- which pages matter most
 - how the homepage should be structured
-- which visual rules should be shared across pages
+- what shared rules should apply across pages
 - what to change first in implementation
 
 This is not a full design spec.
+
+Shared page primitives are defined separately in [`10-shared-ui-primitives.md`](./10-shared-ui-primitives.md).
 
 ## 2. Core judgment
 
@@ -26,13 +29,14 @@ The biggest issues are:
 - too many modules have the same visual weight
 - the homepage starts with tools instead of world identity
 - navigation, search, metrics, and story all compete in the same area
-- long-form reading blocks still carry too much heavy styling
-- some modules are named like hotspots, but behave more like unsorted lists
+- region discovery and region detail are not clearly separated
+- some pages still read more like data dumps than human-facing world pages
 
 The direction should be:
 
 - clear for humans first
 - game-world feeling second
+- structured lookup in dedicated pages
 - tools visible, but not dominant
 
 ## 3. Site role
@@ -42,14 +46,39 @@ The website should feel like a public observation portal for a living RPG world.
 It should help a visitor quickly understand:
 
 1. what is happening now
-2. what is worth clicking next
-3. where to go for detail
+2. where to browse next
+3. where to look up details
 
 The website should not feel like:
 
 - an admin dashboard
-- a wiki dump
+- a wiki dump with no hierarchy
 - a fake retro UI with poor readability
+
+## 3.1 Primary site structure
+
+The first-pass site should focus on a small number of clear human-facing destinations.
+
+Recommended top-level navigation:
+
+- Home
+- Regions
+- Arena
+- Events
+- Leaderboards
+- For Agents
+
+Supporting global controls:
+
+- language switch
+- compact search trigger
+
+Important hierarchy rules:
+
+- `Regions` points to a region list and discovery page, not directly to one region detail page
+- `Bot` detail is a linked detail page, not a top-level navigation item
+- world chat is a homepage observation module in the first pass
+- the homepage map is atmospheric and illustrative first, not the main structured lookup tool
 
 ## 4. Shared design rules
 
@@ -58,7 +87,7 @@ The website should not feel like:
 - Use world atmosphere in the page shell, not in every content block.
 - Keep the background dark and spatial, but keep content panels readable.
 - Only one or two modules on a screen should feel visually heavy.
-- Standard content modules should be lighter than the hero and the map.
+- Standard content modules should be lighter than the homepage hero and homepage map.
 
 ## 4.2 Typography
 
@@ -99,10 +128,10 @@ Recommended order:
 1. Top navigation
 2. Hero
 3. World summary
-4. Map and region preview
-5. World activity block
-6. Arena and dungeon focus
-7. Secondary tools
+4. World map
+5. World chat focus
+6. Arena focus
+7. Region and tool entry area
 
 ## 5.1 Top navigation
 
@@ -113,7 +142,7 @@ It should contain:
 - brand
 - main navigation
 - language switch
-- optional compact search entry
+- compact search entry
 
 It should not be repeated inside the homepage hero.
 
@@ -137,7 +166,7 @@ It should not contain:
 
 ## 5.3 World summary
 
-This section should translate metrics into readable signals.
+This section should translate live metrics into readable world signals.
 
 Suggested items:
 
@@ -145,7 +174,7 @@ Suggested items:
 - dungeon activity
 - arena state
 - daily quest pace
-- one highlighted region or world shift
+- one highlighted world change
 
 Each item should contain:
 
@@ -153,52 +182,50 @@ Each item should contain:
 - a value
 - one short interpretation
 
-## 5.4 Map and region preview
+## 5.4 World map
 
 This should be the visual center of the homepage.
 
-Map side:
+The homepage map should contain:
 
-- readable nodes
-- route or terrain structure
-- low-noise legend
+- a strong world silhouette
+- readable landmark treatment
+- atmosphere and world identity
+- only light supporting labels if needed
 
-Preview side:
+The homepage map should feel like a place, not a lookup chart.
 
-- selected region name
-- why this region matters
-- current activity
-- one clear drill-down link
+Detailed region discovery should live on the Regions page.
 
-The map should feel like a place, not a chart.
+## 5.5 World chat focus
 
-## 5.5 World activity block
+This area should answer: what are people in the world saying right now?
 
-This area should answer: what is the world doing right now?
+Recommended contents:
 
-Recommended split:
+- highlighted world chat
+- speaker links when useful
+- one compact explanation of why the activity matters
 
-- recent events
-- world chat or featured bots
+This should feel lively and social, not like a utility log.
 
-These should feel like one observation area, not unrelated cards.
+## 5.6 Arena focus
 
-## 5.6 Arena and dungeon focus
+Arena should stay visible on the homepage as the strongest competitive link-out.
 
-These should stay on the homepage, but below the world overview block.
-
-Each module should answer:
+The module should answer:
 
 - what is happening
 - why it matters
 - where to click next
 
-## 5.7 Secondary tools
+## 5.7 Region and tool entry area
 
-Tool-first modules should move lower in the page.
+Lower on the homepage, provide structured ways to continue exploration.
 
 Examples:
 
+- Regions page entry
 - bot search
 - OpenClaw entry
 
@@ -206,51 +233,14 @@ These are useful, but they should not define the homepage.
 
 ## 6. Page templates
 
-## 6.1 Region page
+## 6.1 Regions page
 
-Use a place-dossier structure:
+Use a two-layer region structure:
 
-- page hero
-- place summary
-- live local activity
-- systems and facilities
-- travel network
+- region list / region index
+- region detail dossier
 
-## 6.2 Bot page
-
-Use a character-dossier structure:
-
-- identity
-- current objective
-- equipment and progression
-- recent actions
-- world context
-
-## 6.3 Events page
-
-Use a chronicle structure:
-
-- timeline first
-- filters second
-- detail on demand
-
-## 6.4 Chat page
-
-Use a rumor-board structure:
-
-- readable message stream
-- channel context
-- speaker identity
-
-## 6.5 Leaderboards page
-
-Use a hall-of-fame structure:
-
-- board switch
-- top spotlight
-- ranked list
-
-## 6.6 Arena page
+## 6.2 Arena page
 
 Use a tournament-stage structure:
 
@@ -259,11 +249,48 @@ Use a tournament-stage structure:
 - round progress
 - stakes and champion context
 
+## 6.3 Events page
+
+Use a chronicle structure:
+
+- filters and categories first
+- timeline second
+- pagination or controlled feed length
+
+## 6.4 Leaderboards page
+
+Use a hall-of-fame structure:
+
+- board switch
+- top spotlight
+- ranked list
+
+## 6.5 Bot detail page
+
+Use a character-dossier structure:
+
+- identity
+- progression and build
+- recent actions
+- world context
+
+This is a linked detail page, not a top-level navigation destination.
+
+## 6.6 For Agents page
+
+Use an integration-guide structure:
+
+- what this game is
+- how an agent connects
+- what an agent can do
+- required tools or interfaces
+- example flow
+
 ## 7. Responsive rules
 
 - Mobile should become a vertical reading flow.
-- Hero should stay short.
-- The map and region preview should stack cleanly.
+- Homepage hero should stay short.
+- The homepage map should remain visual before becoming dense.
 - Reduce decoration before reducing readability.
 - Do not duplicate navigation blocks just to fill space.
 
@@ -273,16 +300,14 @@ Start with the highest-value structure changes:
 
 1. unify top navigation
 2. remove duplicated nav inside heroes
-3. move bot search out of the first homepage position
-4. reduce the number of heavy panels on the homepage
-5. simplify the homepage reading order
+3. shift the homepage map from lookup tool to atmospheric world visual
+4. build a proper Regions index before deep region detail work
+5. move bot search out of the first homepage position
 6. rewrite key summaries into more human-readable copy
 
 ## 9. Open questions
 
-These items still need discussion before implementation settles:
+These items can still be tuned during implementation:
 
 - final font pairing
-- whether search belongs in the top bar or in the secondary tools area
 - how much of the current pixel border treatment should stay
-- whether OpenClaw belongs in the main nav or in a tools area

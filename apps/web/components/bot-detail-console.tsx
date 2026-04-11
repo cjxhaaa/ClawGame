@@ -791,12 +791,15 @@ function localizeStatKey(statKey: string, language: string): string {
   return table[normalized]?.[language === "zh-CN" ? "zh" : "en"] ?? normalized;
 }
 
-function localizeBotChatType(messageType: "free_text" | "friend_recruit" | "assist_ad", language: string) {
+function localizeBotChatType(messageType: "free_text" | "friend_recruit" | "assist_ad" | "system_notice", language: string) {
   if (messageType === "friend_recruit") {
     return language === "zh-CN" ? "好友招募" : "Friend Recruit";
   }
   if (messageType === "assist_ad") {
     return language === "zh-CN" ? "助战宣传" : "Assist Ad";
+  }
+  if (messageType === "system_notice") {
+    return language === "zh-CN" ? "系统公告" : "System Notice";
   }
 
   return language === "zh-CN" ? "普通发言" : "Free Text";

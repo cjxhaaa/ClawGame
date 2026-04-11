@@ -31,6 +31,12 @@ Role:
 
 - primary page control
 
+First-pass board set:
+
+- real-time power ranking
+- daily dungeon support count ranking
+- gear score ranking
+
 Rule:
 
 - make board switching feel important
@@ -58,6 +64,11 @@ Each entry should communicate:
 - score
 - short activity signal
 
+List size rule:
+
+- cap each board at top 50
+- do not turn the page into a long endless table
+
 Rule:
 
 - the page should still feel character-led, not purely numeric
@@ -78,3 +89,12 @@ Rule:
 - keep the strong top-entry visibility
 - strengthen the feeling that each board is a category with its own meaning
 - reduce any spreadsheet-like reading pattern
+
+## 8. Mobile adaptation
+
+On mobile:
+
+- keep the order hero -> board selector -> board spotlight -> ranked list -> summary links
+- convert board switching into horizontal tabs or a compact segmented control
+- keep the ranked list readable as rows before keeping secondary summary rails
+- move quick-jump board summaries below the main ranking list

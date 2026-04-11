@@ -2441,11 +2441,14 @@ func NewServer(cfg config.API) *Server {
 				limit := parseLimit(r, 20, 50)
 				cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
 				messageType := strings.TrimSpace(r.URL.Query().Get("message_type"))
-				items := buildObserverChatMessages(socialService.ListChat("world", "", messageType), buildPublicChatMessages(characterService.SnapshotRuntime().Events, publicChatFilters{
-					channelType: "world",
-					messageType: messageType,
-					limit:       1000,
-				}))
+				snapshot := characterService.SnapshotRuntime()
+				items := buildWorldObserverChatMessages(
+					socialService.ListChat("world", "", observerChatRuntimeFilter(messageType)),
+					buildPublicEvents(snapshot.Events, 200),
+					characterService,
+					inventoryService,
+					messageType,
+				)
 				start := parseCursorOffset(cursor, len(items))
 				end := start + limit
 				if end > len(items) {
@@ -2473,12 +2476,7 @@ func NewServer(cfg config.API) *Server {
 				limit := parseLimit(r, 20, 50)
 				cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
 				messageType := strings.TrimSpace(r.URL.Query().Get("message_type"))
-				items := buildObserverChatMessages(socialService.ListChat("region", regionID, messageType), buildPublicChatMessages(characterService.SnapshotRuntime().Events, publicChatFilters{
-					channelType: "region",
-					regionID:    regionID,
-					messageType: messageType,
-					limit:       500,
-				}))
+				items := buildObserverChatMessages(socialService.ListChat("region", regionID, messageType))
 				start := parseCursorOffset(cursor, len(items))
 				end := start + limit
 				if end > len(items) {
@@ -2553,14 +2551,7 @@ func NewServer(cfg config.API) *Server {
 				completedToday := filterQuestHistoryByDay(questHistory, now)
 				dungeonToday := filterDungeonHistoryByDay(dungeonHistory, now)
 				recentRuns := dungeonService.ListRunsByCharacter(botID)
-				recentPublicChat := buildObserverChatMessages(
-					socialService.ListChatByBot(botID, 10),
-					buildPublicChatMessages(events, publicChatFilters{
-						channelType: "world",
-						actorID:     botID,
-						limit:       10,
-					}),
-				)
+				recentPublicChat := buildObserverChatMessages(socialService.ListChatByBot(botID, 10))
 				if len(recentRuns) > 5 {
 					recentRuns = recentRuns[:5]
 				}
@@ -3059,92 +3050,199 @@ func buildPublicEvents(events []world.WorldEvent, limit int) []world.WorldEvent 
 	return publicEvents[:limit]
 }
 
-type publicChatFilters struct {
-	channelType string
-	regionID    string
-	actorID     string
-	messageType string
-	limit       int
-}
-
-func buildPublicChatMessages(events []world.WorldEvent, filters publicChatFilters) []map[string]any {
-	publicEvents := buildPublicEvents(events, len(events))
-	if filters.limit <= 0 {
-		filters.limit = 20
-	}
-
-	items := make([]map[string]any, 0, len(publicEvents))
-	for _, event := range publicEvents {
-		if filters.actorID != "" && event.ActorCharacterID != filters.actorID {
-			continue
-		}
-		if filters.channelType == "region" {
-			if event.RegionID == "" || event.RegionID != filters.regionID {
-				continue
-			}
-		}
-
-		channelType := filters.channelType
-		if channelType == "" {
-			if event.RegionID != "" {
-				channelType = "region"
-			} else {
-				channelType = "world"
-			}
-		}
-		messageType, content := deriveChatMessageFromEvent(event)
-		if filters.messageType != "" && filters.messageType != messageType {
-			continue
-		}
-
-		item := map[string]any{
-			"message_id":   "chat_" + event.EventID,
-			"channel_type": channelType,
-			"bot_id":       event.ActorCharacterID,
-			"bot_name":     event.ActorName,
-			"message_type": messageType,
-			"content":      content,
-			"created_at":   event.OccurredAt,
-		}
-		if channelType == "region" {
-			item["region_id"] = event.RegionID
-		} else {
-			item["region_id"] = nil
-		}
-		items = append(items, item)
-		if len(items) >= filters.limit {
-			break
-		}
-	}
-
-	return items
-}
-
-func buildObserverChatMessages(real []social.ChatMessage, fallback []map[string]any) []map[string]any {
-	if len(real) == 0 {
-		return fallback
-	}
-
+func buildObserverChatMessages(real []social.ChatMessage) []map[string]any {
 	items := make([]map[string]any, 0, len(real))
 	for _, message := range real {
-		item := map[string]any{
-			"message_id":   message.MessageID,
-			"channel_type": message.ChannelType,
-			"bot_id":       message.BotID,
-			"bot_name":     message.BotName,
-			"message_type": message.MessageType,
-			"content":      message.Content,
-			"created_at":   message.CreatedAt,
-		}
-		if message.ChannelType == "region" {
-			item["region_id"] = message.RegionID
-		} else {
-			item["region_id"] = nil
-		}
-		items = append(items, item)
+		items = append(items, observerChatMessageItem(message))
 	}
 
 	return items
+}
+
+const observerSystemNoticeType = "system_notice"
+
+func observerChatRuntimeFilter(messageType string) string {
+	if strings.TrimSpace(messageType) == observerSystemNoticeType {
+		return ""
+	}
+	return messageType
+}
+
+func buildWorldObserverChatMessages(real []social.ChatMessage, publicEvents []world.WorldEvent, characterService *characters.Service, inventoryService *inventory.Service, messageType string) []map[string]any {
+	items := make([]map[string]any, 0, len(real))
+	normalizedType := strings.TrimSpace(messageType)
+
+	if normalizedType == "" || normalizedType == observerSystemNoticeType {
+		for _, message := range buildObserverSystemNotices(publicEvents, characterService, inventoryService) {
+			items = append(items, observerChatMessageItem(message))
+		}
+	}
+	if normalizedType == "" || normalizedType == "all" || normalizedType == "free_text" || normalizedType == "friend_recruit" || normalizedType == "assist_ad" {
+		for _, message := range real {
+			items = append(items, observerChatMessageItem(message))
+		}
+	}
+
+	slices.SortFunc(items, func(left, right map[string]any) int {
+		return cmp.Compare(stringValue(right["created_at"]), stringValue(left["created_at"]))
+	})
+
+	return items
+}
+
+func buildObserverSystemNotices(publicEvents []world.WorldEvent, characterService *characters.Service, inventoryService *inventory.Service) []social.ChatMessage {
+	items := make([]social.ChatMessage, 0, len(publicEvents))
+	for _, event := range publicEvents {
+		message, ok := deriveObserverSystemNotice(event, characterService, inventoryService)
+		if !ok {
+			continue
+		}
+		items = append(items, message)
+	}
+	return items
+}
+
+func deriveObserverSystemNotice(event world.WorldEvent, characterService *characters.Service, inventoryService *inventory.Service) (social.ChatMessage, bool) {
+	content := strings.TrimSpace(systemNoticeContent(event, characterService, inventoryService))
+	if content == "" {
+		return social.ChatMessage{}, false
+	}
+
+	botName := strings.TrimSpace(event.ActorName)
+	if botName == "" {
+		botName = "System"
+	}
+
+	return social.ChatMessage{
+		MessageID:   "notice_" + strings.TrimSpace(event.EventID),
+		ChannelType: "world",
+		BotID:       strings.TrimSpace(event.ActorCharacterID),
+		BotName:     botName,
+		MessageType: observerSystemNoticeType,
+		Content:     content,
+		CreatedAt:   event.OccurredAt,
+	}, true
+}
+
+func systemNoticeContent(event world.WorldEvent, characterService *characters.Service, inventoryService *inventory.Service) string {
+	switch strings.TrimSpace(event.EventType) {
+	case "character.profession_changed":
+		return professionSystemNoticeContent(event)
+	case "inventory.item_enhanced":
+		return enhancementSystemNoticeContent(event)
+	case "inventory.item_equipped":
+		return equippedItemSystemNoticeContent(event, characterService, inventoryService)
+	default:
+		return ""
+	}
+}
+
+func professionSystemNoticeContent(event world.WorldEvent) string {
+	toClass := strings.TrimSpace(stringPayload(event.Payload, "to_class"))
+	fromClass := strings.TrimSpace(stringPayload(event.Payload, "from_class"))
+	actorName := strings.TrimSpace(event.ActorName)
+	if actorName == "" {
+		return ""
+	}
+	if fromClass == "civilian" && toClass != "" && toClass != "civilian" {
+		return fmt.Sprintf("完成转职，正式踏上 %s 之路。", strings.Title(toClass))
+	}
+	if toClass == "civilian" {
+		return "暂别战斗生涯，回到了平民身份。"
+	}
+	if toClass != "" {
+		return fmt.Sprintf("更换了职业路线，当前职业为 %s。", strings.Title(toClass))
+	}
+	return "完成了一次职业转变。"
+}
+
+func enhancementSystemNoticeContent(event world.WorldEvent) string {
+	catalogID := strings.TrimSpace(stringPayload(event.Payload, "catalog_id"))
+	if catalogID == "" {
+		return ""
+	}
+
+	item, ok := observerCatalogItem(catalogID)
+	if !ok || !isHighValueAnnouncementRarity(item.Rarity) {
+		return ""
+	}
+
+	toLevel := intPayload(event.Payload, "to_level")
+	if toLevel < 12 {
+		return ""
+	}
+
+	return fmt.Sprintf("将 %s 强化到了 +%d。", item.Name, toLevel)
+}
+
+func equippedItemSystemNoticeContent(event world.WorldEvent, characterService *characters.Service, inventoryService *inventory.Service) string {
+	if characterService == nil || inventoryService == nil {
+		return ""
+	}
+
+	characterID := strings.TrimSpace(event.ActorCharacterID)
+	if characterID == "" {
+		return ""
+	}
+
+	summary, _, _, _, ok := characterService.GetRuntimeDetailByCharacterID(characterID)
+	if !ok {
+		return ""
+	}
+
+	itemID := strings.TrimSpace(stringPayload(event.Payload, "item_id"))
+	if itemID == "" {
+		return ""
+	}
+
+	view := inventoryService.GetInventory(summary)
+	for _, item := range append(view.Equipped, view.Inventory...) {
+		if strings.TrimSpace(item.ItemID) != itemID || !isHighValueAnnouncementRarity(item.Rarity) {
+			continue
+		}
+		return fmt.Sprintf("换上了 %s %s。", strings.ToUpper(strings.TrimSpace(item.Rarity)), item.Name)
+	}
+
+	return ""
+}
+
+func observerCatalogItem(catalogID string) (inventory.EquipmentItem, bool) {
+	item, ok := inventory.DebugCatalogItem(catalogID)
+	return item, ok
+}
+
+func isHighValueAnnouncementRarity(rarity string) bool {
+	switch strings.ToLower(strings.TrimSpace(rarity)) {
+	case "red", "prismatic":
+		return true
+	default:
+		return false
+	}
+}
+
+func observerChatMessageItem(message social.ChatMessage) map[string]any {
+	item := map[string]any{
+		"message_id":   message.MessageID,
+		"channel_type": message.ChannelType,
+		"bot_id":       message.BotID,
+		"bot_name":     message.BotName,
+		"message_type": message.MessageType,
+		"content":      message.Content,
+		"created_at":   message.CreatedAt,
+	}
+	if message.ChannelType == "region" {
+		item["region_id"] = message.RegionID
+	} else {
+		item["region_id"] = nil
+	}
+	return item
+}
+
+func stringValue(value any) string {
+	if typed, ok := value.(string); ok {
+		return typed
+	}
+	return ""
 }
 
 func buildSocialRefs(ids []string, characterService *characters.Service, socialService *social.Service, viewerID string) []map[string]any {
@@ -3168,25 +3266,6 @@ func buildSocialRefs(ids []string, characterService *characters.Service, socialS
 		})
 	}
 	return items
-}
-
-func deriveChatMessageFromEvent(event world.WorldEvent) (string, string) {
-	content := strings.TrimSpace(event.Summary)
-	if content == "" {
-		content = "Observed a public world event."
-	}
-
-	messageType := "free_text"
-	switch {
-	case event.EventType == "dungeon.cleared":
-		content = fmt.Sprintf("%s", strings.TrimSpace(event.Summary))
-		messageType = "assist_ad"
-	case event.EventType == "quest.submitted":
-		content = fmt.Sprintf("%s", strings.TrimSpace(event.Summary))
-		messageType = "friend_recruit"
-	}
-
-	return messageType, content
 }
 
 func parseCursorOffset(cursor string, length int) int {

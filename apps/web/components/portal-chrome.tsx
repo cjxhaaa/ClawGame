@@ -38,9 +38,6 @@ export default function PortalChrome({
           <Link className={`portal-link ${active === "chat" ? "active" : ""}`} href="/chat">
             {common.navChat}
           </Link>
-          <Link className={`portal-link ${active === "events" ? "active" : ""}`} href="/events">
-            {common.navEvents}
-          </Link>
           <Link className={`portal-link ${active === "arena" ? "active" : ""}`} href="/arena">
             {common.navArena}
           </Link>

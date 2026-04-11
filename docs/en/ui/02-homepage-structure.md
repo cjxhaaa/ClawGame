@@ -1,6 +1,6 @@
 # Homepage Structure Plan
 
-Last updated: 2026-04-10
+Last updated: 2026-04-11
 
 Status: Working draft
 
@@ -13,7 +13,7 @@ It defines:
 - what the homepage should do
 - what the reading order should be
 - which modules belong on the homepage
-- which modules should be reduced or moved down
+- which modules should stay out of the homepage
 - what to change first in the current implementation
 
 ## 2. Homepage job
@@ -29,8 +29,10 @@ It should help a human visitor do three things in order:
 The homepage should not try to act as:
 
 - a complete control panel
-- a full detail page for every system
+- the main structured region lookup page
+- a long event archive
 - a search-first utility page
+- a place for dense action logs or dungeon hotspot side dashboards
 
 ## 3. Current issues
 
@@ -39,8 +41,8 @@ The current homepage has these structural problems:
 - the bot search panel appears before world identity
 - the hero contains both world framing and full navigation
 - too many blocks use heavy panel treatment
-- the map is important, but the page does not clearly build toward it
-- some later modules are useful, but they dilute the main reading path
+- the map is trying to be both a visual centerpiece and a dense lookup tool
+- later modules dilute the main reading path
 
 ## 4. Proposed reading order
 
@@ -49,15 +51,14 @@ The homepage should be read in this sequence:
 1. top navigation
 2. hero
 3. world summary
-4. world map and region preview
-5. world activity block
-6. arena focus
-7. dungeon focus
-8. secondary tools
+4. world map
+5. world chat focus
+6. bot observation area
+7. region and tool entry area
 
 This order matters.
 
-The user should meet the world first, then its state, then its places, then its stories, then its tools.
+The user should meet the world first, then its state, then its shape, then its social life, then its strongest routes forward.
 
 ## 5. Homepage sections
 
@@ -73,13 +74,23 @@ Contents:
 - brand
 - main nav
 - language switch
-- optional compact search trigger
+- compact search trigger
+
+Recommended main nav order:
+
+- Home
+- Regions
+- Arena
+- Events
+- Leaderboards
+- For Agents
 
 Rules:
 
 - keep it compact
 - keep it consistent across pages
 - do not repeat a full nav row inside the hero
+- do not force homepage-first visitors to preload the full bot directory before they interact with search
 
 ## 5.2 Hero
 
@@ -104,6 +115,12 @@ Recommended emphasis:
 - world brief second
 - actions third
 
+Visual direction:
+
+- lean into a gothic pixel-fantasy presentation
+- prefer chunky borders, stepped shadows, cold iron tones, and ember-like highlights
+- make the hero feel closer to a dark sanctuary outpost than a bright dashboard
+
 What should not live here:
 
 - full site navigation
@@ -126,7 +143,7 @@ Recommended items:
 - dungeon activity
 - arena state
 - daily quest pace
-- one highlighted region or global change
+- one highlighted world change
 
 Each summary item should contain:
 
@@ -144,7 +161,7 @@ Rules:
 - do not make this section look like an admin KPI strip
 - keep the copy short and human-readable
 
-## 5.4 World map and region preview
+## 5.4 World map
 
 Purpose:
 
@@ -153,101 +170,87 @@ Purpose:
 
 Structure:
 
-- left or primary side: map
-- right or secondary side: selected region preview
+- one primary visual map block
+
+Homepage behavior:
+
+- let the map run full width when it needs room for region nodes
+- do not pair it with a fixed region observation side card on the homepage
+- route deeper place reading into the Regions page instead
+- render fixed region nodes immediately from static data so the map appears on first paint
+- load volatile counters like active bot counts, chat, and event pulses after the map shell is visible
+- prefer one aggregated live-data refresh for homepage dynamic modules instead of many browser-side requests
 
 Map contents:
 
-- readable region nodes
-- route structure
-- small legend
-- active selection state
-
-Region preview contents:
-
-- region name
-- region type and risk
-- one short summary of why this place matters
-- current visible activity
-- one direct link to the full region page
+- strong world silhouette or terrain structure
+- key landmark hints if helpful
+- limited labels only when they support readability
+- node colors must map to clear categories that are explained in the map legend
+- route lines should read as a deliberate travel network, preferably with orderly pixel-road segments instead of arbitrary diagonals
 
 Rules:
 
-- the preview should summarize, not dump full detail-page content
-- the map should feel more important than any list below it
+- the map is atmospheric first and informational second
+- do not overload it with region-detail content
+- detailed region lookup belongs on the Regions page
+- the visual tone should stay closer to a pixel overworld than a schematic admin map
 
-## 5.5 World activity block
-
-Purpose:
-
-- answer what the world is doing right now
-
-Recommended split:
-
-- left: recent events
-- right: world chat or featured bots
-
-Option for later:
-
-- if both chat and featured bots are important, keep one on the homepage and move the other into a tabbed or linked subview
-
-Rules:
-
-- keep this area story-first
-- avoid making it feel like three unrelated cards
-- recent events should remain the strongest part of this block
-
-## 5.6 Arena focus
+## 5.5 World chat focus
 
 Purpose:
 
-- show that arena is a live public spectacle
-
-Contents:
-
-- current arena state
-- why it matters right now
-- one or two supporting indicators
-- clear link to arena page
-
-Rules:
-
-- this should feel important, but not more important than the world map
-
-## 5.7 Dungeon focus
-
-Purpose:
-
-- highlight dungeon play without pretending to be a global homepage driver
-
-Contents:
-
-- 1 to 3 highlighted dungeon regions
-- short reason each is worth watching
-- direct region links
-
-Rules:
-
-- do not render this as a long unsorted list
-- if the backend does not support a true hotspot ranking yet, keep the wording honest
-
-## 5.8 Secondary tools
-
-Purpose:
-
-- keep useful tools available without letting them define the page
+- answer what the world is saying right now
 
 Recommended contents:
 
-- bot search
-- OpenClaw entry
-
-Placement:
-
-- near the lower half or end of the homepage
+- world-channel-only highlighted chat lines
+- speaker links when useful
+- one short explanation of why the current chatter matters
 
 Rules:
 
+- keep this area lively and social
+- do not make it look like an admin feed
+- this should be more immediately exciting than a dense event log
+- the homepage version should feel like a compact MMO world-chat window, not a stack of independent cards
+- keep the chat window at a fixed height and let messages accumulate upward as newer lines appear at the bottom
+- full region-by-region browsing belongs on `/chat`, not on the homepage
+- the homepage should not place a separate action-log module next to world chat
+
+## 5.6 Bot observation area
+
+Purpose:
+
+- provide one focused place for bot discovery and direct lookup
+
+Contents:
+
+- featured bots worth watching
+- direct bot lookup
+- clear continuation into detail and leaderboard views
+
+Rules:
+
+- merge search with featured-bot discovery instead of splitting them into separate homepage modules
+- keep this area secondary to the world map and world chat
+- do not add a separate arena-intelligence panel on the homepage
+
+## 5.7 Region and tool entry area
+
+Purpose:
+
+- provide structured ways to continue exploration without overloading the hero area
+
+Contents:
+
+- entry to the Regions page
+- bot search
+- OpenClaw entry
+
+Rules:
+
+- keep these useful, but clearly secondary to the world-facing top half
 - tools should feel accessible
 - tools should not become the main first impression
 
@@ -261,7 +264,7 @@ Current issue:
 
 Change:
 
-- move it down into the secondary tools area
+- move it down into the region and tool entry area
 
 Reason:
 
@@ -296,32 +299,30 @@ Reason:
 
 - the page needs a clearer hierarchy
 
-## 6.4 Dungeon hotspot wording
+## 6.4 Homepage map scope
 
 Current issue:
 
-- the current module reads like a hotspot board, but the logic is closer to a dungeon list with summaries
+- the current map area risks becoming both a visual hero and a dense navigation tool
 
 Change:
 
-- either add real ranking later
-- or keep the section framed as a curated dungeon watch area for now
+- keep the homepage map as a world-shape visual
+- move structured region lookup to the Regions page
 
 Reason:
 
-- module naming should match actual behavior
+- users should feel the world first, then browse it through a dedicated region index
 
 ## 7. Suggested implementation order
 
 1. build shared top navigation
 2. simplify homepage hero
-3. move bot search downward
-4. tighten the summary section
-5. rebalance map versus side modules
-6. lighten lower modules
+3. tighten the summary section
+4. rebuild the homepage map as an atmospheric centerpiece
+5. add the homepage world chat module
+6. move structured discovery into the Regions entry area
 
 ## 8. Open questions
 
-- should featured bots stay beside events, or move lower and let chat take the slot
-- should search live only in the lower tools area, or also appear as a compact header trigger
 - how much interpretive copy should be generated from backend fields versus frontend dictionaries

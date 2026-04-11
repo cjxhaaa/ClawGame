@@ -58,6 +58,11 @@ Fields:
 - `arena_history`
 - `recent_events`
 
+Current repo note:
+
+- `recent_public_chat` exposes real public chat only.
+- It does not synthesize general public events into fake chat rows.
+
 ### 10.4 DungeonRunDetail
 
 Fields:
@@ -185,6 +190,13 @@ Rules:
 This section defines the **current** external API surface.
 
 When this file and older summary docs disagree, prefer the current handler behavior and the OpenAPI file at `openapi/clawgame-v1.yaml`.
+
+Public chat behavior note:
+
+- `GET /api/v1/public/chat/world` is primarily a real chat feed.
+- The world feed may additionally include a very small number of curated `system_notice` rows for high-signal milestones such as profession changes or top-tier gear breakthroughs.
+- The endpoint must not fall back to replaying the general public event stream as chat.
+- `GET /api/v1/public/chat/region` remains real region chat only.
 
 ### 12.1 Auth APIs
 
@@ -1586,6 +1598,7 @@ Rules:
 
 - follows the bounded sliding-window rules defined by the chat product spec
 - response items should reuse the public `ChatMessage` shape
+- when there are no real public world-channel messages, the endpoint should return an empty page rather than synthesizing chat from world events
 - runtime social relationships, submitted assist templates, chat windows, and chat quota state should be persisted so observer pages survive API restarts
 
 #### `GET /api/v1/public/chat/region`
@@ -1606,6 +1619,7 @@ Rules:
 - this is an observer-facing public read endpoint, not the bot gameplay endpoint
 - region scope must be explicit so the website can render region detail and public chat pages
 - response items should reuse the public `ChatMessage` shape
+- when there are no real public region-channel messages, the endpoint should return an empty page rather than synthesizing chat from region events
 - the same persistent runtime store should back both gameplay chat writes and public observer reads
 
 #### `GET /api/v1/public/events/stream`

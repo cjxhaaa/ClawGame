@@ -2,90 +2,64 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { startTransition, useEffect, useState } from "react";
 
 import {
   type BotCard,
   type ChatMessage,
   type Leaderboards,
-  type PublicWorldState,
   type Region,
   type RegionActivity,
   type RegionDetail,
-  type WorldEvent,
+  fallbackBotDirectory,
+  fallbackChatMessages,
+  fallbackLeaderboards,
   fallbackWorldState,
+  getPublicBots,
+  getHomepageLiveData,
 } from "../lib/public-api";
 import { useWorldLanguage } from "../lib/use-world-language";
 import {
-  boardLinkForEntry,
   collectFeaturedBots,
-  eventTypeToFilter,
-  filters,
   formatDateTime,
   formatMetric,
-  formatRelativeTime,
   getRegionAtlasDossier,
   isRegionActivity,
   localizeActivityLabel,
-  localizeArenaStatus,
   localizeClass,
-  localizeEncounterHighlight,
-  localizeEncounterSummary,
-  localizeEventSummary,
-  localizeRegionHighlight,
   localizeRegionName,
-  localizeRegionType,
   localizeScoreLabel,
   localizeWeapon,
   mapLayout,
-  matchesEventFilter,
   metrics,
-  type EventFilter,
+  type Language,
   uiText,
 } from "../lib/world-ui";
+import ChatFeedWindow from "./chat-feed-window";
 
 type HomeConsoleProps = {
-  worldState: PublicWorldState;
   regions: Region[];
   regionDetails: RegionDetail[];
-  events: WorldEvent[];
-  chatMessages: ChatMessage[];
-  leaderboards: Leaderboards;
-  botDirectory: BotCard[];
 };
 
-export default function HomeConsole({
-  worldState,
-  regions,
-  regionDetails,
-  events,
-  chatMessages,
-  leaderboards,
-  botDirectory,
-}: HomeConsoleProps) {
+export default function HomeConsole({ regions, regionDetails }: HomeConsoleProps) {
   const router = useRouter();
   const { language, toggleLanguage } = useWorldLanguage();
   const [selectedRegionID, setSelectedRegionID] = useState("main_city");
-  const [eventFilter, setEventFilter] = useState<EventFilter>("all");
+  const [worldState, setWorldState] = useState(fallbackWorldState);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(fallbackChatMessages);
+  const [leaderboards, setLeaderboards] = useState<Leaderboards>(fallbackLeaderboards);
+  const [botDirectory, setBotDirectory] = useState<BotCard[]>(fallbackBotDirectory);
+  const [isLiveDataLoading, setIsLiveDataLoading] = useState(true);
+  const [isBotDirectoryLoading, setIsBotDirectoryLoading] = useState(false);
+  const [hasLoadedBotDirectory, setHasLoadedBotDirectory] = useState(false);
   const common = uiText[language].common;
   const copy = uiText[language].home;
   const visibleRegions: Array<Region | RegionActivity> =
     worldState.regions.length > 0 ? worldState.regions : regions;
   const selectedRegionDetail =
     regionDetails.find((region) => region.region.region_id === selectedRegionID) ?? regionDetails[0];
-  const selectedRegionPulse = worldState.regions.find((region) => region.region_id === selectedRegionID);
-  const selectedRegionAtlas = selectedRegionDetail
-    ? getRegionAtlasDossier(selectedRegionDetail.region.region_id, language)
-    : null;
-  const filteredEvents = events.filter((event) => matchesEventFilter(event, eventFilter));
   const featuredBots = collectFeaturedBots(leaderboards);
-  const arenaStatus = localizeArenaStatus(worldState.current_arena_status.code, language);
-  const dungeonHotspots = regionDetails
-    .filter((region) => region.region.type === "dungeon")
-    .map((region) => ({
-      detail: region,
-      pulse: worldState.regions.find((item) => item.region_id === region.region.region_id),
-    }));
   const [botSearchKeyword, setBotSearchKeyword] = useState("");
   const [showBotSearchModal, setShowBotSearchModal] = useState(false);
   const [selectedBotID, setSelectedBotID] = useState("");
@@ -100,13 +74,27 @@ export default function HomeConsole({
       })
     : [];
 
-  const openBotSearch = () => {
+  const openBotSearch = async () => {
     if (!normalizedBotSearch) {
       setShowBotSearchModal(false);
       setSelectedBotID("");
       return;
     }
+
     setShowBotSearchModal(true);
+
+    if (!hasLoadedBotDirectory && !isBotDirectoryLoading) {
+      setIsBotDirectoryLoading(true);
+
+      try {
+        const items = await getPublicBots({ limit: 80 });
+        setBotDirectory(items);
+        setHasLoadedBotDirectory(true);
+      } finally {
+        setIsBotDirectoryLoading(false);
+      }
+    }
+
     setSelectedBotID((current) => {
       if (current) {
         return current;
@@ -147,40 +135,37 @@ export default function HomeConsole({
     });
   }, [botSearchResults, showBotSearchModal]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    getHomepageLiveData()
+      .then((data) => {
+        if (cancelled) {
+          return;
+        }
+
+        startTransition(() => {
+          setWorldState(data.worldState);
+          setChatMessages(data.chatMessages);
+          setLeaderboards(data.leaderboards);
+          setIsLiveDataLoading(false);
+        });
+      })
+      .catch(() => {
+        if (cancelled) {
+          return;
+        }
+
+        setIsLiveDataLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <main className="console-shell pixel-theme">
-      <section className="pixel-panel top-bot-search-panel">
-        <div className="section-header">
-          <div>
-            <p className="eyebrow">{language === "zh-CN" ? "观测台检索" : "Observer Lookup"}</p>
-            <h2>{language === "zh-CN" ? "追踪目标 Bot" : "Track a Bot"}</h2>
-          </div>
-        </div>
-
-        <div className="top-bot-search-row">
-          <input
-            className="top-bot-search-input"
-            type="text"
-            value={botSearchKeyword}
-            onChange={(event) => setBotSearchKeyword(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                openBotSearch();
-              }
-            }}
-            placeholder={
-              language === "zh-CN"
-                ? "输入角色ID或代号"
-                : "Search character ID or bot name"
-            }
-          />
-          <button className="top-bot-search-trigger" type="button" onClick={openBotSearch}>
-            {language === "zh-CN" ? "搜索" : "Search"}
-          </button>
-        </div>
-      </section>
-
       {showBotSearchModal ? (
         <div className="bot-search-modal" role="dialog" aria-modal="true" aria-label="Bot search results">
           <button
@@ -198,7 +183,11 @@ export default function HomeConsole({
             </div>
 
             <div className="bot-search-modal-list">
-              {botSearchResults.length > 0 ? (
+              {isBotDirectoryLoading ? (
+                <p className="empty-state">
+                  {language === "zh-CN" ? "正在加载 Bot 名录..." : "Loading bot directory..."}
+                </p>
+              ) : botSearchResults.length > 0 ? (
                 botSearchResults.map((item) => {
                   const characterID = item.character_summary.character_id;
                   const isActive = selectedBotID === characterID;
@@ -271,31 +260,41 @@ export default function HomeConsole({
           <p className="hero-text">{copy.heroText}</p>
 
           <div className="hero-strip">
-            <MetricBlock label={copy.serverTime} value={formatDateTime(worldState.server_time, language)} />
-            <MetricBlock label={copy.dailyReset} value={formatDateTime(worldState.daily_reset_at, language)} />
-            <MetricBlock label={copy.arenaState} value={arenaStatus.label} />
+            <MetricBlock
+              label={copy.serverTime}
+              value={isLiveDataLoading ? loadingLabel(language) : formatDateTime(worldState.server_time, language)}
+            />
+            <MetricBlock
+              label={copy.dailyReset}
+              value={isLiveDataLoading ? loadingLabel(language) : formatDateTime(worldState.daily_reset_at, language)}
+            />
+            <MetricBlock
+              label={copy.arenaState}
+              value={
+                isLiveDataLoading
+                  ? loadingLabel(language)
+                  : worldState.current_arena_status.next_milestone || formatDateTime(worldState.server_time, language)
+              }
+            />
           </div>
 
           <div className="hero-nav-row">
-            <Link className="portal-link active" href="/">
+            <Link className="portal-link active" href="/" prefetch={false}>
               {common.navHome}
             </Link>
-            <Link className="portal-link" href={`/regions/${selectedRegionID}`}>
+            <Link className="portal-link" href={`/regions/${selectedRegionID}`} prefetch={false}>
               {common.navRegions}
             </Link>
-            <Link className="portal-link" href="/chat">
+            <Link className="portal-link" href="/chat" prefetch={false}>
               {common.navChat}
             </Link>
-            <Link className="portal-link" href="/events">
-              {common.navEvents}
-            </Link>
-            <Link className="portal-link" href="/arena">
+            <Link className="portal-link" href="/arena" prefetch={false}>
               {common.navArena}
             </Link>
-            <Link className="portal-link" href="/leaderboards">
+            <Link className="portal-link" href="/leaderboards" prefetch={false}>
               {common.navLeaderboards}
             </Link>
-            <Link className="portal-link" href="/openclaw">
+            <Link className="portal-link" href="/openclaw" prefetch={false}>
               {common.navOpenClaw}
             </Link>
           </div>
@@ -303,24 +302,30 @@ export default function HomeConsole({
 
         <aside className="pixel-panel hero-bulletin">
           <p className="eyebrow">{copy.bulletinTitle}</p>
-          <h2>{arenaStatus.label}</h2>
+          <h2>
+            {isLiveDataLoading ? loadingLabel(language) : worldState.current_arena_status.label || loadingLabel(language)}
+          </h2>
           <p>
-            {copy.bulletinBody(
-              worldState.active_bot_count,
-              worldState.quests_completed_today,
-              worldState.bots_in_dungeon_count,
-            )}
+            {isLiveDataLoading
+              ? loadingBody(language)
+              : copy.bulletinBody(
+                  worldState.active_bot_count,
+                  worldState.quests_completed_today,
+                  worldState.bots_in_dungeon_count,
+                )}
           </p>
           <div className="bulletin-meta">
             {metrics.map((metric) => (
               <article key={metric.key} className="bulletin-stat">
                 <span>{metric.label[language]}</span>
                 <strong>
-                  {formatMetric(
-                    worldState[metric.key] ?? fallbackWorldState[metric.key],
-                    language,
-                    metric.suffix[language],
-                  )}
+                  {isLiveDataLoading
+                    ? loadingMetric()
+                    : formatMetric(
+                        worldState[metric.key] ?? fallbackWorldState[metric.key],
+                        language,
+                        metric.suffix[language],
+                      )}
                 </strong>
               </article>
             ))}
@@ -328,7 +333,7 @@ export default function HomeConsole({
         </aside>
       </section>
 
-      <section className="world-stage-grid">
+      <section className="home-map-grid">
         <section className="pixel-panel map-panel">
           <div className="section-header">
             <div>
@@ -338,7 +343,11 @@ export default function HomeConsole({
             <div className="map-panel-actions">
               <p className="section-note">{copy.worldMapNote}</p>
               {selectedRegionDetail ? (
-                <Link className="section-link" href={`/regions/${selectedRegionDetail.region.region_id}`}>
+                <Link
+                  className="section-link"
+                  href={`/regions/${selectedRegionDetail.region.region_id}`}
+                  prefetch={false}
+                >
                   {common.openRegion}
                 </Link>
               ) : null}
@@ -347,12 +356,16 @@ export default function HomeConsole({
 
           <div className="pixel-map">
             <div className="pixel-map-backdrop" />
-            <div className="pixel-map-path main-road path-a" />
-            <div className="pixel-map-path main-road path-b" />
-            <div className="pixel-map-path frontier-road path-c" />
-            <div className="pixel-map-path branch-road path-d" />
-            <div className="pixel-map-path dungeon-road path-e" />
-            <div className="pixel-map-path dungeon-road path-f" />
+            <div className="pixel-map-path main-road road-hub-1" />
+            <div className="pixel-map-path main-road road-hub-2" />
+            <div className="pixel-map-path main-road road-hub-3" />
+            <div className="pixel-map-path frontier-road road-field-1" />
+            <div className="pixel-map-path frontier-road road-field-2" />
+            <div className="pixel-map-path frontier-road road-field-3" />
+            <div className="pixel-map-path dungeon-road road-dungeon-1" />
+            <div className="pixel-map-path dungeon-road road-dungeon-2" />
+            <div className="pixel-map-path dungeon-road road-dungeon-3" />
+            <div className="pixel-map-path dungeon-road road-dungeon-4" />
 
             {visibleRegions.map((region) => {
               const layout = mapLayout[region.region_id];
@@ -360,8 +373,8 @@ export default function HomeConsole({
                 return null;
               }
 
-              const population = isRegionActivity(region) ? region.population : 0;
-              const eventCount = isRegionActivity(region) ? region.recent_event_count : 0;
+              const population = isRegionActivity(region) ? region.population : null;
+              const eventCount = isRegionActivity(region) ? region.recent_event_count : null;
               const atlas = getRegionAtlasDossier(region.region_id, language);
 
               return (
@@ -378,9 +391,9 @@ export default function HomeConsole({
                   </span>
                   <span className="map-node-activity">{atlas.primaryActivity}</span>
                   <span className="map-node-stats">
-                    <strong>{formatMetric(population, language, "")}</strong>
+                    <strong>{formatMetricOrLoading(population, language)}</strong>
                     <span>{common.population}</span>
-                    <strong>{formatMetric(eventCount, language, "")}</strong>
+                    <strong>{formatMetricOrLoading(eventCount, language)}</strong>
                     <span>{copy.events}</span>
                   </span>
                   <span className="map-node-resource">{atlas.signatureMaterial}</span>
@@ -390,321 +403,120 @@ export default function HomeConsole({
 
             <div className="map-legend">
               <article className="legend-chip">
-                <span className="legend-swatch safe" />
-                <span>{language === "zh-CN" ? "文明主路" : "Civil road"}</span>
+                <span className="legend-swatch hub-node" />
+                <span>{language === "zh-CN" ? "枢纽据点" : "Hub settlement"}</span>
               </article>
               <article className="legend-chip">
-                <span className="legend-swatch frontier" />
-                <span>{language === "zh-CN" ? "前线主路" : "Frontier lane"}</span>
+                <span className="legend-swatch field-node" />
+                <span>{language === "zh-CN" ? "野外区域" : "Field region"}</span>
               </article>
               <article className="legend-chip">
-                <span className="legend-swatch dungeon" />
-                <span>{language === "zh-CN" ? "地下城支线" : "Dungeon branch"}</span>
+                <span className="legend-swatch dungeon-node" />
+                <span>{language === "zh-CN" ? "地下城入口" : "Dungeon gate"}</span>
               </article>
             </div>
           </div>
         </section>
-
-        <aside className="pixel-panel region-panel">
-          {selectedRegionDetail && selectedRegionAtlas ? (
-            <div className="observer-shell">
-              <div className="observer-primary">
-                <div className="section-header">
-                  <div>
-                    <p className="eyebrow">{copy.observerCard}</p>
-                    <h2>
-                      {localizeRegionName(
-                        selectedRegionDetail.region.region_id,
-                        selectedRegionDetail.region.name,
-                        language,
-                      )}
-                    </h2>
-                  </div>
-                  <Link className="section-link" href={`/regions/${selectedRegionDetail.region.region_id}`}>
-                    {common.openRegion}
-                  </Link>
-                </div>
-
-                <div className="region-badges">
-                  <span>{selectedRegionAtlas.terrainBand}</span>
-                  <span>{selectedRegionAtlas.riskTier}</span>
-                  <span>{localizeRegionType(selectedRegionDetail.region.type, language)}</span>
-                </div>
-
-                <div className="detail-block">
-                  <h3>{copy.backdropLabel}</h3>
-                  <p>{selectedRegionAtlas.shortIntro}</p>
-                </div>
-
-                <div className="region-stats">
-                  <article>
-                    <span>{common.activeNow}</span>
-                    <strong>{formatMetric(selectedRegionPulse?.population ?? 0, language, "")}</strong>
-                  </article>
-                  <article>
-                    <span>{common.recentEvents}</span>
-                    <strong>{formatMetric(selectedRegionPulse?.recent_event_count ?? 0, language, "")}</strong>
-                  </article>
-                  <article>
-                    <span>{common.buildings}</span>
-                    <strong>{formatMetric(selectedRegionDetail.buildings.length, language, "")}</strong>
-                  </article>
-                </div>
-
-                <section className="detail-block">
-                  <h3>{copy.primaryActivity}</h3>
-                  <p>{selectedRegionAtlas.primaryActivity}</p>
-                  <p className="region-subnote">
-                    {localizeRegionHighlight(
-                      selectedRegionPulse?.highlight ?? "High-pressure clears remain limited but lucrative.",
-                      language,
-                    )}
-                  </p>
-                </section>
-
-                <section className="detail-block">
-                  <h3>{copy.observationFocus}</h3>
-                  <p>{selectedRegionAtlas.observationFocus}</p>
-                </section>
-                
-                <section className="detail-block observer-footer observer-cta-block">
-                  <h3>{language === "zh-CN" ? "继续查看" : "Continue observing"}</h3>
-                  <p>
-                    {language === "zh-CN"
-                      ? "NPC、设施、材料、成长用途、旅行路线和建筑动作都已经移到区域详情页，首页这里只保留固定的地点观测摘要。"
-                      : "NPCs, facilities, materials, growth use, travel routes, and building actions now live in the region page, while the homepage keeps a fixed observation summary."}
-                  </p>
-                  <Link className="section-link" href={`/regions/${selectedRegionDetail.region.region_id}`}>
-                    {common.openRegion}
-                  </Link>
-                </section>
-              </div>
-            </div>
-          ) : null}
-        </aside>
       </section>
 
       <section className="story-grid">
-        <section className="pixel-panel log-panel">
-          <div className="section-header">
-            <div>
-              <p className="eyebrow">{copy.actionLog}</p>
-              <h2>{copy.actionLogTitle}</h2>
-            </div>
-            <Link className="section-link" href={`/events?filter=${eventFilter}`}>
-              {common.openEvents}
-            </Link>
-          </div>
-
-          <p className="section-note">{copy.actionLogNote}</p>
-
-          <div className="filter-row">
-            {filters.map((filter) => (
-              <button
-                key={filter.key}
-                type="button"
-                className={`filter-pill ${eventFilter === filter.key ? "active" : ""}`}
-                onClick={() => setEventFilter(filter.key)}
-              >
-                {filter.label[language]}
-              </button>
-            ))}
-          </div>
-
-          <div className="log-list">
-            {filteredEvents.length > 0 ? (
-              filteredEvents.map((event) => (
-                <Link
-                  key={event.event_id}
-                  className="timeline-link"
-                  href={`/events?filter=${eventTypeToFilter(event.event_type)}#${event.event_id}`}
-                >
-                  <article className="log-entry">
-                    <div className={`log-marker ${eventTypeToFilter(event.event_type)}`} />
-                    <div>
-                      <p className="log-summary">{localizeEventSummary(event.summary, language)}</p>
-                      <p className="log-meta">
-                        <span>{event.actor_name ?? common.unknownActor}</span>
-                        <span>{formatRelativeTime(event.occurred_at, language)}</span>
-                      </p>
-                    </div>
-                  </article>
-                </Link>
-              ))
-            ) : (
-              <p className="empty-state">{copy.emptyEvents}</p>
-            )}
-          </div>
-        </section>
-
-        <section className="pixel-panel bots-panel">
+        <section className="pixel-panel bots-panel world-chat-panel">
           <div className="section-header">
             <div>
               <p className="eyebrow">{copy.worldChat}</p>
               <h2>{copy.worldChatTitle}</h2>
             </div>
-            <Link className="section-link" href="/chat">
+            <Link className="section-link" href="/chat" prefetch={false}>
               {copy.openChat}
             </Link>
           </div>
           <p className="section-note">{copy.worldChatNote}</p>
+          <div className="chat-observer-shell compact">
+            <div className="chat-observer-status">
+              <span className="chat-observer-scope">
+                {language === "zh-CN" ? "观测范围: 世界公频" : "Scope: World channel"}
+              </span>
+            </div>
 
-          <div className="log-list">
-            {chatMessages.length > 0 ? (
-              chatMessages.map((message) => (
-                <article key={message.message_id} className="chat-entry-card">
-                  <div className="chat-entry-top">
-                    <Link className="inline-link" href={`/bots/${encodeURIComponent(message.bot_id)}`}>
-                      {message.bot_name}
-                    </Link>
-                    <div className="chat-entry-badges">
-                      <span className="chat-badge">{localizeChatChannel(message.channel_type, language, copy)}</span>
-                      <span className={`chat-badge type-${message.message_type}`}>
-                        {localizeChatType(message.message_type, language, copy)}
-                      </span>
-                    </div>
-                  </div>
-                  <p className="chat-entry-content">{message.content}</p>
-                  <p className="chat-entry-meta">
-                    {message.region_id
-                      ? localizeRegionName(message.region_id, message.region_id, language)
-                      : localizeChatChannel(message.channel_type, language, copy)}
-                    <span>{formatRelativeTime(message.created_at, language)}</span>
-                  </p>
-                </article>
-              ))
-            ) : (
-              <p className="empty-state">{copy.emptyChat}</p>
-            )}
+            <ChatFeedWindow
+              messages={chatMessages}
+              language={language}
+              emptyLabel={isLiveDataLoading ? loadingBody(language) : copy.emptyChat}
+              variant="compact"
+            />
           </div>
         </section>
 
-        <section className="pixel-panel bots-panel">
+        <section className="pixel-panel bots-panel bot-observer-panel">
           <div className="section-header">
             <div>
-              <p className="eyebrow">{copy.featuredBots}</p>
+              <p className="eyebrow">{language === "zh-CN" ? "Bot 观测站" : "Bot Observatory"}</p>
               <h2>{copy.featuredBotsTitle}</h2>
             </div>
-            <Link className="section-link" href="/leaderboards">
+            <Link className="section-link" href="/leaderboards" prefetch={false}>
               {common.openLeaderboards}
             </Link>
           </div>
           <p className="section-note">{copy.featuredBotsNote}</p>
+          <div className="top-bot-search-row embedded">
+            <input
+              className="top-bot-search-input"
+              type="text"
+              value={botSearchKeyword}
+              onChange={(event) => setBotSearchKeyword(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  openBotSearch();
+                }
+              }}
+              placeholder={language === "zh-CN" ? "输入角色ID或代号，直接追踪目标 Bot" : "Search character ID or bot name"}
+            />
+            <button className="top-bot-search-trigger" type="button" onClick={openBotSearch}>
+              {language === "zh-CN" ? "搜索" : "Search"}
+            </button>
+          </div>
 
           <div className="featured-bot-grid">
-            {featuredBots.map((bot) => (
-              <Link
-                key={bot.character_id}
-                className="bot-card-link"
-                href={`/bots/${bot.character_id}`}
-              >
-                <article className="bot-card">
-                  <div className="bot-card-top">
-                    <div>
-                      <p className="bot-name">{bot.name}</p>
-                      <p className="bot-classline">
-                        {localizeClass(bot.class, language)} / {localizeWeapon(bot.weapon_style, language)}
-                      </p>
+            {featuredBots.length > 0 ? (
+              featuredBots.map((bot) => (
+                <Link
+                  key={bot.character_id}
+                  className="bot-card-link"
+                  href={`/bots/${bot.character_id}`}
+                  prefetch={false}
+                >
+                  <article className="bot-card">
+                    <div className="bot-card-top">
+                      <div>
+                        <p className="bot-name">{bot.name}</p>
+                        <p className="bot-classline">
+                          {localizeClass(bot.class, language)} / {localizeWeapon(bot.weapon_style, language)}
+                        </p>
+                      </div>
+                      <span className="bot-region">
+                        {localizeRegionName(bot.region_id, bot.region_id, language)}
+                      </span>
                     </div>
-                    <span className="bot-region">
-                      {localizeRegionName(bot.region_id, bot.region_id, language)}
-                    </span>
-                  </div>
-                  <div className="bot-stat-row">
-                    <span>{copy.botFocus}</span>
-                    <strong>{localizeActivityLabel(bot.activity_label, language)}</strong>
-                  </div>
-                  <div className="bot-stat-row">
-                    <span>{common.scoreLabel}</span>
-                    <strong>
-                      {formatMetric(bot.score, language, "")} {localizeScoreLabel(bot.score_label, language)}
-                    </strong>
-                  </div>
-                  <p className="bot-focus">{localizeActivityLabel(bot.focus, language)}</p>
-                </article>
-              </Link>
-            ))}
-          </div>
-        </section>
-      </section>
-
-      <section className="desk-grid">
-        <section className="pixel-panel arena-panel">
-          <div className="section-header">
-            <div>
-              <p className="eyebrow">{copy.arenaDesk}</p>
-              <h2>{copy.arenaDeskTitle}</h2>
-            </div>
-            <Link className="section-link" href="/arena">
-              {common.openArena}
-            </Link>
-          </div>
-
-          <div className="arena-status-card">
-            <strong>{arenaStatus.label}</strong>
-            <p>{arenaStatus.details}</p>
-            <span>
-              {copy.arenaNext}: {arenaStatus.nextMilestone}
-            </span>
-          </div>
-
-          <div className="seed-list">
-            <h3>{copy.seedBoard}</h3>
-            {leaderboards.weekly_arena.map((entry) => (
-              <Link
-                key={entry.character_id}
-                className="seed-link"
-                href={`/leaderboards?board=${boardLinkForEntry(entry)}`}
-              >
-                <article className="seed-row">
-                  <span>#{entry.rank}</span>
-                  <div>
-                    <strong>{entry.name}</strong>
-                    <p>{localizeActivityLabel(entry.activity_label, language)}</p>
-                  </div>
-                </article>
-              </Link>
-            ))}
-          </div>
-        </section>
-
-        <section className="pixel-panel dungeon-panel">
-          <div className="section-header">
-            <div>
-              <p className="eyebrow">{copy.dungeonDesk}</p>
-              <h2>{copy.dungeonDeskTitle}</h2>
-            </div>
-            {dungeonHotspots[0] ? (
-              <Link className="section-link" href={`/regions/${dungeonHotspots[0].detail.region.region_id}`}>
-                {common.openRegion}
-              </Link>
-            ) : null}
-          </div>
-          <p className="section-note">{copy.dungeonDeskNote}</p>
-
-          <div className="dungeon-hotspot-list">
-            {dungeonHotspots.map(({ detail, pulse }) => (
-              <Link
-                key={detail.region.region_id}
-                className="hotspot-link"
-                href={`/regions/${detail.region.region_id}`}
-              >
-                <article className="dungeon-hotspot">
-                  <div className="dungeon-hotspot-header">
-                    <strong>{localizeRegionName(detail.region.region_id, detail.region.name, language)}</strong>
-                    <span>
-                      {formatMetric(pulse?.population ?? 0, language, "")} {common.population}
-                    </span>
-                  </div>
-                  <p>{localizeEncounterSummary(detail.encounter_summary?.summary ?? "", language)}</p>
-                  <div className="pixel-chip-list">
-                    {(detail.encounter_summary?.highlights ?? []).map((highlight) => (
-                      <span key={highlight}>{localizeEncounterHighlight(highlight, language)}</span>
-                    ))}
-                  </div>
-                </article>
-              </Link>
-            ))}
+                    <div className="bot-stat-row">
+                      <span>{copy.botFocus}</span>
+                      <strong>{localizeActivityLabel(bot.activity_label, language)}</strong>
+                    </div>
+                    <div className="bot-stat-row">
+                      <span>{common.scoreLabel}</span>
+                      <strong>
+                        {formatMetric(bot.score, language, "")} {localizeScoreLabel(bot.score_label, language)}
+                      </strong>
+                    </div>
+                    <p className="bot-focus">{localizeActivityLabel(bot.focus, language)}</p>
+                  </article>
+                </Link>
+              ))
+            ) : (
+              <p className="empty-state">
+                {isLiveDataLoading ? loadingBody(language) : featuredBotsEmptyLabel(language)}
+              </p>
+            )}
           </div>
         </section>
       </section>
@@ -722,29 +534,26 @@ function MetricBlock({ label, value }: { label: string; value: string }) {
   );
 }
 
-function localizeChatChannel(
-  channelType: ChatMessage["channel_type"],
-  language: string,
-  copy: typeof uiText["zh-CN"]["home"] | typeof uiText["en-US"]["home"],
-) {
-  if (channelType === "region") {
-    return copy.channelRegion;
-  }
-
-  return copy.channelWorld;
+function loadingLabel(language: Language) {
+  return language === "zh-CN" ? "同步中..." : "Syncing...";
 }
 
-function localizeChatType(
-  messageType: ChatMessage["message_type"],
-  language: string,
-  copy: typeof uiText["zh-CN"]["home"] | typeof uiText["en-US"]["home"],
-) {
-  if (messageType === "friend_recruit") {
-    return copy.recruitChip;
-  }
-  if (messageType === "assist_ad") {
-    return copy.assistChip;
+function loadingBody(language: Language) {
+  return language === "zh-CN" ? "正在同步公开世界数据..." : "Syncing public world data...";
+}
+
+function loadingMetric() {
+  return "---";
+}
+
+function formatMetricOrLoading(value: number | null, language: Language) {
+  if (value === null) {
+    return loadingMetric();
   }
 
-  return language === "zh-CN" ? "普通发言" : "Free Text";
+  return formatMetric(value, language, "");
+}
+
+function featuredBotsEmptyLabel(language: Language) {
+  return language === "zh-CN" ? "当前没有可展示的活跃 Bot。" : "No featured bots are available right now.";
 }
