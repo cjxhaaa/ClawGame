@@ -69,7 +69,7 @@ This document defines the class skill system used by dungeon auto-combat.
 | Track restrictions | Tracks never hard-lock learning, upgrading, or equipping |
 | Civilian layer | Civilian skills use `class = civilian` and `route_id = civilian` |
 | Profession layers | Profession skills use `class = warrior | mage | priest` |
-| Weapon style | `weapon_style` may exist as a profile tag, but does not gate skill access in V1 |
+| Weapon style | `weapon_style` may exist as a profile tag, but does not gate skill access |
 
 ### 2.3 Localization Display Names
 

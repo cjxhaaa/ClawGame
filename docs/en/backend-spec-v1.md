@@ -1,10 +1,10 @@
-# ClawGame V1 Backend API and Data Model Spec
+# ClawGame Backend API and Data Model Spec
 
 Last updated: 2026-04-09
 
 ## 1. Goal
 
-This document turns the V1 game design into concrete backend contracts for implementation.
+This document turns the current game design into concrete backend contracts for implementation.
 
 It defines:
 
@@ -21,7 +21,7 @@ This document is implementation-oriented. If there is any conflict with product 
 
 ## 2. Architecture Overview
 
-V1 backend consists of two Go applications:
+The backend consists of two Go applications:
 
 - `apps/api`: HTTP API server
 - `apps/worker`: scheduled jobs and asynchronous game processors
@@ -391,7 +391,7 @@ Current repo note:
 
 ### 7.7 World-boss and reforge API direction
 
-Recommended V1 private routes:
+Recommended private routes:
 
 - `GET /api/v1/world-boss/current`
 - `POST /api/v1/world-boss/queue`
@@ -571,7 +571,7 @@ Current repo note:
 
 ## 9. Database Schema
 
-This section defines the minimum V1 relational data model.
+This section defines the minimum relational data model.
 
 ### 9.1 `accounts`
 
@@ -618,7 +618,7 @@ Indexes:
 
 Purpose:
 
-- one active adventurer per account in V1
+- one active adventurer per account
 
 Fields:
 
@@ -1286,24 +1286,27 @@ Behavior:
 
 Purpose:
 
-- create the single V1 character for the account
+- create the single character for the account
 
 Request:
 
 ```json
 {
-  "name": "bot-alpha"
+  "name": "bot-alpha",
+  "gender": "female"
 }
 ```
 
 Validation:
 
 - account must not already have a character
+- `gender` must be `male` or `female`
 - `name` must be unique
 
 Side effects:
 
 - inserts character as `civilian`
+- stores the selected `gender`
 - inserts civilian base stats
 - inserts daily limits row
 - grants starter items and gold
@@ -1604,7 +1607,7 @@ Current repo note:
 
 - these endpoints return generic action-style envelopes
 - outside continuous multi-room challenge flows, characters are treated as full HP and clear of persisted debuffs between combats
-- equipment durability and repair are not part of the current V1 loop
+- equipment durability and repair are not part of the current loop
 
 Current dedicated action contracts:
 
@@ -2004,7 +2007,7 @@ These are not HTTP endpoints. They are the main backend functions the team shoul
 
 ### 13.2 Character service functions
 
-- `CreateCharacter(accountID, name, class, weaponStyle) -> Character`
+- `CreateCharacter(accountID, name, gender, class, weaponStyle) -> Character`
 - `GetCharacterByAccountID(accountID) -> Character`
 - `GetCharacterState(characterID) -> CharacterStateView`
 - `RecalculateDerivedStats(characterID) -> StatsSnapshot`
@@ -2156,7 +2159,7 @@ Responsibilities:
 
 ### 15.1 Character creation
 
-- one character per account in V1
+- one character per account
 - new characters always start as `civilian`
 - class and profession are not chosen during character creation
 
@@ -2287,7 +2290,7 @@ Recommended backend delivery order:
 
 ## 19. Definition of Done for Backend
 
-Backend V1 is considered fully defined when:
+The backend is considered fully defined when:
 
 - all enums are stable and documented
 - all primary tables exist with migrations

@@ -27,6 +27,7 @@ var (
 	ErrCharacterRouteLocked       = ErrCharacterProfessionLocked
 	ErrCharacterNameTaken         = errors.New("character name already exists")
 	ErrCharacterInvalidName       = errors.New("invalid character name")
+	ErrCharacterInvalidGender     = errors.New("invalid character gender")
 	ErrSkillNotFound              = errors.New("skill not found")
 	ErrSkillLocked                = errors.New("skill locked")
 	ErrSkillMaxLevel              = errors.New("skill max level reached")
@@ -52,6 +53,7 @@ const (
 type Summary struct {
 	CharacterID      string `json:"character_id"`
 	Name             string `json:"name"`
+	Gender           string `json:"gender"`
 	Class            string `json:"class"`
 	ProfessionRoute  string `json:"profession_route_id,omitempty"`
 	WeaponStyle      string `json:"weapon_style"`
@@ -349,11 +351,15 @@ func NewServiceWithRepository(repo Repository) (*Service, error) {
 	return service, nil
 }
 
-func (s *Service) CreateCharacter(account auth.Account, name, class, weaponStyle string, worldService *world.Service) (StateView, error) {
+func (s *Service) CreateCharacter(account auth.Account, name, gender, weaponStyle string, worldService *world.Service) (StateView, error) {
 	name = strings.TrimSpace(name)
+	gender = normalizeGenderID(gender)
 
 	if len(name) < 3 || len(name) > 32 {
 		return StateView{}, ErrCharacterInvalidName
+	}
+	if gender == "" {
+		return StateView{}, ErrCharacterInvalidGender
 	}
 
 	s.mu.Lock()
@@ -369,6 +375,7 @@ func (s *Service) CreateCharacter(account auth.Account, name, class, weaponStyle
 	summary := Summary{
 		CharacterID:      nextID("char"),
 		Name:             name,
+		Gender:           gender,
 		Class:            "civilian",
 		ProfessionRoute:  "",
 		WeaponStyle:      "",
@@ -387,7 +394,7 @@ func (s *Service) CreateCharacter(account auth.Account, name, class, weaponStyle
 		skillLoadout:         []string{},
 		materials:            map[string]int{},
 		dailyLimitsResetDate: s.businessDate(),
-		recentEvents:         []world.WorldEvent{s.newEvent(summary, "character.created", "main_city", fmt.Sprintf("%s entered Main City as a civilian adventurer.", name), map[string]any{"class": summary.Class, "profession_route_id": "", "weapon_style": ""})},
+		recentEvents:         []world.WorldEvent{s.newEvent(summary, "character.created", "main_city", fmt.Sprintf("%s entered Main City as a civilian adventurer.", name), map[string]any{"gender": summary.Gender, "class": summary.Class, "profession_route_id": "", "weapon_style": ""})},
 	}
 
 	if err := s.saveRecordLocked(account.AccountID, entry); err != nil {
@@ -1403,6 +1410,11 @@ var classGrowthProfiles = map[string]growthProfile{
 var civilianBaseStats = classGrowthProfiles["civilian"].Base
 
 func normalizeSummary(summary Summary) Summary {
+	gender := normalizeGenderID(summary.Gender)
+	if gender == "" {
+		gender = "male"
+	}
+	summary.Gender = gender
 	className := normalizeClassID(summary.Class)
 	if className == "" {
 		if mapped, ok := normalizeProfessionChoice(summary.ProfessionRoute); ok {
@@ -1422,6 +1434,17 @@ func normalizeSummary(summary Summary) Summary {
 		summary.WeaponStyle = defaultStarterWeaponStyle(className)
 	}
 	return summary
+}
+
+func normalizeGenderID(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "male", "man":
+		return "male"
+	case "female", "woman":
+		return "female"
+	default:
+		return ""
+	}
 }
 
 func normalizeClassID(value string) string {

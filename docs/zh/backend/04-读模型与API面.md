@@ -290,26 +290,27 @@
 
 用途：
 
-- 为账号创建唯一的 V1 角色
+- 为账号创建唯一角色
 
 请求：
 
 ```json
 {
   "name": "bot-alpha",
-  "class": "mage",
-  "weapon_style": "staff"
+  "gender": "female"
 }
 ```
 
 校验：
 
 - 账号还没有角色
+- `gender` 必须是 `male` 或 `female`
 - `name` 唯一
 
 副作用：
 
 - 以 `civilian` 身份插入角色与平民基础属性
+- 存储所选 `gender`
 - 插入每日限制行
 - 发放初始物品与金币
 - 创建或安排每日任务板生成
@@ -473,7 +474,7 @@
 
 建筑模型说明：
 
-- V1 功能建筑只使用一套规范分类：
+- 功能建筑只使用一套规范分类：
   - `guild`
   - `equipment_shop`
   - `apothecary`
@@ -711,7 +712,7 @@
 
 ### 12.5 Building APIs
 
-当前 V1 建筑体系建议保持收敛：
+当前建筑体系建议保持收敛：
 
 - `guild`
 - `equipment_shop`
@@ -723,7 +724,7 @@
 设施边界说明：
 
 - `equipment_shop` 当前统一覆盖基础武器与防具的买卖
-- `apothecary` 是当前 V1 对“买药 + 出发前补给”设施的推荐正式名称
+- `apothecary` 是当前对“买药 + 出发前补给”设施的推荐正式名称
 - 产品文档、后端文档和 tool 输出统一使用上面这 6 类设施
 
 #### `GET /api/v1/buildings/{buildingId}`
@@ -752,9 +753,9 @@
 
 - 这些接口当前返回的是 action-style envelope
 - 除了连续多房间挑战这类流程外，角色在战斗之间默认视为满血且不会保留 debuff
-- 当前 V1 玩法里没有装备耐久和修理环节
+- 当前玩法里没有装备耐久和修理环节
 
-当前 V1 能力边界：
+当前能力边界：
 
 - `equipment_shop` 当前主要负责：
   - `purchase`
@@ -842,12 +843,14 @@
 
 - 任务板按 `04:00 Asia/Shanghai` 切换业务日
 - 首次读取或跨日读取都会自动确保任务板存在
-- 当前默认任务板固定生成 6 条模板任务
+- 当前 daily 任务池里共有 `6` 条模板任务
+- 每个角色每天会从任务池中补满到 `4` 个激活合同
+- 抽取结果对同一角色和同一天是确定性的，因此表现上等同于“每天从池子里随机出 4 个”
 - `curio_followup_delivery` 不一定在初始任务板中，它可能在野外 `curio` 结算后被动态插入并自动接取
 
 日常任务板规划补充：
 
-- 产品目标应为 `3 normal + 2 hard + 1 nightmare`
+- 较早的 `3 normal + 2 hard + 1 nightmare` 是规划目标，不是当前运行时行为
 - `normal` 主要覆盖单步清剿、采集、标准递送
 - `hard` 主要覆盖跨地区交接、回收后汇报、地城后回城交付
 - `nightmare` 主要覆盖带文本线索判断的多步流程任务
@@ -1521,10 +1524,10 @@ Token 经济规则：
   - `has_borrowable_assist_template`
 - `following` / `followers`
   - 只返回简短的公开 Bot 引用对象，不返回完整详情负载
-  - V1 建议每个列表默认上限 `12-20` 条
+  - 建议每个列表默认上限 `12-20` 条
 - `recent_public_chat`
   - 目标 Bot 最近发出的公开聊天消息，按时间倒序
-  - V1 建议默认上限 `10`
+  - 建议默认上限 `10`
 
 #### `GET /api/v1/public/bots/{botId}/quests/history`
 

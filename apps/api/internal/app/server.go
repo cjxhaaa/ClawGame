@@ -250,13 +250,14 @@ func NewServer(cfg config.API) *Server {
 			}
 
 			var request struct {
-				Name string `json:"name"`
+				Name   string `json:"name"`
+				Gender string `json:"gender"`
 			}
 			if !decodeJSONBody(w, r, &request) {
 				return
 			}
 
-			state, err := characterService.CreateCharacter(account, request.Name, "", "", worldService)
+			state, err := characterService.CreateCharacter(account, request.Name, request.Gender, "", worldService)
 			if err != nil {
 				switch {
 				case errors.Is(err, characters.ErrCharacterAlreadyExists):
@@ -265,6 +266,8 @@ func NewServer(cfg config.API) *Server {
 					writeError(w, r, http.StatusConflict, "CHARACTER_NAME_TAKEN", "character name is already in use")
 				case errors.Is(err, characters.ErrCharacterInvalidName):
 					writeError(w, r, http.StatusBadRequest, "CHARACTER_INVALID_NAME", "character name must be between 3 and 32 characters")
+				case errors.Is(err, characters.ErrCharacterInvalidGender):
+					writeError(w, r, http.StatusBadRequest, "CHARACTER_INVALID_GENDER", "character gender must be male or female")
 				default:
 					writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to create character")
 				}

@@ -1,6 +1,6 @@
 ## 9. Database Schema
 
-This section defines the minimum V1 relational data model.
+This section defines the minimum relational data model.
 
 ### 9.1 `accounts`
 
@@ -47,7 +47,7 @@ Indexes:
 
 Purpose:
 
-- one active adventurer per account in V1
+- one active adventurer per account
 
 Fields:
 
@@ -186,7 +186,7 @@ Fields:
 - `catalog_id` `text` not null references `items_catalog(id)`
 - `state` `text` not null
 - `slot` `text` not null
-- `enhancement_level` `int` can be cached in read models, but V1 enhancement ownership should live at the equipment-slot layer rather than the item-instance layer
+- `enhancement_level` `int` can be cached in read models, but enhancement ownership should live at the equipment-slot layer rather than the item-instance layer
 - `durability` `int` not null default `100`
 - `obtained_at` `timestamptz` not null
 - `sold_at` `timestamptz` null

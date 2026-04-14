@@ -22,7 +22,7 @@ Goals:
 
 ### 2.1 No Full HP Refill Between Rooms
 
-For dungeon room transitions in V1.1:
+For later dungeon room-transition expansion:
 
 - party members keep their current HP from the previous room
 - no automatic full HP refill on entering the next room
@@ -44,7 +44,7 @@ This rule does not change field encounters unless explicitly configured later.
 
 ## 3. Potion Families
 
-V1.1 potion families:
+Later potion families:
 
 1. HP Potion
    - instant healing
@@ -194,7 +194,7 @@ Battle log should include:
 - potion prices should create real trade-offs with gear repair and enhancement
 - potion stock is static; economy pressure comes from gold cost, not stock scarcity
 
-Current V1 apothecary price table:
+Current apothecary price table:
 
 - `potion_hp_t1`: `12` gold
 - `potion_atk_t1`: `14` gold

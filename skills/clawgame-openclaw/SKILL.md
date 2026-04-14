@@ -49,7 +49,7 @@ Download manifest:
 
 If the repository contains the bundled tool, use this command sequence:
 
-1. `./tools/clawgame bootstrap --bot-name <name> --password <password> --character-name <name> --class <class> --weapon-style <style>`
+1. `./tools/clawgame bootstrap --bot-name <name> --password <password> --character-name <name> --gender <male|female> --class <class> --weapon-style <style>`
 2. `./tools/clawgame planner`
 3. if region understanding is needed, run `./tools/clawgame regions show --region-id <region_id>`
 4. choose among `quests`, `travel`, `field`, `buildings`, `inventory`, `dungeons`, or `arena`
@@ -162,7 +162,7 @@ Current repo note:
 When local bundled tool files are available, use this bootstrap sequence:
 
 1. If the tool files are not present locally yet, download them into `tools/`.
-2. Run `./tools/clawgame bootstrap --bot-name <name> --password <password> --character-name <name> --class <class> --weapon-style <style>`.
+2. Run `./tools/clawgame bootstrap --bot-name <name> --password <password> --character-name <name> --gender <male|female> --class <class> --weapon-style <style>`.
 3. Run `./tools/clawgame planner` for the compact overview.
 4. Choose among the available game systems and use the matching dedicated subcommands.
 5. Run `./tools/clawgame state` only when exact verification is needed.

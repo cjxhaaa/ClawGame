@@ -33,7 +33,7 @@ Use two naming layers:
 - internal ID for systems and APIs
 - public display name for the website, map, and narrative docs
 
-Recommended V1 mapping:
+Recommended mapping:
 
 | region_id | Current Name | Recommended Public Name | Chinese Display |
 | --- | --- | --- | --- |
@@ -130,7 +130,7 @@ Ironbanner City is the administrative and economic heart of the adventure world,
 - Arena
 - Warehouse
 
-Current V1 facility boundary:
+Current facility boundary:
 
 - functional buildings are fixed to six building families:
   - Adventurers Guild
@@ -327,7 +327,7 @@ Whispering Forest is the first true hunting ground where bots begin establishing
 Note:
 
 - these can begin as regional interaction points before being modeled as full city-style building APIs
-- the stable building families should still follow the same V1 facility vocabulary: guild, equipment shop, apothecary, blacksmith, arena, and warehouse
+- the stable building families should still follow the same facility vocabulary: guild, equipment shop, apothecary, blacksmith, arena, and warehouse
 
 ### Dungeon Relationship
 
@@ -683,7 +683,7 @@ Sunscar Warvault is a fortress-style dungeon where armored enemies, assault timi
 
 ### One-line Background
 
-Obsidian Spire is the deepest V1 dungeon branch, where arcane pressure, punishing magic bursts, and prestige clears define the public endgame image.
+Obsidian Spire is the deepest dungeon branch, where arcane pressure, punishing magic bursts, and prestige clears define the public endgame image.
 
 ### Observation Focus
 
@@ -732,7 +732,7 @@ Obsidian Spire is the deepest V1 dungeon branch, where arcane pressure, punishin
 
 The map should not treat every region as the same kind of place.
 
-For gameplay and documentation purposes, V1 locations belong to three interaction layers.
+For gameplay and documentation purposes, locations belong to three interaction layers.
 
 ### 4.1 Safe Hub Layer
 
@@ -824,7 +824,7 @@ The map needs a more explicit rule for what a facility means in gameplay terms.
 
 ### 5.0 Boundary Between Map Layer And Task Layer
 
-V1 should explicitly adopt the following boundary:
+The game should explicitly adopt the following boundary:
 
 - the map layer answers “regional capability”
 - the task layer answers “goals and priority”
@@ -848,12 +848,12 @@ The map layer should not directly own:
 
 | Facility Type | Example Buildings | Gameplay Role | Primary Actions | Current Status |
 | --- | --- | --- | --- | --- |
-| guild / quest hub | Adventurers Guild, Quest Outpost | contract intake and settlement | list quests, accept quest, submit quest, reroll quests, pick up route work | live in V1 |
-| equipment shop | Equipment Shop | convert gold into immediate power | browse stock, purchase equipment, sell loot | live in V1 |
-| apothecary | Apothecary | route preparation and consumable supply | buy potions | live in V1 |
+| guild / quest hub | Adventurers Guild, Quest Outpost | contract intake and settlement | list quests, accept quest, submit quest, reroll quests, pick up route work | live |
+| equipment shop | Equipment Shop | convert gold into immediate power | browse stock, purchase equipment, sell loot | live |
+| apothecary | Apothecary | route preparation and consumable supply | buy potions | live |
 | forge service | Blacksmith | vertical progression sink | enhance item, salvage item | action surface exists; full enhancement economy is still shallow |
 | arena service | Arena | competitive entry and public spectacle | view bracket, signup, view timing | signup and status are live; richer bracket ops can expand |
-| storage service | Warehouse | reduce inventory friction | view storage, deposit, withdraw, reserve gear sets | placeholder / weak in V1 |
+| storage service | Warehouse | reduce inventory friction | view storage, deposit, withdraw, reserve gear sets | placeholder / weak in current implementation |
 | neutral interaction point | waypoint camp, survey camp, notice board | attach local activity to a field region | route hints, local contracts, supply staging, danger notice | content spec only |
 | dungeon support facility | gate, appraiser tent, loot exchange | convert dungeon intent into entry or payout | entry notice, appraisal, trophy turn-in, risk preview | partially represented through region content and dungeon APIs |
 
@@ -875,7 +875,7 @@ Dungeons should expose support facilities around the entrance, not comfort facil
 - use gatekeepers, warning boards, and loot evaluators
 - avoid turning dungeon nodes into another shopping hub
 
-### 5.3 Current V1 Implementation Alignment
+### 5.3 Current Implementation Alignment
 
 The current codebase already supports or exposes the following map-side actions:
 
@@ -1020,7 +1020,7 @@ The second user-facing question should also be answered directly: yes, the map s
 
 ### 7.1 Current Status
 
-Current V1 code does not yet implement a standalone map curio system with its own trigger API and task lifecycle.
+Current code does not yet implement a standalone map curio system with its own trigger API and task lifecycle.
 
 What already exists:
 
@@ -1141,7 +1141,7 @@ Facility focus:
 Hostile monsters:
 
 - yes
-- this is the primary V1 field region for first-batch enemy encounters
+- this is the primary field region for first-batch enemy encounters
 
 Recommended encounter emphasis:
 
@@ -1206,7 +1206,7 @@ Facility focus:
 Hostile monsters:
 
 - yes
-- this is the primary V1 advancing field pressure zone
+- this is the primary advancing field pressure zone
 
 Recommended encounter emphasis:
 
@@ -1367,7 +1367,7 @@ Facility focus:
 Hostile monsters:
 
 - yes, always expected
-- highest-pressure V1 dungeon node
+- highest-pressure dungeon node
 
 Recommended encounter emphasis:
 

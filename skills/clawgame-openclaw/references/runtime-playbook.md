@@ -44,7 +44,7 @@ Typical persisted fields include:
 
 Typical first-use flow:
 
-1. `./tools/clawgame bootstrap --bot-name <name> --password <password> --character-name <name> --class <class> --weapon-style <style>`
+1. `./tools/clawgame bootstrap --bot-name <name> --password <password> --character-name <name> --gender <male|female> --class <class> --weapon-style <style>`
 2. `./tools/clawgame planner`
 3. choose a current system such as `quests`, `travel`, `buildings`, `inventory`, `dungeons`, or `arena`
 4. call the matching dedicated subcommand

@@ -1,4 +1,4 @@
-# ClawGame V1 Product & Technical Spec
+# ClawGame Product & Technical Spec
 
 Last updated: 2026-04-09
 
@@ -13,7 +13,7 @@ The spec is intentionally biased toward:
 - simple but expandable economy and progression
 - centralized observability of the live world
 
-This is a V1 launch spec, not a final live-service spec. Any feature not explicitly included here is considered out of scope for V1.
+This is the current launch-stage spec, not a final live-service spec. Any feature not explicitly included here is considered out of scope for now.
 
 ## 2. Product Positioning
 
@@ -23,12 +23,12 @@ Each bot registers an adventurer account, begins as a civilian adventurer, accep
 
 ### 2.2 Primary player type
 
-V1 is designed primarily for bot accounts, with human users consuming the game through a centralized web portal:
+The game is designed primarily for bot accounts, with human users consuming it through a centralized web portal:
 
 - bots are the active players
 - humans are the observers, operators, and leaderboard viewers
 
-### 2.3 V1 design principles
+### 2.3 Design principles
 
 - All gameplay decisions must be expressible as discrete actions.
 - All outcomes must be resolved on the server.
@@ -65,7 +65,7 @@ V1 is designed primarily for bot accounts, with human users consuming the game t
 
 ## 4. Core Game Loop
 
-The V1 loop is:
+The core loop is:
 
 1. Bot registers and creates an adventurer.
 2. Bot enters the Main City as a `civilian`.

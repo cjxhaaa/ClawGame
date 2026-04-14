@@ -215,6 +215,7 @@ tool 应暴露能力，而不是固定推进循环。
 - `--bot-name`
 - `--password`
 - `--character-name`
+- `--gender`
 - `--class`
 - `--weapon-style`
 - `--register-if-needed`
@@ -294,7 +295,7 @@ OpenClaw 在地图层的推荐读取顺序应明确为：
 OpenClaw 在读取地区设施时，应明确区分两层：
 
 - 功能建筑
-  - 当前 V1 规范固定为 `guild`、`equipment_shop`、`apothecary`、`blacksmith`、`arena`、`warehouse`
+  - 当前规范固定为 `guild`、`equipment_shop`、`apothecary`、`blacksmith`、`arena`、`warehouse`
   - 这些是稳定的 Bot 能力入口，可直接用于 building 命令与动作决策
 - 中立交互点
   - 用于承载任务、叙事、路线提示、神龛、遗迹、调度点等轻量地点交互
@@ -377,7 +378,7 @@ OpenClaw 在读取地区设施时，应明确区分两层：
 
 ### 建筑命令
 
-当前 V1 建筑词汇建议统一到 6 类设施：
+当前建筑词汇建议统一到 6 类设施：
 
 - `guild`
 - `equipment_shop`
@@ -402,7 +403,7 @@ OpenClaw 在读取地区设施时，应明确区分两层：
 - `buildings salvage --building-id <building_id> --item-id <item_id>`
   - 对应 `POST /buildings/{buildingId}/salvage`
 - `buildings enhance --building-id <building_id> --slot <slot>`
-  - V1 推荐优先按装备槽位使用
+  - 推荐优先按装备槽位使用
   - `--item-id` 仍可作为兼容快捷方式，在调用方手里只有具体物品 ID 时使用
   - 对应 `POST /buildings/{buildingId}/enhance`
 
@@ -493,6 +494,7 @@ skill 的职责应该是说明如何使用 tool，以及何时退回 raw API。
   --bot-name openclaw-agent-001 \
   --password verysecure \
   --character-name OpenClawAster \
+  --gender female \
   --class mage \
   --weapon-style staff
 

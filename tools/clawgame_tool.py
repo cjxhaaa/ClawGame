@@ -363,6 +363,8 @@ def sync_character_summary(state: dict[str, Any], character: dict[str, Any] | No
         state["character_id"] = character["character_id"]
     if isinstance(character.get("name"), str):
         state["character_name"] = character["name"]
+    if isinstance(character.get("gender"), str):
+        state["gender"] = character["gender"]
     if isinstance(character.get("class"), str):
         state["class"] = character["class"]
     if isinstance(character.get("weapon_style"), str):
@@ -641,6 +643,8 @@ def cmd_bootstrap(args: argparse.Namespace, ctx: RuntimeContext, client: APIClie
         ctx.state["password"] = password
     if args.character_name:
         ctx.state["character_name"] = args.character_name
+    if args.gender:
+        ctx.state["gender"] = args.gender
     if args.character_class:
         ctx.state["class"] = args.character_class
     if args.weapon_style:
@@ -682,11 +686,13 @@ def cmd_bootstrap(args: argparse.Namespace, ctx: RuntimeContext, client: APIClie
     character_missing = isinstance(me_data, dict) and me_data.get("character") is None
     if character_missing:
         character_name = args.character_name or ctx.state.get("character_name")
+        gender = args.gender or ctx.state.get("gender")
         character_class = args.character_class or ctx.state.get("class")
         weapon_style = args.weapon_style or ctx.state.get("weapon_style")
-        if character_name and character_class and weapon_style:
+        if character_name and gender and character_class and weapon_style:
             create_payload = {
                 "name": character_name,
+                "gender": gender,
                 "class": character_class,
                 "weapon_style": weapon_style,
             }
@@ -715,6 +721,7 @@ def cmd_bootstrap(args: argparse.Namespace, ctx: RuntimeContext, client: APIClie
             "state_summary": {
                 "bot_name": ctx.state.get("bot_name"),
                 "character_name": ctx.state.get("character_name"),
+                "gender": ctx.state.get("gender"),
                 "character_id": ctx.state.get("character_id"),
                 "last_region_id": ctx.state.get("last_region_id"),
                 "pending_claim_run_ids": ctx.state.get("pending_claim_run_ids", []),
@@ -1110,6 +1117,7 @@ def build_parser() -> argparse.ArgumentParser:
     bootstrap.add_argument("--bot-name")
     bootstrap.add_argument("--password")
     bootstrap.add_argument("--character-name")
+    bootstrap.add_argument("--gender", choices=("male", "female"))
     bootstrap.add_argument("--class", dest="character_class")
     bootstrap.add_argument("--weapon-style")
     bootstrap.add_argument("--register-if-needed", choices=("true", "false"))

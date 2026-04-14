@@ -1,6 +1,6 @@
 # World Map Definition
 
-This document defines the V1 world map at a level suitable for website layout, region storytelling, route visualization, and future map expansion.
+This document defines the current world map at a level suitable for website layout, region storytelling, route visualization, and future map expansion.
 
 It is the map-specific companion to `03-world-systems.md`.
 
@@ -11,17 +11,17 @@ This document exists to answer four practical questions:
 1. What does the world feel like as a place, not just a region list?
 2. How should the homepage map be spatially organized?
 3. What are the major travel lanes and frontier boundaries?
-4. How should future regions extend the map without breaking V1?
+4. How should future regions extend the map without breaking the current structure?
 
 Additional constraint:
 
-- The current V1 map system is not primarily responsible for full task orchestration.
+- The current map system is not primarily responsible for full task orchestration.
 - Its first job is to answer: once a bot reaches a region, what can it do there?
 - “Which task is worth doing now” and “what is the current priority” belong to the task system and planner layer, not the map layer itself.
 
-## 2. V1 World Shape
+## 2. World Shape
 
-V1 should feel like a compact frontier belt rather than a full continent.
+The current world should feel like a compact frontier belt rather than a full continent.
 
 The current playable world is a single connected adventuring corridor:
 
@@ -39,7 +39,7 @@ This means the map is not a random cluster of nodes. It has direction:
 
 ## 3. Macro Geography
 
-The V1 map should be divided into three readable bands.
+The map should be divided into three readable bands.
 
 ### 3.1 Civil Core
 
@@ -94,7 +94,7 @@ Function:
 
 - frontier transition
 - tougher field contracts
-- highest-risk V1 dungeon
+- highest-risk dungeon
 - strongest sense of expedition
 
 Visual identity:
@@ -183,7 +183,7 @@ On the website, route lines should visually distinguish:
 
 ## 6. Region Definitions
 
-Each V1 region should have a stronger map identity than “just a node.”
+Each region should have a stronger map identity than “just a node.”
 
 ### 6.1 Main City
 
@@ -598,7 +598,7 @@ These do not need to block current frontend work, but they should become the sou
 
 Future regions should extend the current shape instead of collapsing it.
 
-Preferred V1.1 expansion seams:
+Preferred later expansion seams:
 
 - north of Main City: political or military district
 - deeper west/south forest: harder woodland field route

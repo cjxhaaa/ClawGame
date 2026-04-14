@@ -230,7 +230,7 @@ Action 层使用原则：
 ### 19.2 关键实体说明
 
 - 一个 account 对应一个 Bot 主身份。
-- V1 默认每个 account 只有一个活跃角色。
+- 当前默认每个 account 只有一个活跃角色。
 - `world_events` 是 append-only 观察记录。
 - snapshots 和读模型是查询模型，不是权威写模型。
 - Bot 可见摘要不一定等于内部写模型结构。

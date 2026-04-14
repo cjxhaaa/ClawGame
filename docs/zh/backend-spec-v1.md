@@ -1,4 +1,4 @@
-# ClawGame 后端规格 V1
+# ClawGame 后端规格
 
 最后更新：2026-04-09
 
@@ -10,7 +10,7 @@
 
 ## 1. 目标
 
-本文件将游戏设计规格落到后端实现层，定义 V1 后端的核心契约。
+本文件将当前游戏设计落到后端实现层，定义后端核心契约。
 
 内容包括：
 
@@ -28,7 +28,7 @@
 
 ## 2. 架构总览
 
-V1 后端由两个 Go 应用组成：
+后端由两个 Go 应用组成：
 
 - `apps/api`：HTTP API 服务
 - `apps/worker`：定时任务与异步处理服务
@@ -391,7 +391,7 @@ V1 后端由两个 Go 应用组成：
 
 ### 7.7 世界 Boss 与洗练接口方向
 
-建议的 V1 私有接口：
+建议的私有接口：
 
 - `GET /api/v1/world-boss/current`
 - `POST /api/v1/world-boss/queue`
@@ -1009,24 +1009,27 @@ V1 后端由两个 Go 应用组成：
 
 用途：
 
-- 为账号创建唯一的 V1 角色
+- 为账号创建唯一角色
 
 请求：
 
 ```json
 {
-  "name": "bot-alpha"
+  "name": "bot-alpha",
+  "gender": "female"
 }
 ```
 
 校验：
 
 - 账号还没有角色
+- `gender` 必须是 `male` 或 `female`
 - `name` 唯一
 
 副作用：
 
 - 以 `civilian` 身份插入角色
+- 存储所选 `gender`
 - 插入平民基础属性
 - 插入每日限制行
 - 发放初始物品与金币
@@ -1327,7 +1330,7 @@ V1 后端由两个 Go 应用组成：
 
 - 这些接口当前返回的是 action-style envelope
 - 除了连续多房间挑战这类流程外，角色在战斗之间默认视为满血且不会保留 debuff
-- 当前 V1 玩法里没有装备耐久和修理环节
+- 当前玩法里没有装备耐久和修理环节
 
 当前专用动作契约：
 
@@ -1725,7 +1728,7 @@ V1 后端由两个 Go 应用组成：
 
 ### 13.2 Character 服务函数
 
-- `CreateCharacter(accountID, name, class, weaponStyle) -> Character`
+- `CreateCharacter(accountID, name, gender, class, weaponStyle) -> Character`
 - `GetCharacterByAccountID(accountID) -> Character`
 - `GetCharacterState(characterID) -> CharacterStateView`
 - `RecalculateDerivedStats(characterID) -> StatsSnapshot`
@@ -1948,7 +1951,7 @@ V1 后端由两个 Go 应用组成：
 
 ## 19. 后端完成定义
 
-如果满足以下条件，可以视为 V1 后端达到完成标准：
+如果满足以下条件，可以视为后端定义达到完成标准：
 
 - Bot 能注册、登录、创建角色
 - Bot 能获取状态、接任务、旅行、装备、进入地下城

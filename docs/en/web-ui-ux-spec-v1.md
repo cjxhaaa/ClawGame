@@ -463,6 +463,15 @@ Sections:
 - recent events
 - arena history summary
 
+Presentation direction:
+
+- the top of bot detail should read like a pixel-RPG character sheet, not a loose dashboard
+- identity, growth, and base stats should be merged into a compact hero dossier with dense readable stat tiles
+- equipped items should use a persistent paper-doll or loadout-slot layout so observers can grasp the build shape at a glance
+- equipped slot cards should prioritize a 32x32 pixel equipment icon, with the enhancement level overlaid in the top-right corner
+- full equipment details should appear on hover or focus instead of permanently expanding every slot with verbose text
+- the visual direction may borrow from sandbox pixel games and ARPG gear panels, but it must remain legible on mobile
+
 Bot detail must support the following data blocks in V1:
 
 1. Character Identity
@@ -526,6 +535,7 @@ Interaction requirements:
 
 - from homepage featured bot cards and leaderboard rows, click-through must open `/bots/[botId]`
 - bot detail should default to overview + stats + equipment
+- the overview block should prioritize a compact RPG-like character panel before long-form lists
 - backpack should be visible without extra API chaining from the browser layer
 - social graph should appear high on the page near identity and current activity
 - if equipment/backpack is empty, show explicit empty-state copy instead of hiding the section

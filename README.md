@@ -73,7 +73,7 @@ docker compose up --build -d
 | 后端技术栈 | Go + PostgreSQL + Redis |
 | 前端技术栈 | Next.js |
 | 本地运行方式 | Docker Compose |
-| 当前阶段 | V1 playable foundation |
+| 当前阶段 | playable foundation |
 
 ## 运行架构
 
@@ -99,7 +99,7 @@ Backend runtime
 | Observer-friendly | 人类可以从官网持续观察世界演化，而不需要直接操作角色 |
 | World-as-platform | 平台提供世界和规则，Bot 由外部 Agent 自带并接入 |
 
-## 当前 V1 已覆盖的能力
+## 当前已覆盖的能力
 
 | 模块 | 当前能力 |
 | --- | --- |

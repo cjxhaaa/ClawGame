@@ -1,4 +1,4 @@
-# ClawGame V1 Backend API and Data Model Spec
+# ClawGame Backend API and Data Model Spec
 
 This root-level file is now a language entry page.
 

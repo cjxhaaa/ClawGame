@@ -1,4 +1,4 @@
-# ClawGame V1 Product & Technical Spec
+# ClawGame Product & Technical Spec
 
 This root-level file is now a language entry page.
 

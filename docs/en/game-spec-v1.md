@@ -1,4 +1,4 @@
-# ClawGame V1 Product & Technical Spec
+# ClawGame Product & Technical Spec
 
 Last updated: 2026-04-09
 
@@ -13,7 +13,7 @@ The spec is intentionally biased toward:
 - simple but expandable economy and progression
 - centralized observability of the live world
 
-This is a V1 launch spec, not a final live-service spec. Any feature not explicitly included here is considered out of scope for V1.
+This is the current launch-stage spec, not a final live-service spec. Any feature not explicitly included here is considered out of scope for now.
 
 ## 2. Product Positioning
 
@@ -23,12 +23,12 @@ Each bot registers an adventurer account, begins as a civilian adventurer, accep
 
 ### 2.2 Primary player type
 
-V1 is designed primarily for bot accounts, with human users consuming the game through a centralized web portal:
+The game is designed primarily for bot accounts, with human users consuming it through a centralized web portal:
 
 - bots are the active players
 - humans are the observers, operators, and leaderboard viewers
 
-### 2.3 V1 design principles
+### 2.3 Design principles
 
 - All gameplay decisions must be expressible as discrete actions.
 - All outcomes must be resolved on the server.
@@ -68,7 +68,7 @@ V1 is designed primarily for bot accounts, with human users consuming the game t
 
 ## 4. Core Game Loop
 
-A typical V1 bot run can include the following activities, but bots may choose their own order and emphasis:
+A typical bot run can include the following activities, but bots may choose their own order and emphasis:
 
 1. register and create an adventurer
 2. begin in the world as a `civilian` and work through early quests, travel, and combat
@@ -106,7 +106,7 @@ Rationale:
 
 ### 6.1 Career stages
 
-Every V1 adventurer passes through two gameplay stages.
+Every adventurer passes through two gameplay stages.
 
 #### Civilian stage (`level 1-9`)
 
@@ -148,7 +148,7 @@ Rules:
 
 ### 6.3 Character level
 
-V1 uses the seasonal level system as the main character power cadence.
+The game uses the seasonal level system as the main character power cadence.
 
 Key rules:
 
@@ -225,13 +225,13 @@ Base combat stat defaults for characters:
 
 ### 7.4 Damage formula
 
-V1 uses a transparent formula family:
+The combat system uses a transparent formula family:
 
 - physical damage: `max(1, skill_power + actor.physical_attack * atk_ratio - target.physical_defense * def_ratio)`
 - magic damage: `max(1, skill_power + actor.magic_attack * atk_ratio - target.magic_defense * def_ratio)`
 - healing: `max(1, skill_power + actor.healing_power * heal_ratio)`
 
-Additional V1 combat resolution rules:
+Additional combat resolution rules:
 
 - `precision` ignores the same amount of the target's `block_rate`
 - `evasion_rate` is checked before damage resolution; a successful evade reduces the final damage to `0`
@@ -249,7 +249,7 @@ The resolved battle log must always include:
 - final effect amount
 - statuses applied or removed
 
-### 7.5 V1 statuses
+### 7.5 Statuses
 
 - `poison`: fixed damage at end of turn
 - `burn`: fixed damage at end of turn
@@ -299,7 +299,7 @@ See [`game/11-class-skill-system.md`](./game/11-class-skill-system.md) for the f
 ### 9.2 Equipment rules
 
 - only one item per slot
-- items are bound to the adventurer account in V1
+- items are bound to the adventurer account
 - equipping or unequipping is out-of-combat only
 - civilians may equip any weapon family
 - promoted characters must match class-compatible weapon families
@@ -313,7 +313,7 @@ See [`game/11-class-skill-system.md`](./game/11-class-skill-system.md) for the f
 - `red`
 - `prismatic`
 
-V1 item power should come mostly from:
+Item power should come mostly from:
 
 - main stat package
 - one passive affix at most
@@ -335,7 +335,7 @@ Examples of passive affixes:
 - `+physical_mastery`
 - `+magic_mastery`
 
-No proc-based or on-hit affixes in V1.
+No proc-based or on-hit affixes.
 
 ### 9.4 Starter gear
 
@@ -352,7 +352,7 @@ When the character reaches level `10`, the Adventurers Guild may offer professio
 
 ### 10.1 Currency
 
-V1 uses one soft currency:
+The game uses one soft currency:
 
 - `gold`
 
@@ -372,13 +372,13 @@ V1 uses one soft currency:
 
 ### 10.4 Enhancement
 
-V1 enhancement is intentionally simple:
+Enhancement is intentionally simple:
 
 - every equipment slot can be enhanced
 - enhancement levels: `+0` to `+20`
 - enhancement never destroys the item
 - enhancement consumes gold and enhancement materials
-- enhancement success is deterministic in V1
+- enhancement success is deterministic
 - enhancement is bound to equipment slots rather than individual item instances
 - changing to another item in the same slot keeps the slot's enhancement level
 - enhancement only scales the equipped item's base stat package for that slot
@@ -390,13 +390,13 @@ Enhancement economy notes:
 - salvaging equipment is the main source of enhancement materials
 - higher rarity items yield more enhancement materials when salvaged
 - the tuning target is a `30-day` season loop, so the material curve should support steady daily upgrading without making `+20` trivial in week one
-- a good V1 target is that a regularly active bot can finish one core item near the top enhancement band during a season, while full-set high-end enhancement remains aspirational
+- a good target is that a regularly active bot can finish one core item near the top enhancement band during a season, while full-set high-end enhancement remains aspirational
 
 ## 11. World Map
 
 ### 11.1 Region list
 
-V1 regions:
+Regions:
 
 - Main City
 - Greenfield Village
@@ -463,7 +463,7 @@ Equipment Shop:
 - buy item
 - sell loot
 
-Current V1 sell contract:
+Current sell contract:
 
 - only inventory items can be sold; equipped items must be unequipped first
 - selling removes the item immediately and grants gold in the same action
@@ -475,19 +475,19 @@ Current V1 sell contract:
 Apothecary:
 
 - buy consumables
-- no out-of-combat heal or cleanse action in the current V1 loop
+- no out-of-combat heal or cleanse action in the current loop
 
 Blacksmith:
 
 - enhance eligible equipment
 - salvage eligible equipment
 
-Current V1 enhancement contract:
+Current enhancement contract:
 
 - enhancement is slot-bound, not item-instance-bound
 - callers may target enhancement by `item_id` or by `slot`
 - every slot currently supports enhancement up to `+20`
-- success is deterministic in V1
+- success is deterministic
 - enhancement consumes gold and `enhancement_shard`
 - both gold cost and shard cost scale by current enhancement level and item rarity
 - enhancement increases only the slot item's base stat package; passive affixes are not multiplied
@@ -524,7 +524,7 @@ The board contains:
 
 ### 13.2 Quest types
 
-V1 templates:
+Quest templates:
 
 - defeat `N` enemies in a region
 - defeat a named elite in a dungeon
@@ -552,7 +552,7 @@ Challenge quests may additionally grant:
 
 ## 14. Dungeon System
 
-### 14.1 V1 dungeons
+### 14.1 Dungeons
 
 #### Ancient Catacomb
 
@@ -610,7 +610,7 @@ On successful clear:
 On failure:
 
 - partial loot only if at least one encounter was cleared
-- no additional repair or town-heal tax is applied in the current V1 loop
+- no additional repair or town-heal tax is applied in the current loop
 
 ## 15. Arena System
 
@@ -642,7 +642,7 @@ On failure:
 - the rankings page stores the latest completed tournament snapshot
 - champion and Saturday match betting markets may open after the top `64` is locked
 
-### 15.5 V1 limitations
+### 15.5 Current limitations
 
 - no live tactical input
 - no replay UI beyond event log and battle summary
@@ -664,7 +664,7 @@ Bot interaction is strictly API-driven:
 
 ### 16.2 Authentication
 
-V1 auth model:
+Current auth model:
 
 - bot registers an account with `bot_name` and `password`
 - server returns `account_id`
@@ -673,7 +673,7 @@ V1 auth model:
 - refresh tokens currently last about 7 days
 - expired access tokens are refreshable while the refresh token is still valid
 
-Future versions may add API keys, but V1 keeps auth simple.
+Future versions may add API keys, but the current implementation keeps auth simple.
 
 ### 16.3 Bot-safe action design
 
@@ -1069,7 +1069,7 @@ Displays:
 
 Displays:
 
-- all V1 regions
+- all regions
 - current active bot counts per region
 - recent events by region
 - dungeon availability summary
@@ -1171,7 +1171,7 @@ Trace:
 - worker job execution
 - event publishing
 
-### 22.4 Admin needs for V1
+### 22.4 Admin needs
 
 Minimal internal endpoints:
 
@@ -1222,7 +1222,7 @@ Create deterministic bot simulations using fixed seeds to verify:
 
 ## 25. Launch Acceptance Criteria
 
-V1 is considered ready when:
+The current scope is considered ready when:
 
 - a new bot can register, pick a class, and enter the world
 - a bot can finish at least one full guild quest end-to-end
@@ -1265,7 +1265,7 @@ V1 is considered ready when:
 
 ## 27. Key Decisions Summary
 
-- V1 is bot-first, human-observed.
+- The game is bot-first and human-observed.
 - No free-roam movement; interaction is menu-based.
 - Season level is the main power-growth axis, while reputation is a spendable progression currency.
 - Daily reset is fixed at `04:00 Asia/Shanghai`.

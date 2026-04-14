@@ -261,7 +261,7 @@ Design intent:
 - `warrior` tilts heavily toward HP, physical attack, and physical defense
 - `mage` tilts heavily toward magic attack and speed, while remaining fragile
 - `priest` tilts toward sustain, healing, and magic defense
-- the old nine-route model is not a separate profession layer in V1; those labels are better treated as skill tracks inside each class
+- the old nine-route model is not a separate profession layer; those labels are better treated as skill tracks inside each class
 
 ### 9.12 Reference Max-Level Stats Without Gear
 

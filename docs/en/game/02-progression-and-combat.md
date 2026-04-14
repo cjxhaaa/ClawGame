@@ -106,13 +106,13 @@ To remain bot-friendly:
 
 - standard attacks have `100%` hit chance
 - skills define their hit chance explicitly
-- no hidden dodge stat in V1
+- no hidden dodge stat
 - no random critical hits from basic attacks
 - damage variance is fixed at `+/- 5%`
 
 ### 7.4 Damage formula
 
-V1 uses a transparent formula family:
+The combat system uses a transparent formula family:
 
 - physical damage: `max(1, skill_power + actor.physical_attack * atk_ratio - target.physical_defense * def_ratio)`
 - magic damage: `max(1, skill_power + actor.magic_attack * atk_ratio - target.magic_defense * def_ratio)`
@@ -127,7 +127,7 @@ The resolved battle log must always include:
 - final effect amount
 - statuses applied or removed
 
-### 7.5 V1 statuses
+### 7.5 Statuses
 
 - `poison`: fixed damage at end of turn
 - `burn`: fixed damage at end of turn

@@ -24,7 +24,7 @@ The detailed specification has moved to:
 ### 9.2 Equipment rules
 
 - only one item per slot
-- items are bound to the adventurer account in V1
+- items are bound to the adventurer account
 - equipping or unequipping is out-of-combat only
 - civilians may equip any weapon or armor piece; their restriction is skill access rather than equipment access
 - after profession choice, weapon type must match the chosen class-compatible weapon families
@@ -32,7 +32,7 @@ The detailed specification has moved to:
 
 ### 9.3 Item rarity
 
-V1 item rarity uses the five-grade dungeon loot model:
+Item rarity uses the five-grade dungeon loot model:
 
 - Blue
 - Purple
@@ -60,7 +60,7 @@ Boundary note:
 
 ### 10.1 Currency
 
-V1 uses one soft currency:
+The game uses one soft currency:
 
 - `gold`
 
@@ -84,13 +84,13 @@ V1 uses one soft currency:
 
 ### 10.4 Enhancement
 
-V1 enhancement is intentionally simple:
+Enhancement is intentionally simple:
 
 - every equipment slot can be enhanced
 - enhancement levels: `+0` to `+20`
 - enhancement never destroys the item
 - enhancement consumes gold and enhancement materials
-- enhancement success is deterministic in V1
+- enhancement success is deterministic
 - enhancement is bound to equipment slots rather than individual item instances
 - changing to another item in the same slot keeps that slot's enhancement level
 - enhancement only scales the equipped item's base stat package for that slot
@@ -217,7 +217,7 @@ Reading note:
 
 ### 11.1 Region list
 
-V1 regions:
+Regions:
 
 - Main City
 - Greenfield Village
@@ -304,7 +304,7 @@ Reference modules:
 ### 12.5 Arena betting
 
 - Arena betting opens after Friday qualification is locked and the Saturday bracket is known.
-- V1 only needs simple markets such as single-match winner and tournament champion.
+- only simple markets such as single-match winner and tournament champion are needed for now.
 - Betting is an optional spectator-facing `gold` sink, not a required progression loop.
 - The goal is to make the public bracket more watchable without creating a deep prediction economy.
 
@@ -363,7 +363,7 @@ Section role:
 
 ### 13.8 Scope and known gaps
 
-- V1 should ship with a stable daily quest framework first.
+- the current scope should ship with a stable daily quest framework first.
 - Richer branching, deeper procedural variation, and more expressive strategy layers can come later.
 
 ### 13.9 Quest framework design principles
@@ -392,7 +392,7 @@ Section role:
 - this section explains how dungeons fit into the main world loop
 - detailed monsters, room layouts, reward tables, party-entry rules, and battle runtime belong in the dungeon and combat modules
 
-### 14.1 V1 dungeons
+### 14.1 Dungeons
 
 - Ancient Catacomb
 - Thorned Hollow
@@ -445,8 +445,8 @@ Section role:
 - Rankings and bracket outcomes should remain visible on the website.
 - Betting may open once the top-`64` bracket is locked.
 
-### 15.5 V1 limitations
+### 15.5 Current limitations
 
 - No live tactical PvP.
 - No live lobby-style matchmaking.
-- No real-time spectator-room system in V1.
+- No real-time spectator-room system.

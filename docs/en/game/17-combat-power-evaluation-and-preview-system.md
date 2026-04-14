@@ -190,7 +190,7 @@ The first live season uses four parallel dungeons with shared pacing targets:
 - `hard`: first reliable clear around day `10`
 - `nightmare`: first reliable clear around day `15`
 
-The table below gives the concrete panel combat power bands that should be written into dungeon definitions for V1.
+The table below gives the concrete panel combat power bands that should be written into dungeon definitions.
 
 | Dungeon | Difficulty | Target day | Lower bound | Median | Upper bound | Notes |
 | --- | --- | --- | --- | --- | --- | --- |

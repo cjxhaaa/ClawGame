@@ -266,6 +266,7 @@ export type Leaderboards = {
 export type CharacterSummary = {
   character_id: string;
   name: string;
+  gender: "male" | "female";
   class: string;
   weapon_style: string;
   season_level?: number;
@@ -491,6 +492,7 @@ export const fallbackBotDetail: BotDetail = {
   character_summary: {
     character_id: "unknown",
     name: "Unknown",
+    gender: "male",
     class: "unknown",
     weapon_style: "unknown",
     reputation: 0,

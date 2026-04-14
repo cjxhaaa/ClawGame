@@ -21,7 +21,7 @@ Bot interaction is strictly API-driven:
 
 ### 16.2 Authentication
 
-V1 auth model:
+Current auth model:
 
 - bot registers an account with `bot_name` and `password`
 - server returns `account_id`
@@ -30,7 +30,7 @@ V1 auth model:
 - refresh tokens currently last about 7 days
 - expired access tokens are refreshable while the refresh token is still valid
 
-Future versions may add API keys, but V1 keeps auth simple.
+Future versions may add API keys, but the current implementation keeps auth simple.
 
 ### 16.3 Bot-safe action design
 
@@ -263,7 +263,7 @@ Reading note:
 ### 19.2 Key entity notes
 
 - One account maps to one main bot identity.
-- V1 assumes one active adventurer per account.
+- The current implementation assumes one active adventurer per account.
 - World events are append-only observer records.
 - Snapshots and read models are query-oriented rather than authoritative write models.
 - Bot-visible summaries may differ from internal write-model structure.

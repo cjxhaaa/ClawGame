@@ -223,6 +223,7 @@ func (s *PostgresStore) LoadCharacters() ([]characters.StoredCharacter, error) {
 			c.account_id,
 			c.id,
 			c.name,
+			COALESCE(c.gender, ''),
 			c.class,
 			COALESCE(c.profession_route_id, ''),
 			COALESCE(c.weapon_style, ''),
@@ -266,6 +267,7 @@ func (s *PostgresStore) LoadCharacters() ([]characters.StoredCharacter, error) {
 			&item.AccountID,
 			&item.Summary.CharacterID,
 			&item.Summary.Name,
+			&item.Summary.Gender,
 			&item.Summary.Class,
 			&item.Summary.ProfessionRoute,
 			&item.Summary.WeaponStyle,
@@ -387,12 +389,13 @@ func (s *PostgresStore) SaveCharacter(stored characters.StoredCharacter) error {
 
 	if _, err := tx.Exec(`
 		INSERT INTO characters (
-			id, account_id, name, class, profession_route_id, weapon_style, season_level, season_xp, skill_levels_json, skill_loadout_json,
+			id, account_id, name, gender, class, profession_route_id, weapon_style, season_level, season_xp, skill_levels_json, skill_loadout_json,
 			reputation, gold, status, location_region_id, hp_current, mp_current, created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
 		ON CONFLICT (id) DO UPDATE
 		SET name = EXCLUDED.name,
+		    gender = EXCLUDED.gender,
 		    class = EXCLUDED.class,
 		    profession_route_id = EXCLUDED.profession_route_id,
 		    weapon_style = EXCLUDED.weapon_style,
@@ -407,7 +410,7 @@ func (s *PostgresStore) SaveCharacter(stored characters.StoredCharacter) error {
 		    hp_current = EXCLUDED.hp_current,
 		    mp_current = EXCLUDED.mp_current,
 		    updated_at = EXCLUDED.updated_at
-	`, stored.Summary.CharacterID, stored.AccountID, stored.Summary.Name, stored.Summary.Class, nullableString(stored.Summary.ProfessionRoute), nullableString(stored.Summary.WeaponStyle), stored.Summary.SeasonLevel, stored.Summary.SeasonXP,
+	`, stored.Summary.CharacterID, stored.AccountID, stored.Summary.Name, stored.Summary.Gender, stored.Summary.Class, nullableString(stored.Summary.ProfessionRoute), nullableString(stored.Summary.WeaponStyle), stored.Summary.SeasonLevel, stored.Summary.SeasonXP,
 		skillLevelsJSON, skillLoadoutJSON, stored.Summary.Reputation, stored.Summary.Gold, stored.Summary.Status, stored.Summary.LocationRegionID,
 		stored.Stats.MaxHP, 0, now, now); err != nil {
 		return err

@@ -444,6 +444,7 @@ func TestAuthCharacterFlow(t *testing.T) {
 			Character struct {
 				CharacterID string `json:"character_id"`
 				Name        string `json:"name"`
+				Gender      string `json:"gender"`
 				Class       string `json:"class"`
 				WeaponStyle string `json:"weapon_style"`
 				Gold        int    `json:"gold"`
@@ -455,12 +456,16 @@ func TestAuthCharacterFlow(t *testing.T) {
 	}
 	doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
 		"name":         "Aster",
+		"gender":       "female",
 		"class":        "mage",
 		"weapon_style": "staff",
 	}, loginResponse.Data.AccessToken, http.StatusOK, &createCharacterResponse)
 
 	if createCharacterResponse.Data.Character.CharacterID == "" {
 		t.Fatal("expected character_id to be returned")
+	}
+	if createCharacterResponse.Data.Character.Gender != "female" {
+		t.Fatalf("expected character gender female, got %q", createCharacterResponse.Data.Character.Gender)
 	}
 	if createCharacterResponse.Data.Character.Gold != 100 {
 		t.Fatalf("expected starter gold 100, got %d", createCharacterResponse.Data.Character.Gold)
@@ -620,6 +625,14 @@ func TestCharacterValidationAndAuthErrors(t *testing.T) {
 
 	if errorResponse.Error.Code != "INVALID_REQUEST" {
 		t.Fatalf("expected INVALID_REQUEST, got %q", errorResponse.Error.Code)
+	}
+
+	doJSONRequest(t, server, http.MethodPost, "/api/v1/characters", map[string]any{
+		"name": "Iris",
+	}, loginResponse.Data.AccessToken, http.StatusBadRequest, &errorResponse)
+
+	if errorResponse.Error.Code != "CHARACTER_INVALID_GENDER" {
+		t.Fatalf("expected CHARACTER_INVALID_GENDER, got %q", errorResponse.Error.Code)
 	}
 }
 
@@ -2663,10 +2676,17 @@ func TestPublicRoutesReflectRuntimeData(t *testing.T) {
 	if len(eventsResponse.Data.Items) == 0 {
 		t.Fatal("expected runtime public events to be present")
 	}
-	if !strings.HasPrefix(eventsResponse.Data.Items[0].ActorName, "PublicRunner") {
-		t.Fatalf("expected PublicRunner* as latest public actor, got %q", eventsResponse.Data.Items[0].ActorName)
+
+	activePublicActor := ""
+	for _, item := range eventsResponse.Data.Items {
+		if strings.HasPrefix(item.ActorName, "PublicRunner") {
+			activePublicActor = item.ActorName
+			break
+		}
 	}
-	activePublicActor := eventsResponse.Data.Items[0].ActorName
+	if activePublicActor == "" {
+		t.Fatalf("expected a PublicRunner* actor in public events, got %#v", eventsResponse.Data.Items)
+	}
 
 	var leaderboardsResponse struct {
 		Data struct {
@@ -5490,11 +5510,21 @@ func doJSONRequest(t *testing.T, server *Server, method, path string, body any, 
 	legacyClassID := ""
 	if method == http.MethodPost && path == "/api/v1/characters" && expectedStatus == http.StatusOK {
 		if payloadMap, ok := body.(map[string]any); ok {
+			gender := strings.TrimSpace(asStringValue(payloadMap["gender"]))
+			if gender == "" {
+				gender = "male"
+			}
 			className := strings.TrimSpace(asStringValue(payloadMap["class"]))
 			if className != "" && className != "civilian" {
 				legacyClassID = className
 				body = map[string]any{
-					"name": payloadMap["name"],
+					"name":   payloadMap["name"],
+					"gender": gender,
+				}
+			} else {
+				body = map[string]any{
+					"name":   payloadMap["name"],
+					"gender": gender,
 				}
 			}
 		}

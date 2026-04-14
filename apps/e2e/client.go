@@ -260,9 +260,10 @@ func (c *Client) Login(botName, password string) error {
 	return nil
 }
 
-func (c *Client) CreateCharacter(name, class, weaponStyle string) error {
+func (c *Client) CreateCharacter(name, gender, class, weaponStyle string) error {
 	return c.doJSON(http.MethodPost, "/api/v1/characters", map[string]any{
-		"name": name,
+		"name":   name,
+		"gender": gender,
 	}, nil)
 }
 

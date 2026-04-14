@@ -134,7 +134,7 @@ Defines monster templates.
 
 ## 9. dungeon_room_waves
 
-Defines the waves for each room. V1 starts with single-wave rooms; can expand later.
+Defines the waves for each room. Start with single-wave rooms and expand later if needed.
 
 | Field | Type | Notes |
 | --- | --- | --- |

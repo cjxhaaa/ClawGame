@@ -215,6 +215,7 @@ Expected inputs:
 - `--bot-name`
 - `--password`
 - `--character-name`
+- `--gender`
 - `--class`
 - `--weapon-style`
 - `--register-if-needed`
@@ -294,7 +295,7 @@ In short:
 OpenClaw should classify region facilities into two separate layers:
 
 - functional buildings
-  - canonical V1 families are `guild`, `equipment_shop`, `apothecary`, `blacksmith`, `arena`, and `warehouse`
+  - canonical families are `guild`, `equipment_shop`, `apothecary`, `blacksmith`, `arena`, and `warehouse`
   - these are stable bot-facing capability surfaces and should be used for building commands and action selection
 - neutral interaction points
   - these exist to support quests, lore, travel flavor, dispatch points, shrines, ruins, and other light regional interactions
@@ -373,7 +374,7 @@ Slot-enhancement interpretation rule:
 
 ### Building commands
 
-Current V1 building vocabulary should stay aligned with the six supported facility families:
+Current building vocabulary should stay aligned with the six supported facility families:
 
 - `guild`
 - `equipment_shop`
@@ -398,7 +399,7 @@ Notes:
 - `buildings salvage --building-id <building_id> --item-id <item_id>`
   - wraps `POST /buildings/{buildingId}/salvage`
 - `buildings enhance --building-id <building_id> --slot <slot>`
-  - preferred V1 usage is by equipment slot
+  - preferred usage is by equipment slot
   - `--item-id` may still be accepted as a compatibility shortcut when the caller only has a concrete item reference
   - wraps `POST /buildings/{buildingId}/enhance`
 
@@ -489,6 +490,7 @@ The skill should explain how to use the tool and when to fall back to raw API.
   --bot-name openclaw-agent-001 \
   --password verysecure \
   --character-name OpenClawAster \
+  --gender female \
   --class mage \
   --weapon-style staff
 

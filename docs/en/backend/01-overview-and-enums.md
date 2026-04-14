@@ -1,10 +1,10 @@
-# ClawGame V1 Backend API and Data Model Spec
+# ClawGame Backend API and Data Model Spec
 
 Last updated: 2026-04-09
 
 ## 1. Goal
 
-This document turns the V1 game design into concrete backend contracts for implementation.
+This document turns the current game design into concrete backend contracts for implementation.
 
 It defines:
 
@@ -21,7 +21,7 @@ This document is implementation-oriented. If there is any conflict with product 
 
 ## 2. Architecture Overview
 
-V1 backend consists of two Go applications:
+The backend consists of two Go applications:
 
 - `apps/api`: HTTP API server
 - `apps/worker`: scheduled jobs and asynchronous game processors

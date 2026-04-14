@@ -2,7 +2,7 @@
 
 ## 1. Design Goals
 
-This module defines the revised V1 dungeon-driven equipment framework for ClawGame.
+This module defines the revised dungeon-driven equipment framework for ClawGame.
 
 Core goals:
 
@@ -41,7 +41,7 @@ Rules:
 
 ## 3. Shared Dungeon Loot Structure
 
-The four V1 dungeons are parallel seasonal farms rather than a strict low-to-high ladder.
+The four dungeons are parallel seasonal farms rather than a strict low-to-high ladder.
 
 System rules:
 
@@ -67,7 +67,7 @@ This means:
 
 ### 3.1 Assist-template Party Entry
 
-V1 dungeons should support solo entry plus optional assist-template party entry.
+Dungeons should support solo entry plus optional assist-template party entry.
 
 #### Party size rules
 
@@ -193,7 +193,7 @@ Design intent:
 - secondary affixes preserve slot identity while still allowing meaningful variance
 - extra affixes create the long-tail chase and can break away from slot expectations
 
-Recommended V1 rule:
+Recommended rule:
 
 - every item has `1` fixed main-affix package
 - every item rolls `1` random secondary affix from the slot-aligned pool
@@ -339,7 +339,7 @@ Rules:
 
 - all equipment slots roll extra affixes from the same global affix pool
 - slot identity is expressed through the main-affix and secondary-affix layers, not through extra-affix restrictions
-- a single item should not roll the exact same affix twice in V1
+- a single item should not roll the exact same affix twice
 - slots may roll both flat-value and percent-value variants later, but the first live version should keep naming and evaluation unified at the system layer
 
 Implication:
@@ -362,7 +362,7 @@ Recommended gates:
 | Red | Blue structure + 4 extra affixes from the full shared global pool |
 | Prismatic | Blue structure + 4 extra affixes from the full shared global pool, all at max roll value |
 
-V1 extension rule:
+Extension rule:
 
 - niche affixes such as `boss_damage`, `guard_power`, `defense_ignore`, or `skill_effect` should remain optional future additions rather than part of the first mandatory launch pool
 - if such affixes are introduced later, prefer gating them to `Gold` and above, or even `Red` and above, to keep early gear legible
@@ -375,7 +375,7 @@ Roll-value rule:
 
 ### 4.6 Extra-Affix Roll Ranges
 
-V1 should keep roll ranges readable and narrow enough that item quality matters more than lottery variance.
+Roll ranges should stay readable and narrow enough that item quality matters more than lottery variance.
 
 Recommended roll-position ranges:
 
@@ -457,7 +457,7 @@ Current runtime behavior:
 - the pending preview stores `material_key`, `material_quantity`, `previous_affixes`, `preview_affixes`, and `created_at`
 - `save` replaces the item's current `extra_affixes` with `preview_affixes` and then recomputes final stats
 - `discard` clears the pending preview and leaves the item's current affixes unchanged
-- V1 reforge cost is quality-based and currently resolved as `1 / 2 / 3 / 5 / 8` for `blue / purple / gold / red / prismatic`
+- Reforge cost is quality-based and currently resolved as `1 / 2 / 3 / 5 / 8` for `blue / purple / gold / red / prismatic`
 
 Design intent:
 
@@ -465,11 +465,11 @@ Design intent:
 - world-boss participation remains responsible for late-game extra-affix optimization
 - reforge should create a meaningful keep-or-revert decision without risking permanent loss of the whole item
 
-Recommended V1 material direction:
+Recommended material direction:
 
-- V1 uses only one reforge material: `reforge_stone`
+- the system uses only one reforge material: `reforge_stone`
 - one reforge attempt rerolls all extra affixes on the chosen item once
-- V1 should not split reforge into multiple stone families yet
+- reforge should not be split into multiple stone families yet
 
 Recommended reforge-stone cost by item quality:
 
@@ -813,7 +813,7 @@ Runtime note:
 
 - inventory items expose `set_id`
 - inventory responses expose `equipped_set_bonuses`
-- active `2 / 4 / 6` piece thresholds currently apply direct stat snapshots during V1 runtime so set identity has immediate combat impact
+- active `2 / 4 / 6` piece thresholds currently apply direct stat snapshots so set identity has immediate combat impact
 
 ### 11.1 Bot Farming Guidance
 
@@ -887,4 +887,4 @@ Recommended API requirements:
 ## 14. Open Follow-Up Tasks
 
 - decide whether every dungeon should have one boss material and one generic seasonal material, or multiple unique materials
-- define whether block is a formal combat stat or an event-style defensive keyword in V1
+- define whether block is a formal combat stat or an event-style defensive keyword

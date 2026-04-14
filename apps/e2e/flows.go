@@ -17,7 +17,7 @@ func registerCivilianCharacter(t *testing.T, harness *Harness, botName, characte
 	if err := client.Login(botName, harness.password); err != nil {
 		t.Fatalf("login %s: %v", botName, err)
 	}
-	if err := client.CreateCharacter(characterName, "civilian", ""); err != nil {
+	if err := client.CreateCharacter(characterName, "male", "civilian", ""); err != nil {
 		t.Fatalf("create character %s: %v", characterName, err)
 	}
 	return client

@@ -410,6 +410,17 @@ button {
   margin-top: 8px;
 }
 
+.rpg-card-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.rpg-card-title h3 {
+  margin: 0;
+}
+
 .profile-id-row {
   margin: 6px 0 0;
   padding: 8px 10px;
@@ -425,6 +436,121 @@ button {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 10px;
+}
+
+.character-panel-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.95fr) minmax(260px, 1.05fr) minmax(280px, 0.9fr);
+  gap: 14px;
+}
+
+.character-dossier-card,
+.character-stage-card,
+.social-summary-card,
+.equipment-paperdoll-card {
+  position: relative;
+  padding: 16px;
+  border: 3px solid rgba(42, 36, 24, 0.16);
+  background:
+    linear-gradient(180deg, rgba(255, 251, 236, 0.92), rgba(231, 218, 178, 0.94)),
+    rgba(255, 251, 236, 0.9);
+}
+
+.character-dossier-card::before,
+.character-stage-card::before,
+.social-summary-card::before,
+.equipment-paperdoll-card::before {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border: 1px solid rgba(42, 36, 24, 0.12);
+  pointer-events: none;
+}
+
+.character-level-badge,
+.character-tag,
+.paperdoll-meta span,
+.gear-rarity-pill,
+.gear-enhance-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 2px solid rgba(42, 36, 24, 0.22);
+  background: rgba(42, 36, 24, 0.08);
+  font-size: 12px;
+  line-height: 1.1;
+}
+
+.character-level-badge {
+  background: linear-gradient(180deg, rgba(202, 155, 71, 0.22), rgba(202, 155, 71, 0.06));
+  font-weight: 700;
+}
+
+.character-classline {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.character-tag-row,
+.gear-slot-pills,
+.paperdoll-meta,
+.gear-stat-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.character-tag-row {
+  margin-top: 12px;
+}
+
+.character-progress-card {
+  margin-top: 14px;
+  padding: 12px;
+  border: 2px solid rgba(42, 36, 24, 0.14);
+  background:
+    linear-gradient(180deg, rgba(18, 15, 10, 0.96), rgba(34, 28, 18, 0.96)),
+    rgba(18, 15, 10, 0.95);
+  color: #f7efcf;
+}
+
+.character-progress-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.character-progress-top span,
+.character-progress-note {
+  color: rgba(247, 239, 207, 0.74);
+  font-size: 12px;
+}
+
+.character-progress-note {
+  margin: 8px 0 0;
+}
+
+.character-progress-bar {
+  margin-top: 10px;
+  height: 12px;
+  padding: 2px;
+  border: 2px solid rgba(247, 239, 207, 0.18);
+  background: rgba(247, 239, 207, 0.08);
+}
+
+.character-progress-bar span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, rgba(95, 139, 69, 0.92), rgba(247, 206, 99, 0.92));
+  box-shadow: inset 0 0 0 1px rgba(18, 15, 10, 0.28);
+}
+
+.character-facts-grid {
+  margin-top: 14px;
 }
 
 .profile-side-block {
@@ -446,6 +572,227 @@ button {
 
 .compact-stats-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.character-stage-card {
+  overflow: hidden;
+}
+
+.character-stage-card::after,
+.equipment-paperdoll-card::after {
+  content: "";
+  position: absolute;
+  right: -24px;
+  bottom: -36px;
+  width: 180px;
+  height: 180px;
+  background:
+    linear-gradient(45deg, rgba(202, 155, 71, 0.18) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(95, 139, 69, 0.12) 25%, transparent 25%);
+  background-size: 16px 16px;
+  opacity: 0.8;
+  transform: rotate(12deg);
+  pointer-events: none;
+}
+
+.character-stage-frame {
+  position: relative;
+  min-height: 320px;
+  padding: 18px;
+  border: 2px solid rgba(42, 36, 24, 0.18);
+  background:
+    radial-gradient(circle at 50% 24%, rgba(247, 206, 99, 0.26), transparent 24%),
+    linear-gradient(180deg, rgba(36, 31, 22, 0.98), rgba(20, 16, 11, 0.98));
+  color: #f7efcf;
+}
+
+.character-stage-copy {
+  position: relative;
+  z-index: 1;
+  max-width: 60%;
+}
+
+.character-stage-copy strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 22px;
+}
+
+.character-stage-copy p:last-child {
+  margin-bottom: 0;
+  color: rgba(247, 239, 207, 0.72);
+}
+
+.character-stage-portrait,
+.paperdoll-figure {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 3px solid rgba(247, 239, 207, 0.2);
+  background:
+    linear-gradient(180deg, rgba(95, 139, 69, 0.28), rgba(202, 155, 71, 0.16)),
+    rgba(18, 15, 10, 0.88);
+  box-shadow:
+    inset 0 0 0 2px rgba(247, 239, 207, 0.08),
+    0 0 30px rgba(247, 206, 99, 0.12);
+}
+
+.character-stage-portrait {
+  position: absolute;
+  left: 50%;
+  bottom: 24px;
+  width: 180px;
+  height: 220px;
+  transform: translateX(-50%);
+}
+
+.character-stage-portrait::before,
+.paperdoll-figure::before {
+  content: "";
+  position: absolute;
+  inset: 12px;
+  background:
+    linear-gradient(180deg, rgba(247, 239, 207, 0.14), rgba(247, 239, 207, 0.02)),
+    linear-gradient(90deg, rgba(247, 239, 207, 0.08) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(247, 239, 207, 0.08) 1px, transparent 1px);
+  background-size:
+    100% 100%,
+    14px 14px,
+    14px 14px;
+}
+
+.silhouette-shell {
+  position: relative;
+  z-index: 1;
+  width: 176px;
+  height: 176px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.silhouette-shell.compact {
+  width: 136px;
+  height: 136px;
+}
+
+.silhouette-glow {
+  position: absolute;
+  inset: 18px;
+  background:
+    radial-gradient(circle at 50% 26%, rgba(244, 240, 224, 0.12), transparent 32%),
+    radial-gradient(circle at 50% 74%, rgba(110, 113, 122, 0.2), transparent 42%);
+  filter: blur(6px);
+}
+
+.silhouette-svg {
+  position: relative;
+  z-index: 1;
+  width: 160px;
+  height: 160px;
+  filter: drop-shadow(0 10px 0 rgba(0, 0, 0, 0.24));
+}
+
+.silhouette-shell.compact .silhouette-svg {
+  width: 120px;
+  height: 120px;
+}
+
+.character-stage-region {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  margin: 0;
+  padding: 6px 10px;
+  background: rgba(247, 239, 207, 0.08);
+  color: rgba(247, 239, 207, 0.76);
+  font-size: 12px;
+}
+
+.character-metric-grid,
+.social-badge-grid {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.character-metric-card,
+.social-badge-card,
+.stat-chip {
+  padding: 12px;
+  border: 2px solid rgba(42, 36, 24, 0.14);
+  background: rgba(255, 251, 236, 0.76);
+}
+
+.character-metric-card span,
+.social-badge-card span,
+.stat-chip span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.character-metric-card strong,
+.social-badge-card strong,
+.stat-chip strong {
+  display: block;
+  margin-top: 8px;
+}
+
+.stats-arsenal-card {
+  padding: 16px;
+  background:
+    linear-gradient(180deg, rgba(255, 251, 236, 0.94), rgba(228, 212, 159, 0.88)),
+    rgba(255, 251, 236, 0.9);
+}
+
+.stat-chip-grid {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.stat-chip {
+  position: relative;
+  overflow: hidden;
+}
+
+.stat-chip::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 4px;
+  opacity: 0.95;
+}
+
+.stat-chip.tone-vital::after {
+  background: #b55747;
+}
+
+.stat-chip.tone-attack::after {
+  background: #ca9b47;
+}
+
+.stat-chip.tone-defense::after {
+  background: #5f8b45;
+}
+
+.stat-chip.tone-utility::after {
+  background: #6d6b92;
+}
+
+.stat-chip.tone-support::after {
+  background: #3d8f8b;
+}
+
+.social-summary-card {
+  margin-top: 14px;
+}
+
+.social-links-grid {
+  margin-top: 14px;
 }
 
 .profile-kv-row {
@@ -475,6 +822,53 @@ button {
   margin: 10px 0 0;
 }
 
+.equipment-rpg-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(260px, 0.8fr);
+  gap: 14px;
+}
+
+.equipment-sidebar-stack {
+  display: grid;
+  gap: 14px;
+}
+
+.equipment-paperdoll-grid {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-areas:
+    "head core core necklace"
+    "weapon core core ring"
+    ". chest boots .";
+  gap: 10px;
+}
+
+.paperdoll-core {
+  grid-area: core;
+  position: relative;
+  min-height: 300px;
+  padding: 18px;
+  border: 2px solid rgba(42, 36, 24, 0.18);
+  background:
+    radial-gradient(circle at 50% 22%, rgba(247, 206, 99, 0.22), transparent 22%),
+    linear-gradient(180deg, rgba(30, 25, 17, 0.98), rgba(18, 15, 10, 0.98));
+  color: #f7efcf;
+  text-align: center;
+}
+
+.paperdoll-figure {
+  position: relative;
+  width: 148px;
+  height: 180px;
+  margin: 6px auto 16px;
+}
+
+.paperdoll-meta {
+  margin-top: 14px;
+  justify-content: center;
+}
+
 .gear-slot-grid {
   margin-top: 12px;
   display: grid;
@@ -491,27 +885,224 @@ button {
   min-width: 0;
 }
 
+.gear-slot-card.slot-head {
+  grid-area: head;
+}
+
+.gear-slot-card.slot-necklace {
+  grid-area: necklace;
+}
+
+.gear-slot-card.slot-weapon {
+  grid-area: weapon;
+}
+
+.gear-slot-card.slot-ring {
+  grid-area: ring;
+}
+
+.gear-slot-card.slot-chest {
+  grid-area: chest;
+}
+
+.gear-slot-card.slot-boots {
+  grid-area: boots;
+}
+
 .gear-slot-card.empty {
   opacity: 0.9;
   border-style: dashed;
 }
 
+.gear-slot-card.filled,
+.backpack-item-card {
+  box-shadow: inset 0 0 0 1px rgba(42, 36, 24, 0.06);
+}
+
 .gear-slot-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.gear-slot-headline,
+.backpack-item-head {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
+.backpack-item-head {
+  justify-content: space-between;
+}
+
 .gear-slot-icon {
   width: 22px;
   text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.gear-slot-origin {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.gear-item-summary {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.backpack-item-summary {
+  margin-bottom: 2px;
+}
+
+.gear-item-copy {
+  min-width: 0;
+}
+
+.gear-slot-brief {
+  min-width: 0;
+}
+
+.gear-item-copy .gear-slot-name,
+.gear-item-copy strong,
+.gear-slot-brief .gear-slot-name {
+  margin-top: 0;
+}
+
+.equipment-item-icon {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid rgba(42, 36, 24, 0.22);
+  background: rgba(18, 15, 10, 0.06);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 251, 236, 0.12),
+    0 3px 0 rgba(42, 36, 24, 0.16);
+  overflow: hidden;
+}
+
+.equipment-item-icon-grid {
+  display: none;
+}
+
+.equipment-item-art {
+  position: relative;
+  z-index: 1;
+  width: 64px;
+  height: 64px;
+  image-rendering: pixelated;
+  shape-rendering: crispEdges;
+}
+
+.equipment-item-enhance-badge {
+  position: absolute;
+  right: 2px;
+  top: 2px;
+  z-index: 3;
+  min-width: 18px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 3px;
+  border: 1px solid rgba(42, 36, 24, 0.16);
+  background: rgba(18, 15, 10, 0.86);
+  color: #f7efcf;
+  font-size: 9px;
+  line-height: 1;
+}
+
+.equipment-item-slot-badge {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  z-index: 2;
+  min-width: 18px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 3px;
+  border: 1px solid rgba(42, 36, 24, 0.18);
+  background: rgba(18, 15, 10, 0.78);
+  color: #f7efcf;
+  font-size: 9px;
+  line-height: 1;
+  letter-spacing: 0.04em;
 }
 
 .gear-slot-name {
-  margin: 8px 0 0;
-  color: var(--muted);
+  margin: 0;
+  font-weight: 700;
   overflow-wrap: anywhere;
   word-break: break-word;
+  font-size: 13px;
+}
+
+.gear-slot-power {
+  margin: 8px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.gear-stat-tags {
+  margin-top: 10px;
+}
+
+.gear-stat-tags span {
+  padding: 4px 8px;
+  border: 1px solid rgba(42, 36, 24, 0.14);
+  background: rgba(42, 36, 24, 0.05);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.gear-slot-brief-meta {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.gear-rarity-pill.rarity-common,
+.rarity-common {
+  border-color: rgba(42, 36, 24, 0.18);
+}
+
+.gear-rarity-pill.rarity-uncommon,
+.rarity-uncommon {
+  border-color: rgba(95, 139, 69, 0.38);
+  box-shadow: inset 0 0 0 1px rgba(95, 139, 69, 0.16);
+}
+
+.gear-rarity-pill.rarity-rare,
+.rarity-rare {
+  border-color: rgba(80, 112, 177, 0.38);
+  box-shadow: inset 0 0 0 1px rgba(80, 112, 177, 0.16);
+}
+
+.gear-rarity-pill.rarity-epic,
+.rarity-epic {
+  border-color: rgba(120, 84, 177, 0.4);
+  box-shadow: inset 0 0 0 1px rgba(120, 84, 177, 0.18);
+}
+
+.gear-rarity-pill.rarity-legendary,
+.rarity-legendary {
+  border-color: rgba(202, 155, 71, 0.48);
+  box-shadow: inset 0 0 0 1px rgba(202, 155, 71, 0.22);
 }
 
 .backpack-block {
@@ -530,6 +1121,191 @@ button {
   display: block;
   color: var(--muted);
   font-size: 12px;
+}
+
+.dungeon-source-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 4px 10px 4px 6px;
+  border: 2px solid rgba(42, 36, 24, 0.16);
+  background: rgba(255, 251, 236, 0.82);
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.dungeon-source-pill.compact {
+  min-height: 24px;
+  padding-right: 8px;
+  font-size: 11px;
+}
+
+.dungeon-icon-badge {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(42, 36, 24, 0.18);
+  background: rgba(24, 20, 15, 0.08);
+}
+
+.dungeon-icon-svg {
+  width: 16px;
+  height: 16px;
+  image-rendering: pixelated;
+  shape-rendering: crispEdges;
+}
+
+.dungeon-icon-legend {
+  margin-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dungeon-atlas-grid {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.dungeon-atlas-card {
+  padding: 12px;
+  border: 2px solid rgba(42, 36, 24, 0.16);
+  background: rgba(255, 251, 236, 0.76);
+}
+
+.dungeon-atlas-card strong {
+  display: block;
+  margin-top: 10px;
+}
+
+.dungeon-atlas-card p,
+.equipment-overview-note {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.dungeon-atlas-icon {
+  width: 100%;
+  min-height: 74px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid rgba(42, 36, 24, 0.14);
+  background:
+    linear-gradient(90deg, rgba(42, 36, 24, 0.06) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(42, 36, 24, 0.06) 1px, transparent 1px),
+    rgba(255, 251, 236, 0.58);
+  background-size: 10px 10px, 10px 10px, 100% 100%;
+}
+
+.dungeon-atlas-icon-svg {
+  width: 42px;
+  height: 42px;
+}
+
+.theme-ancient_catacomb .dungeon-source-pill,
+.theme-ancient_catacomb.dungeon-source-pill {
+  border-color: rgba(109, 107, 146, 0.34);
+  background: rgba(235, 233, 248, 0.86);
+}
+
+.equipment-item-icon.theme-ancient_catacomb {
+  background:
+    linear-gradient(180deg, rgba(201, 199, 221, 0.38), rgba(63, 54, 77, 0.18)),
+    rgba(236, 234, 246, 0.88);
+}
+
+.dungeon-atlas-card.theme-ancient_catacomb .dungeon-atlas-icon {
+  background-color: rgba(236, 234, 246, 0.8);
+}
+
+.theme-thorned_hollow .dungeon-source-pill,
+.theme-thorned_hollow.dungeon-source-pill {
+  border-color: rgba(95, 139, 69, 0.34);
+  background: rgba(234, 243, 224, 0.86);
+}
+
+.equipment-item-icon.theme-thorned_hollow {
+  background:
+    linear-gradient(180deg, rgba(149, 195, 109, 0.36), rgba(46, 81, 48, 0.18)),
+    rgba(234, 243, 224, 0.88);
+}
+
+.dungeon-atlas-card.theme-thorned_hollow .dungeon-atlas-icon {
+  background-color: rgba(234, 243, 224, 0.82);
+}
+
+.theme-sunscar_warvault .dungeon-source-pill,
+.theme-sunscar_warvault.dungeon-source-pill {
+  border-color: rgba(210, 144, 74, 0.38);
+  background: rgba(248, 233, 212, 0.88);
+}
+
+.equipment-item-icon.theme-sunscar_warvault {
+  background:
+    linear-gradient(180deg, rgba(245, 213, 101, 0.44), rgba(167, 58, 36, 0.16)),
+    rgba(248, 233, 212, 0.9);
+}
+
+.dungeon-atlas-card.theme-sunscar_warvault .dungeon-atlas-icon {
+  background-color: rgba(248, 233, 212, 0.84);
+}
+
+.theme-obsidian_spire .dungeon-source-pill,
+.theme-obsidian_spire.dungeon-source-pill {
+  border-color: rgba(83, 70, 122, 0.36);
+  background: rgba(232, 228, 243, 0.88);
+}
+
+.equipment-item-icon.theme-obsidian_spire {
+  background:
+    linear-gradient(180deg, rgba(184, 176, 223, 0.36), rgba(39, 34, 53, 0.18)),
+    rgba(232, 228, 243, 0.9);
+}
+
+.dungeon-atlas-card.theme-obsidian_spire .dungeon-atlas-icon {
+  background-color: rgba(232, 228, 243, 0.84);
+}
+
+.theme-starter .dungeon-source-pill,
+.theme-starter.dungeon-source-pill {
+  border-color: rgba(124, 115, 93, 0.28);
+  background: rgba(245, 238, 214, 0.86);
+}
+
+.equipment-item-icon.theme-starter {
+  background:
+    linear-gradient(180deg, rgba(239, 229, 200, 0.58), rgba(124, 115, 93, 0.14)),
+    rgba(245, 238, 214, 0.88);
+}
+
+.gear-slot-card.theme-ancient_catacomb,
+.backpack-item-card.theme-ancient_catacomb {
+  box-shadow: inset 0 0 0 1px rgba(109, 107, 146, 0.18);
+}
+
+.gear-slot-card.theme-thorned_hollow,
+.backpack-item-card.theme-thorned_hollow {
+  box-shadow: inset 0 0 0 1px rgba(95, 139, 69, 0.2);
+}
+
+.gear-slot-card.theme-sunscar_warvault,
+.backpack-item-card.theme-sunscar_warvault {
+  box-shadow: inset 0 0 0 1px rgba(210, 144, 74, 0.2);
+}
+
+.gear-slot-card.theme-obsidian_spire,
+.backpack-item-card.theme-obsidian_spire {
+  box-shadow: inset 0 0 0 1px rgba(83, 70, 122, 0.22);
 }
 
 .gear-tooltip {
@@ -3604,7 +4380,12 @@ button {
     grid-template-columns: 1fr;
   }
 
-  .profile-main-grid {
+  .profile-main-grid,
+  .character-panel-grid,
+  .equipment-rpg-grid,
+  .character-metric-grid,
+  .social-badge-grid,
+  .stat-chip-grid {
     grid-template-columns: 1fr;
   }
 
@@ -3635,6 +4416,41 @@ button {
 
   .today-filter-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .equipment-paperdoll-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      "core core"
+      "head necklace"
+      "weapon ring"
+      "chest boots";
+  }
+
+  .character-stage-frame,
+  .paperdoll-core {
+    min-height: 0;
+  }
+
+  .character-stage-copy {
+    max-width: none;
+  }
+
+  .character-stage-portrait {
+    position: relative;
+    left: auto;
+    bottom: auto;
+    width: 100%;
+    max-width: 180px;
+    margin: 24px auto 0;
+    transform: none;
+  }
+
+  .character-stage-region {
+    position: relative;
+    right: auto;
+    bottom: auto;
+    margin-top: 16px;
   }
 
   .feed-scope-actions {
@@ -4398,4 +5214,198 @@ button {
   .arena-modal-versus {
     justify-self: center;
   }
+}
+
+/* ========================================================= */
+/* DARK FANTASY PROFILE OVERRIDES (Diablo / BG Style)        */
+/* ========================================================= */
+
+.dark-fantasy-profile {
+  --bg: #0f0d0c;
+  --ink: #e6d8c3;
+  --muted: #8b7969;
+}
+
+.dark-fantasy-profile .pixel-panel {
+  border-color: #3b2e2a;
+  background: #161210;
+  box-shadow: inset 0 0 60px rgba(0, 0, 0, 0.8), 0 8px 24px rgba(0,0,0,0.8);
+}
+
+.dark-fantasy-profile .section-header .eyebrow {
+  color: #a73a3a; /* blood red */
+}
+
+.dark-fantasy-profile .section-header h2 {
+  color: #cfb288; /* gold */
+}
+
+/* Individual Cards */
+.dark-fantasy-profile .character-dossier-card,
+.dark-fantasy-profile .character-stage-card,
+.dark-fantasy-profile .social-summary-card,
+.dark-fantasy-profile .equipment-paperdoll-card,
+.dark-fantasy-profile .stats-arsenal-card,
+.dark-fantasy-profile .equipment-total-block,
+.dark-fantasy-profile .equipment-overview-card {
+  border: 2px solid #483c32;
+  background: radial-gradient(circle at top, #241d1a 0%, #110e0c 100%);
+  box-shadow: inset 0 0 15px rgba(0,0,0,0.8), 0 2px 6px rgba(0,0,0,0.5);
+}
+
+.dark-fantasy-profile .character-dossier-card::before,
+.dark-fantasy-profile .character-stage-card::before,
+.dark-fantasy-profile .social-summary-card::before,
+.dark-fantasy-profile .equipment-paperdoll-card::before {
+  border: 1px solid #735f4f;
+  opacity: 0.3;
+}
+
+/* Center Paperdoll */
+.dark-fantasy-profile .equipment-paperdoll-grid {
+  grid-template-columns: minmax(130px, 1fr) minmax(240px, 1.6fr) minmax(130px, 1fr);
+  grid-template-areas:
+    "head    core  necklace"
+    "chest   core  ring"
+    "weapon  core  boots";
+  gap: 12px;
+  align-items: stretch;
+}
+
+.dark-fantasy-profile .paperdoll-core {
+  min-height: 480px;
+  border: 2px solid #57463a;
+  border-radius: 4px;
+  background: 
+    radial-gradient(ellipse at center, rgba(167, 58, 58, 0.25) 0%, transparent 65%),
+    linear-gradient(180deg, #1b1614, #090706);
+  box-shadow: inset 0 0 30px #000;
+}
+
+.dark-fantasy-profile .paperdoll-figure {
+  width: 220px;
+  height: 290px;
+  margin-top: 10px;
+}
+
+/* Equipment Slots */
+.dark-fantasy-profile .gear-slot-card {
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: flex-start !important;
+  align-items: center !important;
+  border: 2px solid #3d3129;
+  background: linear-gradient(135deg, #1c1714, #0d0a09);
+  box-shadow: inset 0 0 8px rgba(0,0,0,0.7), 0 4px 6px rgba(0,0,0,0.6);
+  padding: 12px 10px;
+  text-align: center;
+  transition: all 0.2s ease-in-out;
+}
+
+.dark-fantasy-profile .gear-slot-card:hover {
+  border-color: #a73a3a;
+  background: linear-gradient(135deg, #2b1f1a, #16100e);
+}
+
+.dark-fantasy-profile .gear-slot-card.empty {
+  border-style: dashed;
+  border-color: #3b2e2a;
+  background: #0f0c0b;
+  opacity: 0.6;
+}
+
+.dark-fantasy-profile .gear-slot-card.filled {
+  border-color: #8f724d; /* old gold */
+  box-shadow: inset 0 0 10px rgba(143, 114, 77, 0.15);
+}
+
+.dark-fantasy-profile .gear-slot-head {
+  flex-direction: column;
+  margin-bottom: 8px;
+  gap: 4px;
+}
+
+.dark-fantasy-profile .gear-item-summary {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  gap: 8px;
+}
+
+.dark-fantasy-profile .gear-slot-brief {
+  text-align: center;
+}
+
+.dark-fantasy-profile .equipment-item-icon {
+  width: 64px;
+  height: 64px;
+  border-color: #57463a;
+  background: radial-gradient(circle at center, #261f1b, #0f0d0c);
+  box-shadow: 0 4px 10px rgba(0,0,0,0.8);
+}
+
+/* Stat chips & Progress Bars */
+.dark-fantasy-profile .stat-chip {
+  background: #1c1714;
+  border-color: #3d3129;
+  color: #e6d8c3;
+  box-shadow: inset 0 0 5px rgba(0,0,0,0.6);
+}
+.dark-fantasy-profile .stat-chip.tone-vital { border-color: #8c2a2a; }
+.dark-fantasy-profile .stat-chip.tone-attack { border-color: #b36b22; }
+.dark-fantasy-profile .stat-chip.tone-defense { border-color: #4f6874; }
+.dark-fantasy-profile .stat-chip.tone-support { border-color: #5a8a64; }
+.dark-fantasy-profile .stat-chip.tone-utility { border-color: #6b5680; }
+
+.dark-fantasy-profile .character-progress-card {
+  border-color: #483c32;
+  background: #0f0c0b;
+}
+.dark-fantasy-profile .character-progress-bar {
+  background: #1b1614;
+  border: 1px solid #3d3129;
+}
+.dark-fantasy-profile .character-progress-bar span {
+  background-color: #a73a3a; /* blood red EXP bar for diablo vibe */
+}
+
+/* Backpack Grid */
+.dark-fantasy-profile .backpack-item-card {
+  border: 2px solid #3d3129;
+  background: #1c1714;
+}
+
+.dark-fantasy-profile .social-badge-card {
+  border-color: #3d3129;
+  background: #110e0c;
+}
+
+.dark-fantasy-profile .today-entry-card {
+  border-color: #3d3129;
+  background: #161210;
+}
+
+.dark-fantasy-profile .today-entry-marker {
+  background-color: #57463a;
+}
+.dark-fantasy-profile .today-entry-marker.quest { background-color: #b36b22; }
+.dark-fantasy-profile .today-entry-marker.dungeon { background-color: #a73a3a; }
+
+.dark-fantasy-profile .board-tab {
+  background: #161210;
+  border-color: #3d3129;
+  color: #8b7969;
+}
+.dark-fantasy-profile .board-tab.active {
+  background: #241d1a;
+  border-color: #8f724d;
+  color: #e6d8c3;
+}
+
+/* Base overrides */
+.dark-fantasy-profile h2, .dark-fantasy-profile h3, .dark-fantasy-profile h4 {
+  color: #cfb288;
+}
+.dark-fantasy-profile .rpg-card-title h3 {
+  color: #cfb288;
 }

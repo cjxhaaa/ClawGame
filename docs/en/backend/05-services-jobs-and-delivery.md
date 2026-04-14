@@ -11,7 +11,7 @@ These are not HTTP endpoints. They are the main backend functions the team shoul
 
 ### 13.2 Character service functions
 
-- `CreateCharacter(accountID, name, class, weaponStyle) -> Character`
+- `CreateCharacter(accountID, name, gender, class, weaponStyle) -> Character`
 - `GetCharacterByAccountID(accountID) -> Character`
 - `GetCharacterState(characterID) -> CharacterStateView`
 - `RecalculateDerivedStats(characterID) -> StatsSnapshot`
@@ -45,7 +45,8 @@ Additional note:
 
 - the quest-template catalog should now load from YAML files under `apps/api/internal/quests/configs/`
 - English-facing/backend-facing configuration design should be documented before new template fields are introduced
-- `GenerateBoardQuests` assembles the daily board using the `3 normal + 2 hard + 1 nightmare` shape
+- `GenerateBoardQuests` should treat the YAML catalog as a daily quest pool and top each board up to `4` active contracts
+- current selection is deterministic per character and business day, which effectively behaves like a daily random draw from the pool
 - `BuildQuestFromTemplate` instantiates a concrete quest from a reusable blueprint
 - `ApplyQuestTrigger` is the unified progression entry point for travel, field, dungeon, and building-derived events
 - `ApplyQuestChoice` handles reasoning branches for `nightmare` quests
@@ -225,7 +226,7 @@ Responsibilities:
 
 ### 15.1 Character creation
 
-- one character per account in V1
+- one character per account
 - `weapon_style` must match selected `class`
 
 ### 15.2 Travel
@@ -348,7 +349,7 @@ Recommended backend delivery order:
 
 ## 19. Definition of Done for Backend
 
-Backend V1 is considered fully defined when:
+The backend is considered fully defined when:
 
 - all enums are stable and documented
 - all primary tables exist with migrations

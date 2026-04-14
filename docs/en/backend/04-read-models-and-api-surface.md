@@ -298,27 +298,27 @@ Behavior:
 
 Purpose:
 
-- create the single V1 character for the account
+- create the single character for the account
 
 Request:
 
 ```json
 {
   "name": "bot-alpha",
-  "class": "mage",
-  "weapon_style": "staff"
+  "gender": "female"
 }
 ```
 
 Validation:
 
 - account must not already have a character
-- `weapon_style` must be compatible with `class`
+- `gender` must be `male` or `female`
 - `name` must be unique
 
 Side effects:
 
-- inserts character and base stats
+- inserts character as `civilian` and civilian base stats
+- stores the selected `gender`
 - inserts daily limits row
 - grants starter items and gold
 - creates or schedules daily quest board generation
@@ -482,7 +482,7 @@ Important current limitations:
 
 Building-model note:
 
-- V1 functional buildings use one canonical taxonomy only:
+- Functional buildings use one canonical taxonomy only:
   - `guild`
   - `equipment_shop`
   - `apothecary`
@@ -718,7 +718,7 @@ Recommendation:
 
 ### 12.5 Building APIs
 
-Current V1 facility taxonomy should be kept intentionally small:
+The current facility taxonomy should be kept intentionally small:
 
 - `guild`
 - `equipment_shop`
@@ -730,7 +730,7 @@ Current V1 facility taxonomy should be kept intentionally small:
 Facility-scope note:
 
 - `equipment_shop` is the current umbrella for basic weapon and armor buying/selling
-- `apothecary` is the preferred V1 label for potion purchase and route-preparation consumables
+- `apothecary` is the preferred label for potion purchase and route-preparation consumables
 - product, backend, and tool-facing documentation should use only the six building families above
 
 #### `GET /api/v1/buildings/{buildingId}`
@@ -759,9 +759,9 @@ Current repo note:
 
 - these endpoints return generic action-style envelopes
 - outside continuous multi-room challenge flows, characters are treated as full HP and clear of persisted debuffs between combats
-- equipment durability and repair are not part of the current V1 loop
+- equipment durability and repair are not part of the current loop
 
-Current V1 action boundary:
+Current action boundary:
 
 - `equipment_shop` should currently focus on:
   - `purchase`
@@ -849,12 +849,14 @@ Current implementation notes:
 
 - the board uses a `04:00 Asia/Shanghai` business-day reset
 - first read and cross-day read both auto-ensure the board exists
-- the default board currently generates 6 template quests
+- the current daily quest pool contains `6` template definitions
+- each character board is topped up to `4` active contracts per business day
+- contract selection is deterministic per character and day, so it behaves like a per-day random draw from the pool
 - `curio_followup_delivery` may be injected later by a resolved field `curio`, so it is not guaranteed to be present in the initial board snapshot
 
 Daily-board planning notes:
 
-- the product target is `3 normal + 2 hard + 1 nightmare`
+- the older `3 normal + 2 hard + 1 nightmare` mix is a planning target, not the current runtime behavior
 - `normal` should cover single-step clearing, gathering, and standard delivery
 - `hard` should cover cross-region handoff, recover-and-report, and dungeon-then-turn-in flows
 - `nightmare` should cover multi-step tasks with text-clue judgment
@@ -1520,7 +1522,7 @@ Recommended observer-specific shapes:
   - `has_borrowable_assist_template`
 - `following` / `followers`
   - short public bot references only, not full detail payloads
-  - recommended per-list cap: `12-20` entries in V1
+  - recommended per-list cap: `12-20` entries
 - `recent_public_chat`
   - reverse-chronological chat messages authored by the target bot
   - recommended default cap: `10`
